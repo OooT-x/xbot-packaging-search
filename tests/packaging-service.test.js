@@ -5,7 +5,7 @@ const os = require("os");
 const path = require("path");
 
 const { PackageDatabase } = require("../bot/lib/package-database");
-const { PackagingService } = require("../bot/lib/packaging-service");
+const { PackagingService, queryPrompt } = require("../bot/lib/packaging-service");
 
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "xbot-service-"));
@@ -500,4 +500,28 @@ test("merges multiple previews into one post message and keeps number selection"
   } finally {
     app.close();
   }
+});
+
+test("candidate prompt labels only show project, name, and version", () => {
+  const prompt = queryPrompt(
+    [
+      {
+        project_name: "变速箱",
+        package_name: "背景",
+        package_type: "背景",
+        version: "v01",
+      },
+      {
+        project_name: "变速箱",
+        package_name: "小标注",
+        package_type: "信息条",
+        version: "v01",
+      },
+    ],
+    20
+  );
+  assert.ok(prompt.includes("1. 变速箱 · 背景（v01）"));
+  assert.ok(!prompt.includes("背景（背景"));
+  assert.ok(prompt.includes("2. 变速箱 · 小标注（v01）"));
+  assert.ok(!prompt.includes("信息条 · v01"));
 });

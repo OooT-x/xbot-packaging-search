@@ -12,6 +12,10 @@ const {
 } = require("./package-intent");
 const { syncEagleCatalog } = require("./eagle-sync");
 
+function candidateLabel(item) {
+  return `${item.project_name} · ${item.package_name}（${item.version}）`;
+}
+
 function queryPrompt(candidates, expiresMinutes) {
   const intro =
     candidates.length === 1 ? "找到一个候选：" : `找到 ${candidates.length} 个候选：`;
@@ -24,7 +28,7 @@ function queryPrompt(candidates, expiresMinutes) {
     "",
     ...candidates.map(
       (item, index) =>
-        `${index + 1}. ${item.project_name} · ${item.package_name}（${item.package_type} · ${item.version}）`
+        `${index + 1}. ${candidateLabel(item)}`
     ),
     "",
     selectHint,
