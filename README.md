@@ -6,7 +6,7 @@ X.bot 包装素材检索项目用于在飞书中按项目、包装类型、标�
 
 - 核心方案版本：v1.5
 - Eagle 资源库：已建立待入库、预览图和 AE 源文件目录，以及第一阶段基础标签组
-- 当前开发阶段：第一阶段“文字检索闭环”准备期
+- 当前开发阶段：第一阶段“文字检索闭环”已完成代码与本机素材验证，待测试群端到端验收
 - 后续规划：第五阶段开发 AE 包装提取辅助工具与 Eagle 入库助手插件
 
 完整需求、数据模型、消息流程、实施阶段和验收标准见 [核心项目文档](docs/飞书机器人包装素材检索项目文档.md)。
@@ -52,11 +52,11 @@ Git 不管理以下内容：
 ```text
 .
 ├─ docs/              核心文档与设计记录
-├─ bot/               X.bot 检索服务（后续）
+├─ bot/               X.bot 监听器、Eagle 同步与包装检索服务
 ├─ ae-tool/           AE 包装提取辅助工具（第五阶段）
 ├─ eagle-plugin/      Eagle 入库助手插件（第五阶段）
-├─ migrations/        SQLite 数据库迁移（后续）
-├─ tests/             自动化测试（后续）
+├─ migrations/        SQLite 数据库迁移
+├─ tests/             自动化测试
 ├─ .gitignore
 └─ README.md
 ```
@@ -64,3 +64,38 @@ Git 不管理以下内容：
 ## 本机运行资源
 
 当前 Eagle 库位于 `E:\Eagle资源库\包装.library`。该路径属于本机运行配置，只记录位置，不把库内容提交进 Git。
+
+## 当前可运行闭环
+
+当前代码复用既有 X.bot 的 Node 事件监听、群聊 `@mention` 门控和大模型能力，并增加包装素材专用流程：
+
+1. 启动时通过 Eagle Web API V2 读取当前库和正式素材元数据。
+2. 只读定位 Eagle item 对应的 PNG/ZIP 原文件，将稳定映射写入本地 SQLite。
+3. 收到 `@X.bot 找变速箱项目的信息条` 后，最多回复 3 张 PNG 预览。
+4. 只有原查询人回复候选消息后才能确认；确认状态保留 20 分钟。
+5. 对应 ZIP 回复到最初查询消息；数据库和飞书 idempotency key 双重防止重复发送。
+
+先同步并验证当前素材：
+
+```powershell
+& "C:\Program Files\nodejs\npm.cmd" run sync:eagle
+& "C:\Program Files\nodejs\npm.cmd" test
+```
+
+启动机器人：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\start-feishu-bot.ps1 -Voice -AiProvider deepseek
+```
+
+安装登录后自动启动：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-feishu-bot-autostart.ps1
+```
+
+运行时 SQLite、日志、PID 和素材文件均不提交 Git。默认继续复用
+`C:\Users\ADMIN\Documents\飞书` 中已有的 X.bot 语音资源、回复规则和日志；可用
+`LARK_BOT_RUNTIME_ROOT` 改写该位置。
+
+Bot 身份至少需要消息事件、读取消息详情、发送消息和上传资源相关权限。确认阶段会读取用户回复消息的 `reply_to`，不能只依赖 compact 事件里的字段。
