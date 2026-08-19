@@ -3,7 +3,7 @@ param(
   [switch]$Once,
   [switch]$Voice,
   [ValidateSet("auto", "deepseek", "ollama", "openai")]
-  [string]$AiProvider = "auto"
+  [string]$AiProvider = "deepseek"
 )
 
 $launcher = Join-Path $PSScriptRoot "scripts\lark-bot-listener.ps1"

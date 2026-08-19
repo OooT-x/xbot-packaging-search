@@ -134,9 +134,7 @@ function parseArgs(argv) {
 function inferAiProvider() {
   const explicit = String(process.env.LARK_BOT_AI_PROVIDER || "").trim().toLowerCase();
   if (explicit) return explicit;
-  if (process.env.DEEPSEEK_API_KEY) return "deepseek";
-  if (process.env.OLLAMA_BASE_URL) return "ollama";
-  return "openai";
+  return "deepseek";
 }
 
 function apiKeyForProvider(provider) {

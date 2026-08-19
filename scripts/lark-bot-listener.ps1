@@ -6,7 +6,7 @@ param(
   [string]$VoiceMode = "request",
   [string]$VoiceId = "fast",
   [ValidateSet("auto", "deepseek", "ollama", "openai")]
-  [string]$AiProvider = "auto",
+  [string]$AiProvider = "deepseek",
   [string]$LocalModel = "qwen2.5:3b"
 )
 
