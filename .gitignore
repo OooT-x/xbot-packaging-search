@@ -1,0 +1,45 @@
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.secret
+*.key
+
+# Dependencies and build outputs
+node_modules/
+dist/
+build/
+coverage/
+.cache/
+
+# Runtime data
+data/
+logs/
+*.log
+*.pid
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+
+# Eagle libraries and production assets
+*.library/
+待入库/
+*.aep
+*.zip
+*.eaglepack
+
+# Editor and OS files
+.agents/
+.codex/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+~$*
