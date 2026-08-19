@@ -456,9 +456,8 @@ class PackagingService {
     const result = searchPackages(packages, effectiveContent, 3);
     if (!result.project || result.candidates.length === 0) return false;
 
-    this.database.cancelQuery(query.request_id);
     this.log(
-      `packaging follow-up request_id=${query.request_id} message_id=${event.message_id} project=${projectName} type=${result.package_type || ""}`
+      `packaging follow-up request_id=${query.request_id} message_id=${event.message_id} project=${projectName} type=${result.package_type || ""} (previous query kept pending)`
     );
     return await this.startQueryFromResult(event, result);
   }

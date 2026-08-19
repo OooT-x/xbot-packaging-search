@@ -373,7 +373,7 @@ test("continues from a preview reply and switches to another package type", asyn
         (call) => call.kind === "text" && call.text.includes("黑色纹理背景")
       )
     );
-    assert.equal(app.database.getQueryByRootMessage("om_root_followup").status, "cancelled");
+    assert.equal(app.database.getQueryByRootMessage("om_root_followup").status, "pending");
     assert.ok(app.database.findLatestPendingQuery("oc_chat"));
   } finally {
     app.close();
@@ -681,6 +681,54 @@ test("uploads oversized source files to Drive and replies with a link", async ()
     assert.equal(delivery.length, 1);
     assert.equal(delivery[0].status, "completed");
     assert.equal(delivery[0].source_message_id, `drive:${driveCalls[0].token}`);
+  } finally {
+    app.close();
+  }
+});
+
+test("keeps previous query confirmable after a follow-up", async () => {
+  const app = fixture();
+  try {
+    const queryEvent = {
+      type: "im.message.receive_v1",
+      event_id: "event-keep-prev",
+      message_id: "om_root_keep",
+      message_type: "text",
+      chat_id: "oc_chat",
+      sender_id: "ou_requester",
+      content: "@X.bot 找变速箱项目的信息条",
+    };
+    assert.equal(await app.service.tryHandleQuery(queryEvent, { mentioned: true }), true);
+
+    const firstImage = app.calls.find((call) => call.kind === "image");
+    assert.ok(firstImage);
+    app.replyTargets.set("om_followup_keep", firstImage.message_id);
+    assert.equal(
+      await app.service.tryHandleConfirmation({
+        message_id: "om_followup_keep",
+        message_type: "text",
+        chat_id: "oc_chat",
+        sender_id: "ou_requester",
+        content: "看看背景",
+      }),
+      true
+    );
+
+    const oldQuery = app.database.getQueryByRootMessage("om_root_keep");
+    assert.equal(oldQuery.status, "pending");
+
+    app.replyTargets.set("om_old_preview", firstImage.message_id);
+    assert.equal(
+      await app.service.tryHandleConfirmation({
+        message_id: "om_old_preview",
+        message_type: "text",
+        chat_id: "oc_chat",
+        sender_id: "ou_requester",
+        content: "这个",
+      }),
+      true
+    );
+    assert.equal(app.calls.filter((call) => call.kind === "file").length, 1);
   } finally {
     app.close();
   }
