@@ -7,7 +7,7 @@ const path = require("path");
 const { PackageDatabase } = require("../bot/lib/package-database");
 const { PackagingService, queryPrompt } = require("../bot/lib/packaging-service");
 
-function fixture() {
+function fixture(serviceOptions = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "xbot-service-"));
   const preview = path.join(root, "preview.png");
   const source = path.join(root, "source.zip");
@@ -90,6 +90,12 @@ function fixture() {
       calls.push({ kind: "post", messageId, content, key, message_id });
       return { message_id };
     },
+    async uploadToDrive(filePath) {
+      const url = `https://example.feishu.cn/file/drive-${++counter}`;
+      const token = `token-${counter}`;
+      calls.push({ kind: "drive", filePath, url, token });
+      return { url, token };
+    },
     async getMessage(messageId) {
       return { message_id: messageId, reply_to: replyTargets.get(messageId) || "" };
     },
@@ -100,6 +106,7 @@ function fixture() {
     transport,
     aliasesPath: path.join(root, "aliases.json"),
     expiresMinutes: 20,
+    ...serviceOptions,
   });
   service.lastSyncAt = Date.now();
 
@@ -162,7 +169,7 @@ test("sends a preview, accepts only the requester, and delivers the ZIP once", a
 
     assert.equal(await app.service.tryHandleConfirmation(confirmation), true);
     assert.equal(app.calls.filter((call) => call.kind === "file").length, 1);
-    assert.equal(app.database.getQueryByRootMessage("om_root").status, "completed");
+    assert.equal(app.database.getQueryByRootMessage("om_root").status, "pending");
   } finally {
     app.close();
   }
@@ -197,7 +204,7 @@ test("accepts a bare confirmation by falling back to the latest pending query", 
     const fileCalls = app.calls.filter((call) => call.kind === "file");
     assert.equal(fileCalls.length, 1);
     assert.equal(fileCalls[0].messageId, "om_root_bare");
-    assert.equal(app.database.getQueryByRootMessage("om_root_bare").status, "completed");
+    assert.equal(app.database.getQueryByRootMessage("om_root_bare").status, "pending");
   } finally {
     app.close();
   }
@@ -524,4 +531,157 @@ test("candidate prompt labels only show project, name, and version", () => {
   assert.ok(!prompt.includes("背景（背景"));
   assert.ok(prompt.includes("2. 变速箱 · 小标注（v01）"));
   assert.ok(!prompt.includes("信息条 · v01"));
+});
+
+test("sends a different source for each candidate of the same query", async () => {
+  const app = fixture();
+  try {
+    const queryEvent = {
+      type: "im.message.receive_v1",
+      event_id: "event-multi-deliver",
+      message_id: "om_root_multi",
+      message_type: "text",
+      chat_id: "oc_chat",
+      sender_id: "ou_requester",
+      content: "@X.bot 找变速箱项目的包装",
+    };
+    assert.equal(await app.service.tryHandleQuery(queryEvent, { mentioned: true }), true);
+
+    const postCalls = app.calls.filter((call) => call.kind === "post");
+    assert.equal(postCalls.length, 1);
+    app.replyTargets.set("om_multi_first", postCalls[0].message_id);
+    assert.equal(
+      await app.service.tryHandleConfirmation({
+        message_id: "om_multi_first",
+        message_type: "text",
+        chat_id: "oc_chat",
+        sender_id: "ou_requester",
+        content: "第一个",
+      }),
+      true
+    );
+    assert.equal(app.calls.filter((call) => call.kind === "file").length, 1);
+
+    app.replyTargets.set("om_multi_second", postCalls[0].message_id);
+    assert.equal(
+      await app.service.tryHandleConfirmation({
+        message_id: "om_multi_second",
+        message_type: "text",
+        chat_id: "oc_chat",
+        sender_id: "ou_requester",
+        content: "第二个",
+      }),
+      true
+    );
+    assert.equal(app.calls.filter((call) => call.kind === "file").length, 2);
+
+    app.replyTargets.set("om_multi_first_again", postCalls[0].message_id);
+    assert.equal(
+      await app.service.tryHandleConfirmation({
+        message_id: "om_multi_first_again",
+        message_type: "text",
+        chat_id: "oc_chat",
+        sender_id: "ou_requester",
+        content: "第一个",
+      }),
+      true
+    );
+    assert.equal(app.calls.filter((call) => call.kind === "file").length, 2);
+    assert.ok(
+      app.calls.some((call) => call.kind === "text" && call.text.includes("已经发过"))
+    );
+    assert.equal(app.database.getQueryByRootMessage("om_root_multi").status, "pending");
+  } finally {
+    app.close();
+  }
+});
+
+test("blocks candidates of a completed legacy query", async () => {
+  const app = fixture();
+  try {
+    const queryEvent = {
+      type: "im.message.receive_v1",
+      event_id: "event-legacy-completed",
+      message_id: "om_root_legacy",
+      message_type: "text",
+      chat_id: "oc_chat",
+      sender_id: "ou_requester",
+      content: "@X.bot 找变速箱项目的包装",
+    };
+    assert.equal(await app.service.tryHandleQuery(queryEvent, { mentioned: true }), true);
+
+    const latest = app.database.findLatestPendingQuery("oc_chat");
+    assert.ok(latest);
+    app.database.db
+      .prepare("UPDATE queries SET status = 'completed' WHERE request_id = ?")
+      .run(latest.request_id);
+
+    const postCalls = app.calls.filter((call) => call.kind === "post");
+    app.replyTargets.set("om_legacy_select", postCalls[0].message_id);
+    assert.equal(
+      await app.service.tryHandleConfirmation({
+        message_id: "om_legacy_select",
+        message_type: "text",
+        chat_id: "oc_chat",
+        sender_id: "ou_requester",
+        content: "第二个",
+      }),
+      true
+    );
+    assert.equal(app.calls.filter((call) => call.kind === "file").length, 0);
+    assert.ok(
+      app.calls.some((call) => call.kind === "text" && call.text.includes("已经完成"))
+    );
+  } finally {
+    app.close();
+  }
+});
+
+test("uploads oversized source files to Drive and replies with a link", async () => {
+  const app = fixture({ driveUploadThresholdBytes: 1 });
+  try {
+    const queryEvent = {
+      type: "im.message.receive_v1",
+      event_id: "event-drive",
+      message_id: "om_root_drive",
+      message_type: "text",
+      chat_id: "oc_chat",
+      sender_id: "ou_requester",
+      content: "@X.bot 找变速箱项目的信息条",
+    };
+    assert.equal(await app.service.tryHandleQuery(queryEvent, { mentioned: true }), true);
+
+    const imageCall = app.calls.find((call) => call.kind === "image");
+    app.replyTargets.set("om_drive_confirm", imageCall.message_id);
+    assert.equal(
+      await app.service.tryHandleConfirmation({
+        message_id: "om_drive_confirm",
+        message_type: "text",
+        chat_id: "oc_chat",
+        sender_id: "ou_requester",
+        content: "这个",
+      }),
+      true
+    );
+
+    const driveCalls = app.calls.filter((call) => call.kind === "drive");
+    assert.equal(driveCalls.length, 1);
+    assert.equal(app.calls.filter((call) => call.kind === "file").length, 0);
+    assert.ok(
+      app.calls.some(
+        (call) =>
+          call.kind === "text" &&
+          call.text.includes("云盘") &&
+          call.text.includes(driveCalls[0].url)
+      )
+    );
+    const delivery = app.database.db
+      .prepare("SELECT status, source_message_id FROM deliveries WHERE request_id = ?")
+      .all(app.database.getQueryByRootMessage("om_root_drive").request_id);
+    assert.equal(delivery.length, 1);
+    assert.equal(delivery[0].status, "completed");
+    assert.equal(delivery[0].source_message_id, `drive:${driveCalls[0].token}`);
+  } finally {
+    app.close();
+  }
 });

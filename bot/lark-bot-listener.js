@@ -2370,6 +2370,28 @@ class LarkPackagingTransport {
     return imageKey;
   }
 
+  async uploadToDrive(filePath) {
+    const media = mediaCliContext(filePath);
+    const result = await runCli(
+      [
+        "drive",
+        "+upload",
+        "--file",
+        media.relativePath,
+        "--as",
+        "bot",
+        "--format",
+        "json",
+      ],
+      { cwd: media.cwd }
+    );
+    const data = cliData(result);
+    const url = String(data?.url || data?.data?.url || "").trim();
+    const token = String(data?.file_token || data?.data?.file_token || "").trim();
+    if (!url || !token) throw new Error("drive upload did not return url/file_token");
+    return { url, token };
+  }
+
   async replyPost(messageId, content, key) {
     const result = await runCli([
       "im",
@@ -2407,6 +2429,8 @@ function getPackagingService() {
     transport: new LarkPackagingTransport(),
     aliasesPath,
     eagleBaseUrl: process.env.EAGLE_API_BASE_URL,
+    libraryPath:
+      process.env.LARK_BOT_EAGLE_LIBRARY_PATH || "E:\\Eagle资源库\\包装.library",
     expiresMinutes: positiveNumber(process.env.LARK_BOT_PACKAGE_QUERY_TTL_MINUTES, 20),
     syncIntervalMs: positiveNumber(process.env.LARK_BOT_PACKAGE_SYNC_INTERVAL_MS, 60_000),
     log,

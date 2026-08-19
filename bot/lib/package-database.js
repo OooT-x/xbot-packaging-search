@@ -324,19 +324,26 @@ class PackageDatabase {
         return { state: "completed", source_message_id: query.source_message_id };
       }
       if (query.status === "sending") return { state: "sending" };
-      if (query.status !== "pending") return { state: query.status };
+      if (["preparing", "failed", "cancelled"].includes(query.status)) {
+        return { state: query.status };
+      }
       if (query.expires_at <= now) {
         this.db.prepare("UPDATE queries SET status = 'expired' WHERE request_id = ?").run(requestId);
         return { state: "expired" };
       }
 
-      this.db
+      const existing = this.db
         .prepare(`
-          UPDATE queries
-          SET status = 'sending', selected_package_id = ?, last_error = NULL
-          WHERE request_id = ? AND status = 'pending'
+          SELECT status, source_message_id
+          FROM deliveries
+          WHERE request_id = ? AND package_id = ?
         `)
-        .run(packageId, requestId);
+        .get(requestId, packageId);
+      if (existing?.status === "completed") {
+        return { state: "completed", source_message_id: existing.source_message_id };
+      }
+      if (existing?.status === "sending") return { state: "sending" };
+
       this.db
         .prepare(`
           INSERT INTO deliveries(
@@ -363,13 +370,6 @@ class PackageDatabase {
           WHERE request_id = ? AND package_id = ?
         `)
         .run(sourceMessageId, now, requestId, packageId);
-      this.db
-        .prepare(`
-          UPDATE queries
-          SET status = 'completed', source_message_id = ?, completed_at = ?, last_error = NULL
-          WHERE request_id = ?
-        `)
-        .run(sourceMessageId, now, requestId);
     });
   }
 
@@ -382,13 +382,6 @@ class PackageDatabase {
           WHERE request_id = ? AND package_id = ?
         `)
         .run(now, requestId, packageId);
-      this.db
-        .prepare(`
-          UPDATE queries
-          SET status = 'pending', last_error = ?
-          WHERE request_id = ? AND status = 'sending'
-        `)
-        .run(String(errorMessage || "").slice(0, 1000), requestId);
     });
   }
 }

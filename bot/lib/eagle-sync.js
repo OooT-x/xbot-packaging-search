@@ -231,19 +231,66 @@ function buildCatalog(items, libraryPath, aliasConfig = {}) {
 }
 
 async function syncEagleCatalog(database, options = {}) {
-  const client = options.client || new EagleClient({ baseUrl: options.baseUrl, fetch: options.fetch });
-  const [library, items] = await Promise.all([client.libraryInfo(), client.listItems()]);
+  const libraryPath = String(options.libraryPath || "").trim();
+  let library;
+  let items;
+  if (libraryPath) {
+    const diskLibrary = readLibraryFromDisk(libraryPath);
+    library = { name: diskLibrary.name, path: diskLibrary.path };
+    items = diskLibrary.items;
+  } else {
+    const client = options.client || new EagleClient({ baseUrl: options.baseUrl, fetch: options.fetch });
+    [library, items] = await Promise.all([client.libraryInfo(), client.listItems()]);
+  }
   const aliasConfig = loadAliases(options.aliasesPath);
   const catalog = buildCatalog(items, library.path, aliasConfig);
   database.replaceCatalog(catalog.projects, catalog.packages);
   return {
     library_name: library.name,
     library_path: library.path,
+    library_source: libraryPath ? "disk" : "api",
     item_count: items.length,
     project_count: catalog.projects.length,
     package_count: catalog.packages.length,
     errors: catalog.errors,
   };
+}
+
+function readLibraryFromDisk(libraryPath) {
+  const root = path.resolve(libraryPath);
+  const libraryMetaPath = path.join(root, "metadata.json");
+  if (!fs.existsSync(libraryMetaPath)) {
+    throw new Error(`Eagle library metadata.json not found: ${libraryMetaPath}`);
+  }
+
+  let libraryMeta = {};
+  try {
+    libraryMeta = JSON.parse(fs.readFileSync(libraryMetaPath, "utf8"));
+  } catch (error) {
+    throw new Error(`failed to parse Eagle library metadata.json: ${error.message}`);
+  }
+
+  const items = [];
+  const imagesDir = path.join(root, "images");
+  if (fs.existsSync(imagesDir)) {
+    for (const entry of fs.readdirSync(imagesDir, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !entry.name.endsWith(".info")) continue;
+      const metaPath = path.join(imagesDir, entry.name, "metadata.json");
+      if (!fs.existsSync(metaPath)) continue;
+      try {
+        const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
+        if (meta && typeof meta === "object" && meta.id) items.push(meta);
+      } catch {
+        // skip malformed item metadata; the item simply does not enter the catalog
+      }
+    }
+  }
+
+  const name =
+    String(libraryMeta.name || "").trim() ||
+    path.basename(root).replace(/\.library$/i, "") ||
+    "Eagle";
+  return { name, path: root, items };
 }
 
 module.exports = {
@@ -253,6 +300,7 @@ module.exports = {
   dependencyStatus,
   normalizeText,
   parseAnnotation,
+  readLibraryFromDisk,
   resolveEagleItemFile,
   stableProjectId,
   syncEagleCatalog,

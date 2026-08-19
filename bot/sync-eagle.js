@@ -16,6 +16,7 @@ async function main() {
     const report = await syncEagleCatalog(database, {
       baseUrl: process.env.EAGLE_API_BASE_URL,
       aliasesPath,
+      libraryPath: process.env.LARK_BOT_EAGLE_LIBRARY_PATH,
     });
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
     if (report.errors.length > 0) process.exitCode = 2;

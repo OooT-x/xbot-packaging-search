@@ -49,12 +49,21 @@ function safeMessageId(result) {
   return String(result?.message_id || result?.data?.message_id || "").trim();
 }
 
+function formatFileSize(bytes) {
+  const mb = Number(bytes || 0) / (1024 * 1024);
+  return `${mb.toFixed(mb >= 10 ? 1 : 2)}MB`;
+}
+
 class PackagingService {
   constructor(options) {
     this.database = options.database;
     this.transport = options.transport;
     this.aliasesPath = options.aliasesPath;
     this.eagleBaseUrl = options.eagleBaseUrl;
+    this.libraryPath = options.libraryPath || "";
+    this.driveUploadThresholdBytes = Number(
+      options.driveUploadThresholdBytes || 25 * 1024 * 1024
+    );
     this.log = options.log || (() => {});
     this.expiresMinutes = Number(options.expiresMinutes || 20);
     this.syncIntervalMs = Number(options.syncIntervalMs || 60_000);
@@ -72,6 +81,7 @@ class PackagingService {
       const report = await syncEagleCatalog(this.database, {
         baseUrl: this.eagleBaseUrl,
         aliasesPath: this.aliasesPath,
+        libraryPath: this.libraryPath,
       });
       this.lastSyncAt = Date.now();
       this.lastSyncError = null;
@@ -242,6 +252,15 @@ class PackagingService {
   }
 
   async tryHandleConfirmation(event) {
+    try {
+      return await this.handleConfirmation(event);
+    } catch (error) {
+      this.log(`packaging confirmation error message_id=${event.message_id}: ${error.message}`);
+      return false;
+    }
+  }
+
+  async handleConfirmation(event) {
     if (event.message_type !== "text") return false;
     const content = String(event.content || "").trim();
     if (!isPotentialConfirmation(content) && !hasPackagingDomain(content)) return false;
@@ -287,10 +306,18 @@ class PackagingService {
     if (!isPotentialConfirmation(content)) {
       return await this.tryHandleFollowUp(event, query);
     }
+    if (["preparing", "failed", "cancelled"].includes(query.status)) {
+      await this.transport.replyText(
+        event.message_id,
+        "这次查询已经失效，请重新 @X.bot 发起查询。",
+        `package-query-${query.request_id}-${query.status}`
+      );
+      return true;
+    }
     if (query.status === "completed") {
       await this.transport.replyText(
         event.message_id,
-        "这份源文件已经发过了，不重复上传。",
+        "这份查询已经完成，请重新 @X.bot 发起查询。",
         `package-query-${query.request_id}-already-completed`
       );
       return true;
@@ -300,14 +327,6 @@ class PackagingService {
         event.message_id,
         "源文件正在发送，稍等一下。",
         `package-query-${query.request_id}-already-sending`
-      );
-      return true;
-    }
-    if (query.status !== "pending") {
-      await this.transport.replyText(
-        event.message_id,
-        "这次查询已经失效，请重新 @X.bot 发起查询。",
-        `package-query-${query.request_id}-${query.status}`
       );
       return true;
     }
@@ -372,21 +391,39 @@ class PackagingService {
         `确认：${selected.package_name} ${selected.version}。源文件会回复到最初的查询消息下面。`,
         `package-query-${query.request_id}-confirmed`
       );
-      const fileReply = await this.transport.replyFile(
-        query.root_message_id,
-        selected.source_path,
-        idempotencyKey
-      );
-      const sourceMessageId = safeMessageId(fileReply);
-      if (!sourceMessageId) throw new Error("source reply did not return message_id");
-      this.database.markDeliveryCompleted(
-        query.request_id,
-        selected.package_id,
-        sourceMessageId
-      );
-      this.log(
-        `packaging source sent request_id=${query.request_id} package_id=${selected.package_id} message_id=${sourceMessageId}`
-      );
+      const fileSize = fs.statSync(selected.source_path).size;
+      if (fileSize > this.driveUploadThresholdBytes) {
+        const drive = await this.transport.uploadToDrive(selected.source_path);
+        await this.transport.replyText(
+          event.message_id,
+          `这份源文件有 ${formatFileSize(fileSize)}，飞书直接发文件会被限制，我传到云盘了：\n${drive.url}\n下载后直接使用。`,
+          `package-query-${query.request_id}-drive-link`
+        );
+        this.database.markDeliveryCompleted(
+          query.request_id,
+          selected.package_id,
+          `drive:${drive.token}`
+        );
+        this.log(
+          `packaging source uploaded request_id=${query.request_id} package_id=${selected.package_id} url=${drive.url}`
+        );
+      } else {
+        const fileReply = await this.transport.replyFile(
+          query.root_message_id,
+          selected.source_path,
+          idempotencyKey
+        );
+        const sourceMessageId = safeMessageId(fileReply);
+        if (!sourceMessageId) throw new Error("source reply did not return message_id");
+        this.database.markDeliveryCompleted(
+          query.request_id,
+          selected.package_id,
+          sourceMessageId
+        );
+        this.log(
+          `packaging source sent request_id=${query.request_id} package_id=${selected.package_id} message_id=${sourceMessageId}`
+        );
+      }
     } catch (error) {
       this.database.markDeliveryFailed(query.request_id, selected.package_id, error.message);
       this.log(`packaging source send failed request_id=${query.request_id}: ${error.message}`);
