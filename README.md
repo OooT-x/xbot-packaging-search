@@ -63,7 +63,7 @@ Git 不管理以下内容：
 
 ## 本机运行资源
 
-当前 Eagle 库位于 `E:\Eagle资源库\包装.library`。该路径属于本机运行配置，只记录位置，不把库内容提交进 Git。
+当前 Eagle 库位于 `E:\Eagle资源库\包装.library`。bot 默认以只读方式直接解析该库目录（不依赖 Eagle 当前活动库，也不修改库内数据），Eagle 界面可以停留在其他库；可用 `LARK_BOT_EAGLE_LIBRARY_PATH` 改写该路径。路径属于本机运行配置，只记录位置，不把库内容提交进 Git。
 
 ## 当前可运行闭环
 
@@ -74,10 +74,12 @@ Git 不管理以下内容：
 3. 收到 `@X.bot 找变速箱项目的信息条` 后，最多回复 3 张 PNG 预览。
 4. 只有原查询人回复候选消息后才能确认；确认状态保留 20 分钟。
 5. 对应 ZIP 回复到最初查询消息；数据库和飞书 idempotency key 双重防止重复发送。
+6. 超过飞书机器人单文件上限（约 30MB）的源文件自动上传到 bot 飞书云盘，回复下载链接；小文件仍直接发送。
 
 先同步并验证当前素材：
 
 ```powershell
+$env:LARK_BOT_EAGLE_LIBRARY_PATH = "E:\Eagle资源库\包装.library"
 & "C:\Program Files\nodejs\npm.cmd" run sync:eagle
 & "C:\Program Files\nodejs\npm.cmd" test
 ```
