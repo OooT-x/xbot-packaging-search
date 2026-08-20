@@ -71,7 +71,7 @@ class CollectorWindow:
         scroll_y.grid(row=0, column=1, sticky="ns")
         scroll_x.grid(row=1, column=0, sticky="ew")
 
-        output_frame = ttk.LabelFrame(outer, text="安全收集到新目录", padding=10)
+        output_frame = ttk.LabelFrame(outer, text="安全收集并打包 ZIP", padding=10)
         output_frame.pack(fill=tk.X)
         output_frame.columnconfigure(0, weight=1)
         ttk.Entry(output_frame, textvariable=self.output_var).grid(row=0, column=0, sticky="ew", padx=(0, 8))
@@ -81,7 +81,7 @@ class CollectorWindow:
         ttk.Button(output_frame, text="打开输出目录", command=self.open_output).grid(row=0, column=3, padx=(8, 0))
         ttk.Label(
             output_frame,
-            text="每个合成生成独立 AEP、素材目录和 manifest；原工程不会被修改。",
+            text="每个合成生成独立 AEP、素材目录、manifest 和同名 ZIP；原工程不会被修改。",
         ).grid(row=1, column=0, columnspan=4, sticky="w", pady=(8, 0))
 
         log_frame = ttk.LabelFrame(outer, text="运行记录", padding=8)
@@ -199,12 +199,14 @@ class CollectorWindow:
                 blocked += 1
             self.append_log(
                 f"完成“{result.composition_name}”：{result.composition_count} 个合成，"
-                f"{result.copied_file_count} 个素材，状态 {status}。\n  {result.output_directory}"
+                f"{result.copied_file_count} 个素材，状态 {status}。"
+                f"\n  展开目录：{result.output_directory}"
+                f"\n  Eagle ZIP：{result.zip_file}（{result.zip_bytes / 1024 / 1024:.2f} MB）"
             )
         self.set_busy(False, "收集完成")
         messagebox.showinfo(
             "收集完成",
-            f"已生成 {len(results)} 个独立收集目录。"
+            f"已生成 {len(results)} 个独立收集目录和 {len(results)} 个 ZIP，可交给 Eagle 入库。"
             + (f"\n其中 {blocked} 项存在缺失素材，已在 manifest 中标记为阻止入库。" if blocked else ""),
         )
 

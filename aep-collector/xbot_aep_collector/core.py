@@ -5,6 +5,7 @@ import json
 import re
 import shutil
 import uuid
+import zipfile
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -117,6 +118,8 @@ class CollectionResult:
     output_directory: str
     output_project: str
     manifest_file: str
+    zip_file: str
+    zip_bytes: int
     composition_count: int
     copied_file_count: int
     copied_bytes: int
@@ -346,10 +349,53 @@ def _next_output_directory(output_root: Path, project_name: str, comp_name: str)
     base = safe_filename(f"{project_name}_{comp_name}_收集")
     candidate = output_root / base
     counter = 2
-    while candidate.exists():
+    while candidate.exists() or _zip_path_for_directory(candidate).exists():
         candidate = output_root / f"{base}_{counter}"
         counter += 1
     return candidate
+
+
+def _zip_path_for_directory(directory: Path) -> Path:
+    return directory.parent / f"{directory.name}.zip"
+
+
+def _write_collection_archive(
+    collection_directory: Path,
+    zip_file: Path,
+    output_project: Path,
+    manifest_file: Path,
+) -> int:
+    partial_zip = zip_file.parent / f".{zip_file.name}.{uuid.uuid4().hex}.partial"
+    archive_root = Path(collection_directory.name)
+    try:
+        with zipfile.ZipFile(
+            partial_zip,
+            "w",
+            compression=zipfile.ZIP_DEFLATED,
+            compresslevel=6,
+        ) as archive:
+            for path in sorted(collection_directory.rglob("*")):
+                if path.is_file():
+                    relative_path = archive_root / path.relative_to(collection_directory)
+                    archive.write(path, arcname=relative_path.as_posix())
+
+        required_entries = {
+            (archive_root / output_project.name).as_posix(),
+            (archive_root / manifest_file.name).as_posix(),
+        }
+        with zipfile.ZipFile(partial_zip, "r") as archive:
+            corrupt_entry = archive.testzip()
+            if corrupt_entry:
+                raise CollectorError(f"ZIP 完整性校验失败：{corrupt_entry}")
+            missing_entries = required_entries.difference(archive.namelist())
+            if missing_entries:
+                names = "、".join(sorted(missing_entries))
+                raise CollectorError(f"ZIP 交付文件缺失：{names}")
+
+        partial_zip.replace(zip_file)
+        return zip_file.stat().st_size
+    finally:
+        partial_zip.unlink(missing_ok=True)
 
 
 def _sha256(path: Path) -> str:
@@ -386,6 +432,7 @@ def collect_composition(
         raise CollectorError(f"找不到合成 ID：{composition_id}")
 
     final_directory = _next_output_directory(target_root, source_path.stem, str(root_comp.name))
+    zip_file = _zip_path_for_directory(final_directory)
     final_directory.mkdir(parents=True, exist_ok=False)
     incomplete_marker = final_directory / ".xbot-collection-incomplete"
     incomplete_marker.write_text(uuid.uuid4().hex, encoding="ascii")
@@ -439,10 +486,18 @@ def collect_composition(
             "warnings": warnings,
             "dependency_status": "阻止入库" if missing else ("警告" if warnings else "完整"),
             "output_project": output_project.name,
+            "collection_directory": final_directory.name,
+            "source_file": zip_file.name,
         }
         manifest_file = final_directory / "manifest.json"
         manifest_file.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
         incomplete_marker.unlink()
+        zip_bytes = _write_collection_archive(
+            final_directory,
+            zip_file,
+            output_project,
+            manifest_file,
+        )
         return CollectionResult(
             source_project=str(source_path),
             composition_id=int(root_comp.id),
@@ -450,6 +505,8 @@ def collect_composition(
             output_directory=str(final_directory),
             output_project=str(final_directory / output_project.name),
             manifest_file=str(final_directory / manifest_file.name),
+            zip_file=str(zip_file),
+            zip_bytes=zip_bytes,
             composition_count=len(comps),
             copied_file_count=copied_file_count,
             copied_bytes=copied_bytes,
@@ -458,6 +515,7 @@ def collect_composition(
         )
     except Exception:
         shutil.rmtree(final_directory, ignore_errors=True)
+        zip_file.unlink(missing_ok=True)
         raise
 
 
