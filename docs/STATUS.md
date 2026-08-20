@@ -6,13 +6,14 @@
 
 | 项目 | 当前值 |
 | --- | --- |
-| 项目阶段 | M1 文字检索闭环已完成；M5 入库助手插件进入实施（扫描/预检/导入批次/正式归位可用） |
+| 项目阶段 | M1 文字检索闭环已完成；M5 入库助手插件已实现“导入待入库 → 正式入库”两段式操作，并完成批次召回修复，待真实 Eagle 验证 |
 | 核心文档版本 | v1.8 |
 | 软件版本 | `0.0.0` 开发版，尚未发布标签 |
 | 当前分支 | `codex/eagle-ingest-plugin` |
-| 远程仓库 | GitHub：`OooT-x/xbot-packaging-search`（私有），`codex/feishu-bot-m1` 已推送，插件分支开发中 |
+| 远程仓库 | GitHub：`OooT-x/xbot-packaging-search`（私有），`codex/feishu-bot-m1` 已推送；`codex/eagle-ingest-plugin` 待推送 |
 | Eagle 库 | `E:\Eagle资源库\包装.library` |
 | 应用源码 | 已迁入既有 X.bot 监听器，并接入包装检索模块 |
+| 最近交付 | 插件“导入/入库”两段式、正式目录归位、批次召回修复；自动化测试 56 项全部通过 |
 
 ## 已完成
 
