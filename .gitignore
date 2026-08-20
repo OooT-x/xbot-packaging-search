@@ -42,4 +42,5 @@ Desktop.ini
 *.tmp
 *.temp
 *.bak
+ae-tool/runtime-probe-result.json
 ~$*
