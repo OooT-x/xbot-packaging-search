@@ -61,6 +61,15 @@
         width: 220px;
         font-size: 13px;
       }
+      select {
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 7px 10px;
+        width: 260px;
+        font-size: 13px;
+        background: #fff;
+      }
+      label.hint { white-space: nowrap; }
       main { padding: 16px 20px; }
       .cards {
         display: grid;
@@ -137,6 +146,15 @@
       <span class="hint" id="batchInfo"></span>
     </div>
 
+    <div class="toolbar">
+      <label class="hint" for="batchSelect">待入库批次</label>
+      <select id="batchSelect" disabled></select>
+      <button id="reloadBatchBtn">刷新批次</button>
+      <button id="fileBtn" class="primary" disabled>入库到正式目录</button>
+      <button id="confirmFileBtn" class="primary" hidden>确认入库</button>
+      <span class="hint" id="fileInfo"></span>
+    </div>
+
     <main>
       <div class="cards">
         <div class="card"><span>将导入</span><b id="statToImport">0</b></div>
@@ -146,7 +164,7 @@
       </div>
 
       <div class="section">
-        <h2>包装记录</h2>
+        <h2>导入预检：本地项目 → 待入库批次</h2>
         <table>
           <thead>
             <tr>
@@ -176,6 +194,31 @@
             </tr>
           </thead>
           <tbody id="fileRows"></tbody>
+        </table>
+      </div>
+
+      <div class="cards">
+        <div class="card"><span>将入库</span><b id="statFileReady">0</b></div>
+        <div class="card"><span>阻止</span><b id="statFileBlocked">0</b></div>
+        <div class="card"><span>已入库</span><b id="statFileAlready">0</b></div>
+        <div class="card"><span>批次剩余</span><b id="statFileRemaining">0</b></div>
+      </div>
+
+      <div class="section">
+        <h2>入库预检：待入库批次 → 正式目录</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>包装</th>
+              <th>类型</th>
+              <th>版本</th>
+              <th>预览</th>
+              <th>源文件</th>
+              <th>状态</th>
+              <th>说明</th>
+            </tr>
+          </thead>
+          <tbody id="filePlanRows"></tbody>
         </table>
       </div>
 
