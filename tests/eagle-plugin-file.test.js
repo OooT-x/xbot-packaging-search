@@ -482,7 +482,7 @@ test("offers a type correction for an unannotated pair instead of rejecting it",
   const items = [
     {
       id: "manual-png",
-      name: "小标注",
+      name: "片头动画",
       ext: "png",
       folders: ["batch-1"],
       tags: [],
@@ -490,7 +490,7 @@ test("offers a type correction for an unannotated pair instead of rejecting it",
     },
     {
       id: "manual-zip",
-      name: "小标注",
+      name: "片头动画",
       ext: "zip",
       folders: ["batch-1"],
       tags: [],
@@ -518,6 +518,25 @@ test("offers a type correction for an unannotated pair instead of rejecting it",
   assert.equal(corrected.reviewPairs.length, 0);
   assert.equal(corrected.readyPairs.length, 1);
   assert.equal(corrected.readyPairs[0].packageType, "信息条");
+});
+
+test("classifies manual labels and nameplates as information strips", () => {
+  const items = [
+    { id: "label-png", name: "小标注", ext: "png", folders: ["batch-1"] },
+    { id: "label-zip", name: "小标注", ext: "zip", folders: ["batch-1"] },
+    { id: "name-png", name: "人物人名条", ext: "png", folders: ["batch-1"] },
+    { id: "name-zip", name: "人物人名条", ext: "zip", folders: ["batch-1"] },
+  ];
+
+  const plan = planFormalFile(items, {
+    projectName: "变速箱",
+    batchFolderId: "batch-1",
+    folderDepthById: { "batch-1": 0 },
+  });
+
+  assert.equal(plan.reviewPairs.length, 0);
+  assert.equal(plan.readyPairs.length, 2);
+  assert.ok(plan.readyPairs.every((pair) => pair.packageType === "信息条"));
 });
 
 test("ignores non PNG and ZIP files in a manually imported folder", () => {

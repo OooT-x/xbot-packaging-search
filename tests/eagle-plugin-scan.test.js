@@ -7,6 +7,7 @@ const path = require("path");
 const {
   classifyFile,
   createBatchId,
+  inferPackageType,
   metadataFromPair,
   scanDirectory,
   similarityGrade,
@@ -255,5 +256,35 @@ test("extracts metadata and similarity from file names", () => {
   assert.equal(metadata.packageName, "人物条");
   assert.equal(metadata.packageType, "信息条");
   assert.equal(metadata.version, "v02");
+  assert.equal(inferPackageType("小标注"), "信息条");
+  assert.equal(inferPackageType("人物人名条"), "信息条");
+  assert.equal(inferPackageType("横版视频框"), "视频框");
   assert.equal(createBatchId().length, 19);
+});
+
+test("normalizes label aliases in manifest package types", () => {
+  const temp = makeTempDir("manifest-type-alias");
+  try {
+    writeFile(temp, "manifest.json", JSON.stringify({
+      packages: [
+        {
+          package_id: "pkg-label",
+          project_name: "变速箱",
+          package_name: "小标注",
+          package_type: "标注",
+          preview_file: "小标注.png",
+          source_file: "小标注.zip",
+        },
+      ],
+    }));
+    writeFile(temp, "小标注.png");
+    writeFile(temp, "小标注.zip");
+
+    const result = scanDirectory(temp);
+
+    assert.equal(result.errors.length, 0);
+    assert.equal(result.packages[0].packageType, "信息条");
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
 });

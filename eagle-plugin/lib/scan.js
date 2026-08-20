@@ -4,6 +4,12 @@ const path = require("path");
 
 const PACKAGE_TYPES = ["信息条", "视频框", "背景", "分镜排版"];
 const PACKAGE_TYPE_SET = new Set(PACKAGE_TYPES);
+const PACKAGE_TYPE_KEYWORDS = new Map([
+  ["信息条", ["信息条", "标注", "人名条"]],
+  ["视频框", ["视频框"]],
+  ["背景", ["背景"]],
+  ["分镜排版", ["分镜排版"]],
+]);
 const MANIFEST_NAME = "manifest.json";
 const COLLECTED_ROOT = "Root_Collected_Projects";
 const PNG_EXT = ".png";
@@ -44,6 +50,18 @@ function normalizeText(value) {
     .toLowerCase()
     .replace(/[\s_\-—·・/\\]+/g, "")
     .trim();
+}
+
+function inferPackageType(value) {
+  const normalized = normalizeText(value);
+  if (!normalized) return null;
+  for (const type of PACKAGE_TYPES) {
+    const keywords = PACKAGE_TYPE_KEYWORDS.get(type) || [type];
+    if (keywords.some((keyword) => normalized.includes(normalizeText(keyword)))) {
+      return type;
+    }
+  }
+  return null;
 }
 
 function createBatchId() {
@@ -291,10 +309,7 @@ function metadataFromPair(png, zip, projectName) {
   const stem = zipStem || pngStem;
   const version = extractVersion(stem);
   const combinedStem = `${pngStem} ${zipStem}`;
-  const type =
-    PACKAGE_TYPES.find((candidate) =>
-      normalizeText(combinedStem).includes(normalizeText(candidate))
-    ) || null;
+  const type = inferPackageType(combinedStem);
   const nameStem = stemWithoutVersion(zipStem || pngStem);
   const tokens = nameTokens(nameStem).filter(
     (token) => !projectName || !normalizeText(projectName).includes(normalizeText(token))
@@ -381,7 +396,8 @@ function scanDirectory(sourceDir, options = {}) {
 
       const entryProject = String(entry.project_name || "").trim();
       const packageName = String(entry.package_name || "").trim();
-      const packageType = String(entry.package_type || "").trim();
+      const rawPackageType = String(entry.package_type || "").trim();
+      const packageType = inferPackageType(rawPackageType) || rawPackageType;
       const version = String(entry.version || "").trim() || null;
       const entryWarnings = [];
       if (!packageName) entryWarnings.push("缺少包装名称");
@@ -597,6 +613,7 @@ module.exports = {
   createBatchId,
   extractVersion,
   inferProjectName,
+  inferPackageType,
   metadataFromPair,
   normalizeDependencyList,
   normalizeText,

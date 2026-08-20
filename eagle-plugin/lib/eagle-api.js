@@ -1,6 +1,7 @@
 const path = require("path");
 const {
   COLLECTED_ROOT,
+  inferPackageType,
   metadataFromPair,
   normalizeDependencyList,
   normalizeText,
@@ -245,8 +246,7 @@ function pairMetadata(preview, source, options = {}, base = {}) {
   const context = normalizeText(
     `${itemContext(preview.item, options)} ${itemContext(source.item, options)}`
   );
-  const contextualType =
-    KNOWN_PACKAGE_TYPES.find((type) => context.includes(normalizeText(type))) || null;
+  const contextualType = inferPackageType(context);
   const packageType =
     override.packageType ||
     previewMeta["包装类型"] ||
