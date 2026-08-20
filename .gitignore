@@ -7,6 +7,10 @@
 
 # Dependencies and build outputs
 node_modules/
+.venv/
+.build-venv/
+__pycache__/
+*.py[cod]
 dist/
 build/
 coverage/

@@ -1,0 +1,55 @@
+$ErrorActionPreference = "Stop"
+
+$toolRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$venvRoot = Join-Path $toolRoot ".build-venv"
+$python = Join-Path $venvRoot "Scripts\python.exe"
+
+$pipPackage = Join-Path $venvRoot "Lib\site-packages\pip"
+if ((-not (Test-Path -LiteralPath $python)) -or (-not (Test-Path -LiteralPath $pipPackage))) {
+    python -m venv --clear $venvRoot
+    if ($LASTEXITCODE -ne 0) { throw "Failed to create the build virtual environment." }
+}
+
+& $python -m pip install --disable-pip-version-check -r (Join-Path $toolRoot "requirements.txt") pyinstaller
+if ($LASTEXITCODE -ne 0) { throw "Failed to install build dependencies." }
+
+$pythonRoot = (& $python -c "import sys; print(sys.base_prefix)").Trim()
+$tkinterModule = Join-Path $pythonRoot "Lib\tkinter"
+$tkinterPyd = Join-Path $pythonRoot "DLLs\_tkinter.pyd"
+$tclDll = Join-Path $pythonRoot "DLLs\tcl86t.dll"
+$tkDll = Join-Path $pythonRoot "DLLs\tk86t.dll"
+$tclData = Join-Path $pythonRoot "tcl\tcl8.6"
+$tkData = Join-Path $pythonRoot "tcl\tk8.6"
+
+$env:PYTHONUTF8 = "1"
+Push-Location $toolRoot
+try {
+    & $python -m PyInstaller `
+        --noconfirm `
+        --clean `
+        --onefile `
+        --windowed `
+        --name "XbotAepCollector" `
+        --hidden-import tkinter `
+        --hidden-import tkinter.ttk `
+        --hidden-import tkinter.filedialog `
+        --hidden-import tkinter.messagebox `
+        --add-data "${tkinterModule};tkinter" `
+        --add-data "${tclData};_tcl_data" `
+        --add-data "${tkData};_tk_data" `
+        --add-binary "${tkinterPyd};." `
+        --add-binary "${tclDll};." `
+        --add-binary "${tkDll};." `
+        --collect-all py_aep `
+        --collect-all fontTools `
+        --distpath (Join-Path $toolRoot "dist") `
+        --workpath (Join-Path $toolRoot "build") `
+        --specpath (Join-Path $toolRoot "build") `
+        (Join-Path $toolRoot "app.py")
+    if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed." }
+}
+finally {
+    Pop-Location
+}
+
+Write-Host "Build complete: $(Join-Path $toolRoot 'dist\XbotAepCollector.exe')"
