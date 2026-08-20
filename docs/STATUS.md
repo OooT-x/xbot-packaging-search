@@ -10,7 +10,7 @@
 | 核心文档版本 | v1.8 |
 | 软件版本 | `0.0.0` 开发版，尚未发布标签 |
 | 当前分支 | `codex/eagle-ingest-plugin` |
-| 远程仓库 | GitHub：`OooT-x/xbot-packaging-search`（私有），`codex/feishu-bot-m1` 已推送；`codex/eagle-ingest-plugin` 待推送 |
+| 远程仓库 | GitHub：`OooT-x/xbot-packaging-search`（私有），`codex/feishu-bot-m1` 与 `codex/eagle-ingest-plugin` 均已推送 |
 | Eagle 库 | `E:\Eagle资源库\包装.library` |
 | 应用源码 | 已迁入既有 X.bot 监听器，并接入包装检索模块 |
 | 最近交付 | 插件“导入/入库”两段式、正式目录归位、批次召回修复；自动化测试 56 项全部通过 |
