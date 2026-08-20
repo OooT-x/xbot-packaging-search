@@ -58,3 +58,7 @@
 ### Milestones
 
 - M1 文字检索闭环完成：测试群端到端实测通过（查询、候选、确认、直发与云盘链接），进入 M2 版本与模糊输入。
+
+### Project baseline
+
+- 配置 GitHub 私有远程仓库 `OooT-x/xbot-packaging-search`，推送 `codex/feishu-bot-m1` 并建立跟踪。
