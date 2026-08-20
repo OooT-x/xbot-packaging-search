@@ -20,6 +20,37 @@ function folderId(folder) {
   return folder.id || folder.folderId || null;
 }
 
+function flattenFolderTree(folders) {
+  const entriesById = new Map();
+  const inferredParents = new Map();
+
+  const visit = (entries, parentId = null) => {
+    if (!Array.isArray(entries)) return;
+    for (const entry of entries) {
+      const id = folderId(entry);
+      if (!id) continue;
+      if (typeof entry === "string") {
+        if (parentId && !inferredParents.has(id)) inferredParents.set(id, parentId);
+        continue;
+      }
+      if (!entriesById.has(id)) entriesById.set(id, entry);
+      if (parentId && !folderId(entry.parent)) inferredParents.set(id, parentId);
+      visit(entry.children, id);
+    }
+  };
+
+  visit(folders);
+  return [...entriesById.entries()].map(([id, folder]) => ({
+    ...folder,
+    id,
+    parent: folderId(folder.parent) || inferredParents.get(id) || null,
+  }));
+}
+
+function itemFolderIds(item) {
+  return (item?.folders || []).map(folderId).filter(Boolean);
+}
+
 function collectDescendantFolderIds(folders, rootFolderId) {
   const childrenByParent = new Map();
   for (const folder of folders || []) {
@@ -138,7 +169,7 @@ function collectBatchItems(items, batchFolderIds) {
     (Array.isArray(batchFolderIds) ? batchFolderIds : [batchFolderIds]).filter(Boolean)
   );
   const inFolder = items.filter((item) =>
-    (item.folders || []).some((id) => folderIds.has(id))
+    itemFolderIds(item).some((id) => folderIds.has(id))
   );
   const inFolderIds = new Set(inFolder.map((item) => item.id));
   const batchIds = new Set();
@@ -147,7 +178,7 @@ function collectBatchItems(items, batchFolderIds) {
     if (meta["batch_id"]) batchIds.add(meta["batch_id"]);
   }
   const related = items.filter((item) => {
-    if ((item.folders || []).some((id) => id)) return false;
+    if (itemFolderIds(item).length > 0) return false;
     if (inFolderIds.has(item.id)) return false;
     const meta = parseAnnotation(item.annotation);
     return (
@@ -175,7 +206,7 @@ function itemFileName(item) {
 }
 
 function itemContext(item, options = {}) {
-  const folderNames = (item.folders || [])
+  const folderNames = itemFolderIds(item)
     .map((id) => options.folderNamesById?.[id])
     .filter(Boolean);
   return [itemFileName(item), ...(item.tags || []), ...folderNames].join(" ");
@@ -183,7 +214,7 @@ function itemContext(item, options = {}) {
 
 function isManualCandidate(item, kind, options = {}) {
   if (!options.folderDepthById) return true;
-  const folders = item.folders || [];
+  const folders = itemFolderIds(item);
   for (const id of folders) {
     const depth = options.folderDepthById[id];
     const folderName = options.folderNamesById?.[id] || "";
@@ -279,7 +310,7 @@ function planFormalFile(items, options = {}) {
       ignored.push({ item, reason: "非 PNG/ZIP 素材，不参与正式入库" });
       continue;
     }
-    if ((item.folders || []).some((id) => formalFolderIds.has(id))) {
+    if (itemFolderIds(item).some((id) => formalFolderIds.has(id))) {
       alreadyFiled.push(item);
       continue;
     }
@@ -675,7 +706,7 @@ class EaglePluginAdapter {
 
   async getFolders() {
     const folders = await this.eagle.folder.getAll();
-    return Array.isArray(folders) ? folders : [];
+    return flattenFolderTree(Array.isArray(folders) ? folders : []);
   }
 
   async getFolder(id) {
@@ -754,6 +785,7 @@ module.exports = {
   collectDescendantFolderIds,
   ensureFolder,
   fileBatch,
+  flattenFolderTree,
   folderId,
   importBatch,
   inferProjectNameFromBatch,

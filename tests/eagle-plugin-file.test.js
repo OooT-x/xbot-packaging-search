@@ -7,6 +7,7 @@ const {
   collectBatchItems,
   collectDescendantFolderIds,
   fileBatch,
+  flattenFolderTree,
   parseAnnotation,
   planFormalFile,
   replaceIngestTag,
@@ -331,6 +332,76 @@ test("recursively resolves every folder below a manually imported batch", () => 
     "collected",
     "assets",
   ]);
+});
+
+test("flattens Eagle's real nested folder tree and preserves inferred parents", () => {
+  const folders = flattenFolderTree([
+    {
+      id: "ingest-root",
+      name: "00_待入库",
+      children: [
+        {
+          id: "batch-1",
+          name: "阿宝包装",
+          children: [
+            { id: "collected", name: "Root_Collected_Projects", children: [] },
+          ],
+        },
+      ],
+    },
+  ]);
+
+  assert.deepEqual(
+    folders.map((folder) => [folder.id, folder.parent]),
+    [
+      ["ingest-root", null],
+      ["batch-1", "ingest-root"],
+      ["collected", "batch-1"],
+    ]
+  );
+  assert.deepEqual(collectDescendantFolderIds(folders, "batch-1"), [
+    "batch-1",
+    "collected",
+  ]);
+});
+
+test("adapter flattens the nested tree returned by Eagle folder.getAll", async () => {
+  const adapter = new EaglePluginAdapter({
+    folder: {
+      async getAll() {
+        return [
+          {
+            id: "ingest-root",
+            name: "00_待入库",
+            children: [{ id: "batch-1", name: "阿宝包装", children: [] }],
+          },
+        ];
+      },
+    },
+  });
+
+  const folders = await adapter.getFolders();
+
+  assert.deepEqual(
+    folders.map((folder) => [folder.id, folder.parent]),
+    [
+      ["ingest-root", null],
+      ["batch-1", "ingest-root"],
+    ]
+  );
+});
+
+test("normalizes folder objects attached to Eagle items", () => {
+  const [preview, source] = makePair();
+  preview.folders = [{ id: "batch-1" }];
+  source.folders = [{ id: "batch-1" }];
+
+  const collected = collectBatchItems([preview, source], "batch-1");
+
+  assert.deepEqual(
+    collected.map((item) => item.id).sort(),
+    ["png-1", "zip-1"]
+  );
 });
 
 test("infers a formal pair from unannotated Eagle items", () => {

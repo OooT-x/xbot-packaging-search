@@ -280,7 +280,7 @@ function showFileInspection(inspection) {
       .filter(Boolean)
   );
   elements.fileInfo.textContent =
-    `递归读取 ${inspection.items.length} 个关联文件；` +
+    `递归读取 ${inspection.folderIds.length} 个目录、${inspection.items.length} 个关联文件；` +
     `${state.filePlan.readyPairs.length} 对可入库，` +
     `${state.filePlan.reviewPairs.length} 对待补充类型`;
   elements.confirmFileBtn.hidden = state.filePlan.readyPairs.length === 0;
