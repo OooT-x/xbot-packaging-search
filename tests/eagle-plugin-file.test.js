@@ -5,6 +5,7 @@ const {
   EaglePluginAdapter,
   buildAnnotation,
   collectBatchItems,
+  collectDescendantFolderIds,
   fileBatch,
   parseAnnotation,
   planFormalFile,
@@ -116,16 +117,15 @@ test("blocks an incomplete pair and keeps the file in the batch", async () => {
   );
 });
 
-test("blocks unknown package types", () => {
+test("requires correction for unknown package types", () => {
   const items = makePair({
     pkg: { packageType: "自定义版式" },
   });
   const plan = planFormalFile(items, { formalFolderIds: [] });
 
   assert.equal(plan.readyPairs.length, 0);
-  assert.ok(
-    plan.blocked.some((entry) => /未知包装类型：自定义版式/.test(entry.reason))
-  );
+  assert.equal(plan.reviewPairs.length, 1);
+  assert.match(plan.reviewPairs[0].reason, /未知包装类型.*请选择包装类型/);
 });
 
 test("skips items already in a formal folder", () => {
@@ -282,4 +282,186 @@ test("queries the selected folder directly and recalls its unfiled partner", asy
   );
   assert.ok(calls.some((options) => options.folders?.[0] === "batch-1"));
   assert.ok(calls.some((options) => options.isUnfiled === true));
+});
+
+test("queries every descendant folder in a manually imported batch", async () => {
+  const [preview, source] = makePair({
+    previewId: "png-root",
+    sourceId: "zip-child",
+  });
+  source.folders = ["collected-child"];
+  const queriedFolders = [];
+  const adapter = new EaglePluginAdapter({
+    item: {
+      async get(options) {
+        if (options.isUnfiled) return [];
+        const id = options.folders?.[0];
+        queriedFolders.push(id);
+        if (id === "batch-1") return [preview];
+        if (id === "collected-child") return [source];
+        return [];
+      },
+      async getAll() {
+        return [];
+      },
+    },
+  });
+
+  const items = await adapter.getItemsByFolder("batch-1", {
+    folderIds: ["batch-1", "collected-child"],
+  });
+
+  assert.deepEqual(
+    items.map((item) => item.id).sort(),
+    ["png-root", "zip-child"]
+  );
+  assert.deepEqual(queriedFolders.sort(), ["batch-1", "collected-child"]);
+});
+
+test("recursively resolves every folder below a manually imported batch", () => {
+  const folders = [
+    { id: "batch-1", name: "阿宝包装", parent: "ingest-root" },
+    { id: "collected", name: "Root_Collected_Projects", parent: "batch-1" },
+    { id: "assets", name: "素材", parent: "collected" },
+    { id: "outside", name: "其他", parent: null },
+  ];
+
+  assert.deepEqual(collectDescendantFolderIds(folders, "batch-1"), [
+    "batch-1",
+    "collected",
+    "assets",
+  ]);
+});
+
+test("infers a formal pair from unannotated Eagle items", () => {
+  const items = [
+    {
+      id: "manual-png",
+      name: "阿宝_背景_黑色纹理背景_v02",
+      ext: "png",
+      folders: ["batch-1"],
+      tags: [],
+      annotation: "",
+    },
+    {
+      id: "manual-zip",
+      name: "阿宝_黑色纹理背景_v02",
+      ext: "zip",
+      folders: ["batch-1"],
+      tags: [],
+      annotation: "",
+    },
+  ];
+
+  const plan = planFormalFile(items, {
+    projectName: "阿宝",
+    batchId: "batch-MANUAL123456",
+    batchFolderId: "batch-1",
+    folderDepthById: { "batch-1": 0 },
+  });
+
+  assert.equal(plan.readyPairs.length, 1);
+  assert.equal(plan.readyPairs[0].packageType, "背景");
+  assert.equal(plan.readyPairs[0].version, "v02");
+  assert.equal(plan.readyPairs[0].batchId, "batch-MANUAL123456");
+  assert.equal(plan.reviewPairs.length, 0);
+});
+
+test("offers a type correction for an unannotated pair instead of rejecting it", () => {
+  const items = [
+    {
+      id: "manual-png",
+      name: "小标注",
+      ext: "png",
+      folders: ["batch-1"],
+      tags: [],
+      annotation: "",
+    },
+    {
+      id: "manual-zip",
+      name: "小标注",
+      ext: "zip",
+      folders: ["batch-1"],
+      tags: [],
+      annotation: "",
+    },
+  ];
+  const options = {
+    projectName: "变速箱",
+    batchId: "batch-MANUAL123456",
+    batchFolderId: "batch-1",
+    folderDepthById: { "batch-1": 0 },
+  };
+
+  const initial = planFormalFile(items, options);
+  assert.equal(initial.readyPairs.length, 0);
+  assert.equal(initial.reviewPairs.length, 1);
+  assert.match(initial.reviewPairs[0].reason, /选择包装类型/);
+
+  const corrected = planFormalFile(items, {
+    ...options,
+    overrides: {
+      [initial.reviewPairs[0].packageId]: { packageType: "信息条" },
+    },
+  });
+  assert.equal(corrected.reviewPairs.length, 0);
+  assert.equal(corrected.readyPairs.length, 1);
+  assert.equal(corrected.readyPairs[0].packageType, "信息条");
+});
+
+test("ignores non PNG and ZIP files in a manually imported folder", () => {
+  const plan = planFormalFile(
+    [
+      {
+        id: "manual-video",
+        name: "业务画面",
+        ext: "mp4",
+        folders: ["batch-1"],
+        tags: [],
+        annotation: "",
+      },
+    ],
+    { projectName: "阿宝", batchFolderId: "batch-1" }
+  );
+
+  assert.equal(plan.blocked.length, 0);
+  assert.equal(plan.ignored.length, 1);
+});
+
+test("formal filing writes inferred metadata for manually imported items", async () => {
+  const items = [
+    {
+      id: "manual-png",
+      name: "阿宝_背景_黑色纹理背景_v02",
+      ext: "png",
+      folders: ["batch-1"],
+      tags: [],
+      annotation: "",
+    },
+    {
+      id: "manual-zip",
+      name: "阿宝_黑色纹理背景_v02",
+      ext: "zip",
+      folders: ["batch-1"],
+      tags: [],
+      annotation: "",
+    },
+  ];
+  const adapter = new FakeAdapter(items);
+  adapter.folders.push({ id: "batch-1", name: "阿宝包装", parent: "ingest-root" });
+
+  const result = await fileBatch(adapter, "batch-1", {
+    projectName: "阿宝",
+    batchId: "batch-MANUAL123456",
+  });
+
+  assert.equal(result.filed.length, 1);
+  const preview = adapter.items.find((item) => item.id === "manual-png");
+  const source = adapter.items.find((item) => item.id === "manual-zip");
+  assert.ok(preview.annotation.includes("项目：阿宝"));
+  assert.ok(preview.annotation.includes("包装类型：背景"));
+  assert.ok(preview.annotation.includes("配对 ZIP：manual-zip"));
+  assert.equal(preview.annotation, source.annotation);
+  assert.ok(preview.tags.includes("01_预览图"));
+  assert.ok(source.tags.includes("02_AE源文件"));
 });

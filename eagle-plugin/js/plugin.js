@@ -6,11 +6,11 @@ const {
   fileBatch,
   folderId,
   importBatch,
+  inspectBatch,
   parseAnnotation,
   planFormalFile,
   INGEST_ROOT_NAME,
-  FORMAL_PREVIEW_ROOT_NAME,
-  FORMAL_SOURCE_ROOT_NAME,
+  KNOWN_PACKAGE_TYPES,
 } = require("../lib/eagle-api.js");
 
 const state = {
@@ -18,6 +18,8 @@ const state = {
   scan: null,
   batchFolders: [],
   filePlan: null,
+  fileInspection: null,
+  fileOverrides: {},
 };
 
 const elements = {
@@ -118,13 +120,10 @@ function createAdapter() {
   return new EaglePluginAdapter(window.eagle);
 }
 
-function formalFolderId(folders, name) {
-  const match = folders.find((folder) => folder.name === name && !folderId(folder.parent));
-  return match ? folderId(match) : null;
-}
-
 async function refreshBatches() {
   state.filePlan = null;
+  state.fileInspection = null;
+  state.fileOverrides = {};
   elements.confirmFileBtn.hidden = true;
   elements.fileInfo.textContent = "";
   elements.filePlanRows.innerHTML = "";
@@ -194,6 +193,30 @@ function renderFilePlan(plan, remainingCount = 0) {
       </tr>
     `);
   }
+  for (const pair of plan.reviewPairs || []) {
+    const typeOptions = ["", ...KNOWN_PACKAGE_TYPES]
+      .map(
+        (type) =>
+          `<option value="${escapeHtml(type)}">${escapeHtml(type || "请选择类型")}</option>`
+      )
+      .join("");
+    rows.push(`
+      <tr>
+        <td>${escapeHtml(pair.packageName || pair.preview.name || pair.packageId)}</td>
+        <td>
+          <select class="file-type-select" data-package-id="${escapeHtml(pair.packageId)}">
+            ${typeOptions}
+          </select>
+        </td>
+        <td>${escapeHtml(pair.version || "v01")}</td>
+        <td>${escapeHtml(pair.batchId || "-")}</td>
+        <td>${escapeHtml(path.basename(pair.preview.name || ""))}</td>
+        <td>${escapeHtml(path.basename(pair.source.name || ""))}</td>
+        <td><span class="badge review">待补充</span></td>
+        <td>${escapeHtml(pair.reason)}</td>
+      </tr>
+    `);
+  }
   for (const entry of plan.blocked) {
     const meta = parseAnnotation(entry.item.annotation);
     rows.push(`
@@ -224,10 +247,52 @@ function renderFilePlan(plan, remainingCount = 0) {
       </tr>
     `);
   }
+  for (const entry of plan.ignored || []) {
+    rows.push(`
+      <tr>
+        <td>${escapeHtml(entry.item.name || entry.item.id)}</td>
+        <td>-</td>
+        <td>-</td>
+        <td>-</td>
+        <td>-</td>
+        <td>-</td>
+        <td><span class="badge ignore">忽略</span></td>
+        <td>${escapeHtml(entry.reason)}</td>
+      </tr>
+    `);
+  }
   if (rows.length === 0) {
     rows.push('<tr><td colspan="8" class="hint">没有可入库的记录</td></tr>');
   }
   elements.filePlanRows.innerHTML = rows.join("");
+}
+
+function showFileInspection(inspection) {
+  state.fileInspection = inspection;
+  state.filePlan = planFormalFile(inspection.items, {
+    ...inspection.planOptions,
+    overrides: state.fileOverrides,
+  });
+  renderFilePlan(state.filePlan, inspection.items.length);
+  const logicalBatchIds = new Set(
+    [...state.filePlan.readyPairs, ...(state.filePlan.reviewPairs || [])]
+      .map((pair) => pair.batchId)
+      .filter(Boolean)
+  );
+  elements.fileInfo.textContent =
+    `递归读取 ${inspection.items.length} 个关联文件；` +
+    `${state.filePlan.readyPairs.length} 对可入库，` +
+    `${state.filePlan.reviewPairs.length} 对待补充类型`;
+  elements.confirmFileBtn.hidden = state.filePlan.readyPairs.length === 0;
+  elements.confirmFileBtn.disabled = false;
+  if (logicalBatchIds.size > 1) {
+    log(`检测到 ${logicalBatchIds.size} 个 batch_id，已按批次分别配对并保留重复保护`);
+  }
+  log(
+    `入库预检：${state.filePlan.readyPairs.length} 对可入库，` +
+      `${state.filePlan.reviewPairs.length} 对待补充，` +
+      `${state.filePlan.blocked.length} 条冲突，${state.filePlan.ignored.length} 个文件忽略`
+  );
 }
 
 async function loadFilePlan() {
@@ -238,32 +303,10 @@ async function loadFilePlan() {
   }
   try {
     const adapter = createAdapter();
-    const [items, folders] = await Promise.all([
-      adapter.getItemsByFolder(batchId),
-      adapter.getFolders(),
-    ]);
-    const formalFolderIds = [
-      formalFolderId(folders, FORMAL_PREVIEW_ROOT_NAME),
-      formalFolderId(folders, FORMAL_SOURCE_ROOT_NAME),
-    ].filter(Boolean);
-    state.filePlan = planFormalFile(items, { formalFolderIds });
-    renderFilePlan(state.filePlan, items.length);
-    const batchIds = new Set(
-      items
-        .map((item) => parseAnnotation(item.annotation)["batch_id"])
-        .filter(Boolean)
-    );
-    elements.fileInfo.textContent =
-      `批次共 ${items.length} 个关联文件；识别到 ${batchIds.size} 个 batch_id`;
-    elements.confirmFileBtn.hidden = state.filePlan.readyPairs.length === 0;
-    elements.confirmFileBtn.disabled = false;
-    if (batchIds.size > 1) {
-      log(`检测到 ${batchIds.size} 个 batch_id，已按批次分别配对并保留重复保护`);
-    }
-    log(
-      `入库预检：${state.filePlan.readyPairs.length} 对可入库，` +
-        `${state.filePlan.blocked.length} 条阻止，${state.filePlan.alreadyFiled.length} 条已入库`
-    );
+    const inspection = await inspectBatch(adapter, batchId, {
+      overrides: state.fileOverrides,
+    });
+    showFileInspection(inspection);
   } catch (error) {
     log(`入库预检失败：${error.message}`);
   }
@@ -276,14 +319,19 @@ async function confirmFile() {
     const adapter = createAdapter();
     elements.confirmFileBtn.disabled = true;
     log("正在把待入库批次移入正式目录…");
-    const result = await fileBatch(adapter, batchId);
+    const result = await fileBatch(adapter, batchId, {
+      overrides: state.fileOverrides,
+    });
     const plan = {
       readyPairs: [],
       blocked: result.blocked,
+      reviewPairs: result.reviewPairs,
+      ignored: result.ignored,
       alreadyFiled: result.alreadyFiled,
       stats: {
         ready: result.filed.length,
-        blocked: result.blocked.length,
+        blocked: result.blocked.length + result.reviewPairs.length,
+        ignored: result.ignored.length,
         alreadyFiled: result.alreadyFiled.length,
         files: result.remaining.length + result.filed.length * 2,
       },
@@ -366,12 +414,30 @@ elements.reloadBatchBtn.addEventListener("click", () => {
   refreshBatches();
 });
 
+elements.batchSelect.addEventListener("change", () => {
+  state.fileOverrides = {};
+  loadFilePlan();
+});
+
 elements.fileBtn.addEventListener("click", () => {
   loadFilePlan();
 });
 
 elements.confirmFileBtn.addEventListener("click", () => {
   confirmFile();
+});
+
+elements.filePlanRows.addEventListener("change", (event) => {
+  const select = event.target.closest(".file-type-select");
+  if (!select || !state.fileInspection) return;
+  const packageId = select.dataset.packageId;
+  const packageType = select.value;
+  if (packageType) {
+    state.fileOverrides[packageId] = { packageType };
+  } else {
+    delete state.fileOverrides[packageId];
+  }
+  showFileInspection(state.fileInspection);
 });
 
 (function detectEagle() {

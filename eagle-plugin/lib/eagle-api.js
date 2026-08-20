@@ -1,4 +1,12 @@
 const path = require("path");
+const {
+  COLLECTED_ROOT,
+  metadataFromPair,
+  normalizeDependencyList,
+  normalizeText,
+  pairWithoutManifest,
+  stableId,
+} = require("./scan.js");
 
 const INGEST_ROOT_NAME = "00_待入库";
 const BATCH_SUFFIX = "包装";
@@ -10,6 +18,57 @@ function folderId(folder) {
   if (!folder) return null;
   if (typeof folder === "string") return folder;
   return folder.id || folder.folderId || null;
+}
+
+function collectDescendantFolderIds(folders, rootFolderId) {
+  const childrenByParent = new Map();
+  for (const folder of folders || []) {
+    const parentId = folderId(folder.parent);
+    if (!childrenByParent.has(parentId)) childrenByParent.set(parentId, []);
+    childrenByParent.get(parentId).push(folderId(folder));
+  }
+
+  const result = [];
+  const queue = [rootFolderId];
+  const visited = new Set();
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || visited.has(current)) continue;
+    visited.add(current);
+    result.push(current);
+    queue.push(...(childrenByParent.get(current) || []));
+  }
+  return result;
+}
+
+function buildFolderContext(folders, rootFolderId) {
+  const folderNamesById = {};
+  const folderDepthById = { [rootFolderId]: 0 };
+  const childrenByParent = new Map();
+  for (const folder of folders || []) {
+    const id = folderId(folder);
+    const parentId = folderId(folder.parent);
+    if (id) folderNamesById[id] = folder.name || "";
+    if (!childrenByParent.has(parentId)) childrenByParent.set(parentId, []);
+    childrenByParent.get(parentId).push(id);
+  }
+
+  const queue = [rootFolderId];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    const depth = folderDepthById[current] || 0;
+    for (const childId of childrenByParent.get(current) || []) {
+      if (!childId || Object.hasOwn(folderDepthById, childId)) continue;
+      folderDepthById[childId] = depth + 1;
+      queue.push(childId);
+    }
+  }
+  return { folderNamesById, folderDepthById };
+}
+
+function inferProjectNameFromBatch(folder) {
+  const name = String(folder?.name || "").trim();
+  return name.replace(/包装$/u, "") || name || "未命名项目";
 }
 
 function buildAnnotation(pkg, pair) {
@@ -74,8 +133,13 @@ function replaceIngestTag(tags, formalRootName) {
   return (tags || []).map((tag) => (tag === INGEST_ROOT_NAME ? formalRootName : tag));
 }
 
-function collectBatchItems(items, batchFolderId) {
-  const inFolder = items.filter((item) => (item.folders || []).includes(batchFolderId));
+function collectBatchItems(items, batchFolderIds) {
+  const folderIds = new Set(
+    (Array.isArray(batchFolderIds) ? batchFolderIds : [batchFolderIds]).filter(Boolean)
+  );
+  const inFolder = items.filter((item) =>
+    (item.folders || []).some((id) => folderIds.has(id))
+  );
   const inFolderIds = new Set(inFolder.map((item) => item.id));
   const batchIds = new Set();
   for (const item of inFolder) {
@@ -103,16 +167,116 @@ function uniqueItems(items) {
   return [...byId.values()];
 }
 
+function itemFileName(item) {
+  const name = String(item?.name || "");
+  const ext = String(item?.ext || "").replace(/^\./, "").toLowerCase();
+  if (!ext || name.toLowerCase().endsWith(`.${ext}`)) return name;
+  return `${name}.${ext}`;
+}
+
+function itemContext(item, options = {}) {
+  const folderNames = (item.folders || [])
+    .map((id) => options.folderNamesById?.[id])
+    .filter(Boolean);
+  return [itemFileName(item), ...(item.tags || []), ...folderNames].join(" ");
+}
+
+function isManualCandidate(item, kind, options = {}) {
+  if (!options.folderDepthById) return true;
+  const folders = item.folders || [];
+  for (const id of folders) {
+    const depth = options.folderDepthById[id];
+    const folderName = options.folderNamesById?.[id] || "";
+    if (depth === 0) return true;
+    if (depth === 1 && KNOWN_PACKAGE_TYPES.includes(folderName)) return true;
+    if (kind === "source" && depth === 1 && folderName === COLLECTED_ROOT) return true;
+  }
+  return false;
+}
+
+function pairMetadata(preview, source, options = {}, base = {}) {
+  const previewMeta = preview.meta || {};
+  const sourceMeta = source.meta || {};
+  const projectName =
+    previewMeta["项目"] || sourceMeta["项目"] || options.projectName || "未命名项目";
+  const previewFile = { path: preview.item.id, name: itemFileName(preview.item) };
+  const sourceFile = { path: source.item.id, name: itemFileName(source.item) };
+  const inferred = metadataFromPair(previewFile, sourceFile, projectName);
+  const packageId =
+    base.packageId ||
+    previewMeta["package_id"] ||
+    sourceMeta["package_id"] ||
+    inferred.packageId;
+  const override = options.overrides?.[packageId] || {};
+  const context = normalizeText(
+    `${itemContext(preview.item, options)} ${itemContext(source.item, options)}`
+  );
+  const contextualType =
+    KNOWN_PACKAGE_TYPES.find((type) => context.includes(normalizeText(type))) || null;
+  const packageType =
+    override.packageType ||
+    previewMeta["包装类型"] ||
+    sourceMeta["包装类型"] ||
+    inferred.packageType ||
+    contextualType ||
+    null;
+  const packageName =
+    previewMeta["包装名称"] ||
+    sourceMeta["包装名称"] ||
+    inferred.packageName ||
+    path.basename(sourceFile.name, path.extname(sourceFile.name));
+  const batchId =
+    base.batchId ||
+    previewMeta["batch_id"] ||
+    sourceMeta["batch_id"] ||
+    options.batchId ||
+    stableId("batch", options.batchFolderId || projectName);
+  const version =
+    override.version ||
+    previewMeta["版本"] ||
+    sourceMeta["版本"] ||
+    inferred.version ||
+    "v01";
+  const aeCompName =
+    override.aeCompName ||
+    previewMeta["AE 合成"] ||
+    sourceMeta["AE 合成"] ||
+    packageName;
+  const dependencyStatus = /警告/.test(
+    `${previewMeta["状态"] || ""} ${sourceMeta["状态"] || ""}`
+  )
+    ? "warning"
+    : "complete";
+
+  return {
+    packageId,
+    projectName,
+    sourceProjectName:
+      previewMeta["原 AE 项目"] || sourceMeta["原 AE 项目"] || projectName,
+    packageName,
+    packageType,
+    version,
+    aeCompName,
+    batchId,
+    dependencyStatus,
+    fonts: normalizeDependencyList(previewMeta["字体"] || sourceMeta["字体"]),
+    effects: normalizeDependencyList(previewMeta["效果"] || sourceMeta["效果"]),
+  };
+}
+
 function planFormalFile(items, options = {}) {
   const formalFolderIds = new Set(options.formalFolderIds || []);
   const blocked = [];
+  const reviewPairs = [];
+  const ignored = [];
   const alreadyFiled = [];
   const pending = new Map();
+  const rawEntries = [];
 
   for (const item of items) {
     const kind = itemKind(item);
     if (!kind) {
-      blocked.push({ item, reason: "非 PNG/ZIP 素材，不能入库" });
+      ignored.push({ item, reason: "非 PNG/ZIP 素材，不参与正式入库" });
       continue;
     }
     if ((item.folders || []).some((id) => formalFolderIds.has(id))) {
@@ -121,22 +285,17 @@ function planFormalFile(items, options = {}) {
     }
 
     const meta = parseAnnotation(item.annotation);
-    const packageType = meta["包装类型"];
-    if (!packageType) {
-      blocked.push({ item, reason: "缺少包装类型，无法确定正式目录" });
-      continue;
-    }
-    if (!KNOWN_PACKAGE_TYPES.includes(packageType)) {
-      blocked.push({ item, reason: `未知包装类型：${packageType}` });
-      continue;
-    }
     const packageId = meta["package_id"];
     if (!packageId) {
-      blocked.push({ item, reason: "缺少 package_id，无法配对" });
+      if (isManualCandidate(item, kind, options)) {
+        rawEntries.push({ item, meta, kind });
+      } else {
+        ignored.push({ item, reason: "深层目录中的未登记 PNG/ZIP 视为依赖文件" });
+      }
       continue;
     }
 
-    const batchId = meta["batch_id"] || "";
+    const batchId = meta["batch_id"] || options.batchId || "";
     const key = JSON.stringify([batchId, String(packageId)]);
     if (!pending.has(key)) {
       pending.set(key, {
@@ -149,12 +308,54 @@ function planFormalFile(items, options = {}) {
     pending.get(key)[kind].push({
       item,
       meta,
-      packageType,
       pairId: kind === "preview" ? meta["配对 ZIP"] : meta["配对 PNG"],
     });
   }
 
   const pairCandidates = [];
+  const addPairCandidate = (preview, source, base = {}) => {
+    if (preview.pairId && preview.pairId !== source.item.id) {
+      blocked.push({
+        item: preview.item,
+        reason: `配对 ZIP 不一致（记录 ${preview.pairId}，实际 ${source.item.id}）`,
+      });
+      blocked.push({
+        item: source.item,
+        reason: `配对 PNG 不一致（记录 ${source.pairId}，实际 ${preview.item.id}）`,
+      });
+      return;
+    }
+    if (source.pairId && source.pairId !== preview.item.id) {
+      blocked.push({
+        item: preview.item,
+        reason: `配对 PNG 不一致（记录 ${source.pairId}，实际 ${preview.item.id}）`,
+      });
+      blocked.push({
+        item: source.item,
+        reason: `配对 ZIP 不一致（记录 ${preview.pairId}，实际 ${source.item.id}）`,
+      });
+      return;
+    }
+
+    const metadata = pairMetadata(preview, source, options, base);
+    const pair = {
+      ...metadata,
+      metadata,
+      preview: preview.item,
+      source: source.item,
+    };
+    if (!KNOWN_PACKAGE_TYPES.includes(metadata.packageType)) {
+      reviewPairs.push({
+        ...pair,
+        reason: metadata.packageType
+          ? `未知包装类型“${metadata.packageType}”，请选择包装类型`
+          : "请选择包装类型",
+      });
+      return;
+    }
+    pairCandidates.push(pair);
+  };
+
   for (const group of pending.values()) {
     if (group.preview.length > 1 || group.source.length > 1) {
       const batchLabel = group.batchId || "未记录 batch_id";
@@ -177,36 +378,38 @@ function planFormalFile(items, options = {}) {
       blocked.push({ item: preview.item, reason: "缺少配对 ZIP" });
       continue;
     }
-    if (preview.pairId && preview.pairId !== source.item.id) {
-      blocked.push({
-        item: preview.item,
-        reason: `配对 ZIP 不一致（记录 ${preview.pairId}，实际 ${source.item.id}）`,
-      });
-      blocked.push({
-        item: source.item,
-        reason: `配对 PNG 不一致（记录 ${source.pairId}，实际 ${preview.item.id}）`,
-      });
-      continue;
-    }
-    if (source.pairId && source.pairId !== preview.item.id) {
-      blocked.push({
-        item: preview.item,
-        reason: `配对 PNG 不一致（记录 ${source.pairId}，实际 ${preview.item.id}）`,
-      });
-      blocked.push({
-        item: source.item,
-        reason: `配对 ZIP 不一致（记录 ${preview.pairId}，实际 ${source.item.id}）`,
-      });
-      continue;
-    }
-    pairCandidates.push({
+    addPairCandidate(preview, source, {
       packageId: group.packageId,
-      packageType: preview.packageType,
-      version: preview.meta["版本"] || "v01",
       batchId: group.batchId || null,
-      preview: preview.item,
-      source: source.item,
     });
+  }
+
+  if (rawEntries.length > 0) {
+    const itemById = new Map(rawEntries.map((entry) => [entry.item.id, entry]));
+    const files = rawEntries.map((entry) => ({
+      path: entry.item.id,
+      name: itemFileName(entry.item),
+      kind: entry.kind === "preview" ? "png" : "zip",
+      status: "candidate",
+    }));
+    for (const pair of pairWithoutManifest(files)) {
+      const preview = pair.png ? itemById.get(pair.png.path) : null;
+      const source = pair.zip ? itemById.get(pair.zip.path) : null;
+      if (preview && source) {
+        addPairCandidate(preview, source);
+      } else {
+        const entry = preview || source;
+        blocked.push({
+          item: entry.item,
+          reason:
+            pair.conflict === "multiple"
+              ? "无法唯一配对，多张预览对应同一源文件"
+              : preview
+                ? "缺少配对 ZIP"
+                : "缺少配对 PNG",
+        });
+      }
+    }
   }
 
   const candidatesByPackage = new Map();
@@ -237,10 +440,13 @@ function planFormalFile(items, options = {}) {
   return {
     readyPairs,
     blocked,
+    reviewPairs,
+    ignored,
     alreadyFiled,
     stats: {
       ready: readyPairs.length,
-      blocked: blocked.length,
+      blocked: blocked.length + reviewPairs.length,
+      ignored: ignored.length,
       alreadyFiled: alreadyFiled.length,
       files: items.length,
     },
@@ -338,17 +544,64 @@ async function importBatch(adapter, scanResult, options = {}) {
   };
 }
 
-async function fileBatch(adapter, batchFolderId, options = {}) {
-  const [items, folders] = await Promise.all([
-    adapter.getItemsByFolder(batchFolderId),
-    adapter.getFolders(),
-  ]);
+async function inspectBatch(adapter, batchFolderId, options = {}) {
+  const folders = await adapter.getFolders();
+  const batchFolder = folders.find((folder) => folderId(folder) === batchFolderId) || null;
+  const folderIds = collectDescendantFolderIds(folders, batchFolderId);
+  const items = await adapter.getItemsByFolder(batchFolderId, { folderIds });
   const formalFolderIds = folders
     .filter((folder) =>
       [FORMAL_PREVIEW_ROOT_NAME, FORMAL_SOURCE_ROOT_NAME].includes(folder.name)
     )
     .map(folderId);
-  const plan = planFormalFile(items, { formalFolderIds });
+  const folderContext = buildFolderContext(folders, batchFolderId);
+  const folderMeta = parseAnnotation(batchFolder?.description);
+  const planOptions = {
+    formalFolderIds,
+    batchFolderId,
+    batchId:
+      options.batchId ||
+      folderMeta["batch_id"] ||
+      stableId("batch", batchFolderId || options.projectName || "manual"),
+    projectName: options.projectName || inferProjectNameFromBatch(batchFolder),
+    overrides: options.overrides || {},
+    ...folderContext,
+  };
+  return {
+    batchFolder,
+    folderIds,
+    folders,
+    items,
+    planOptions,
+    plan: planFormalFile(items, planOptions),
+  };
+}
+
+function mergeFormalTags(existingTags, metadata, formalRootName) {
+  const combined = [...(existingTags || []), ...buildTags(metadata)];
+  return [...new Set(replaceIngestTag(combined, formalRootName))];
+}
+
+function canonicalPreviewName(metadata) {
+  return [
+    metadata.projectName,
+    metadata.packageType,
+    metadata.packageName,
+    metadata.version || "v01",
+  ]
+    .filter(Boolean)
+    .join("_");
+}
+
+function canonicalSourceName(metadata) {
+  return [metadata.projectName, metadata.packageName, metadata.version || "v01"]
+    .filter(Boolean)
+    .join("_");
+}
+
+async function fileBatch(adapter, batchFolderId, options = {}) {
+  const inspection = await inspectBatch(adapter, batchFolderId, options);
+  const { folderIds, plan } = inspection;
 
   const filed = [];
   const failed = [];
@@ -364,10 +617,27 @@ async function fileBatch(adapter, batchFolderId, options = {}) {
         failed.push({ pair, reason: "素材读取失败，无法移动" });
         continue;
       }
+      const metadata = pair.metadata || pair;
+      const annotation = buildAnnotation(metadata, {
+        previewItemId: previewItem.id,
+        sourceItemId: sourceItem.id,
+      });
+      previewItem.name = canonicalPreviewName(metadata);
+      sourceItem.name = canonicalSourceName(metadata);
+      previewItem.annotation = annotation;
+      sourceItem.annotation = annotation;
       previewItem.folders = [folderId(previewFolder)];
       sourceItem.folders = [folderId(sourceFolder)];
-      previewItem.tags = replaceIngestTag(previewItem.tags, FORMAL_PREVIEW_ROOT_NAME);
-      sourceItem.tags = replaceIngestTag(sourceItem.tags, FORMAL_SOURCE_ROOT_NAME);
+      previewItem.tags = mergeFormalTags(
+        previewItem.tags,
+        metadata,
+        FORMAL_PREVIEW_ROOT_NAME
+      );
+      sourceItem.tags = mergeFormalTags(
+        sourceItem.tags,
+        metadata,
+        FORMAL_SOURCE_ROOT_NAME
+      );
       await adapter.saveItem(previewItem);
       await adapter.saveItem(sourceItem);
       filed.push({
@@ -384,11 +654,13 @@ async function fileBatch(adapter, batchFolderId, options = {}) {
     }
   }
 
-  const remaining = await adapter.getItemsByFolder(batchFolderId);
+  const remaining = await adapter.getItemsByFolder(batchFolderId, { folderIds });
   return {
     filed,
     failed,
     blocked: plan.blocked,
+    reviewPairs: plan.reviewPairs,
+    ignored: plan.ignored,
     alreadyFiled: plan.alreadyFiled,
     remaining,
     batchEmpty: remaining.length === 0,
@@ -426,14 +698,21 @@ class EaglePluginAdapter {
     return this.eagle.item.getById(id);
   }
 
-  async getItemsByFolder(folderId) {
+  async getItemsByFolder(folderId, options = {}) {
     const fields = ["id", "name", "ext", "tags", "annotation", "folders"];
+    const folderIds = [
+      ...new Set((options.folderIds || [folderId]).filter(Boolean)),
+    ];
     let directItems = [];
     let unfiledItems = [];
     let directError = null;
     try {
-      const result = await this.eagle.item.get({ folders: [folderId], fields });
-      directItems = Array.isArray(result) ? result : [];
+      const results = await Promise.all(
+        folderIds.map((id) => this.eagle.item.get({ folders: [id], fields }))
+      );
+      directItems = uniqueItems(
+        results.flatMap((result) => (Array.isArray(result) ? result : []))
+      );
     } catch (error) {
       directError = error;
     }
@@ -454,7 +733,7 @@ class EaglePluginAdapter {
         if (directError) throw directError;
       }
     }
-    return collectBatchItems(items, folderId);
+    return collectBatchItems(items, folderIds);
   }
 
   async saveItem(item) {
@@ -472,10 +751,13 @@ module.exports = {
   buildAnnotation,
   buildTags,
   collectBatchItems,
+  collectDescendantFolderIds,
   ensureFolder,
   fileBatch,
   folderId,
   importBatch,
+  inferProjectNameFromBatch,
+  inspectBatch,
   itemKind,
   itemName,
   parseAnnotation,
