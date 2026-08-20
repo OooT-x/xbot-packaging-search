@@ -1,9 +1,12 @@
 import importlib.util
+import json
 import sys
 import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+
+from PIL import Image
 
 
 MODULE_PATH = (
@@ -16,6 +19,11 @@ SPEC = importlib.util.spec_from_file_location("xbot_aep_collector_core", MODULE_
 CORE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = CORE
 SPEC.loader.exec_module(CORE)
+
+PACKAGE_ROOT = Path(__file__).resolve().parents[1] / "aep-collector"
+if str(PACKAGE_ROOT) not in sys.path:
+    sys.path.insert(0, str(PACKAGE_ROOT))
+from xbot_aep_collector import preview as PREVIEW
 
 
 class SafeFilenameTests(unittest.TestCase):
@@ -38,6 +46,7 @@ class CompositionInfoTests(unittest.TestCase):
             height=1080,
             duration=5,
             frame_rate=25,
+            display_start_frame=0,
             parent_ids=(1,),
             parent_names=("主合成",),
             child_ids=(),
@@ -53,6 +62,7 @@ class CompositionInfoTests(unittest.TestCase):
             height=1080,
             duration=5,
             frame_rate=25,
+            display_start_frame=0,
             parent_ids=(),
             parent_names=(),
             child_ids=(),
@@ -102,6 +112,82 @@ class CollectionArchiveTests(unittest.TestCase):
                         "项目_合成_收集/素材/Images/bg.png",
                     },
                 )
+
+    def test_attaches_preview_metadata_and_refreshes_archive(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            collection = root / "项目_合成_收集"
+            collection.mkdir()
+            output_project = collection / "项目_合成.aep"
+            manifest = collection / "manifest.json"
+            output_project.write_bytes(b"aep")
+            manifest.write_text('{"source_file":"项目_合成_收集.zip"}', encoding="utf-8")
+            zip_file = root / "项目_合成_收集.zip"
+            CORE._write_collection_archive(collection, zip_file, output_project, manifest)
+            preview_file = root / "项目_合成_收集.png"
+            preview_file.write_bytes(b"png")
+            result = CORE.CollectionResult(
+                source_project="source.aep",
+                composition_id=1,
+                composition_name="合成",
+                output_directory=str(collection),
+                output_project=str(output_project),
+                manifest_file=str(manifest),
+                zip_file=str(zip_file),
+                zip_bytes=zip_file.stat().st_size,
+                composition_count=1,
+                copied_file_count=0,
+                copied_bytes=0,
+                missing_files=(),
+                warnings=(),
+                preview_file=None,
+                preview_time=None,
+                preview_frame=None,
+                preview_error=None,
+            )
+
+            updated = CORE.attach_collection_preview(result, preview_file, 2.0, 50)
+
+            self.assertEqual(updated.preview_file, str(preview_file))
+            self.assertEqual(updated.preview_time, 2.0)
+            payload = json.loads(manifest.read_text(encoding="utf-8"))
+            self.assertEqual(payload["preview_file"], preview_file.name)
+            self.assertEqual(payload["preview"]["frame"], 50)
+            with zipfile.ZipFile(zip_file, "r") as archive:
+                archived_manifest = json.loads(
+                    archive.read("项目_合成_收集/manifest.json").decode("utf-8")
+                )
+            self.assertEqual(archived_manifest["preview_file"], preview_file.name)
+
+
+class PreviewFrameTests(unittest.TestCase):
+    def test_defaults_to_second_two(self):
+        selection = PREVIEW.select_preview_frame(5, 25)
+        self.assertEqual(selection.time, 2.0)
+        self.assertEqual(selection.frame_index, 50)
+
+    def test_short_composition_uses_last_valid_frame(self):
+        selection = PREVIEW.select_preview_frame(1, 25)
+        self.assertEqual(selection.frame_index, 24)
+        self.assertAlmostEqual(selection.time, 0.96)
+
+    def test_preserves_ae_display_start_frame(self):
+        selection = PREVIEW.select_preview_frame(5, 25, 2, display_start_frame=100)
+        self.assertEqual(selection.frame_number, 150)
+
+    def test_tiff_conversion_preserves_alpha(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tiff = Path(temp_dir) / "preview.tif"
+            Image.new("RGBA", (2, 1), (120, 60, 30, 128)).save(
+                tiff,
+                format="TIFF",
+                compression="raw",
+            )
+
+            converted = PREVIEW._open_rendered_tiff(tiff)
+
+            self.assertEqual(converted.mode, "RGBA")
+            self.assertEqual(converted.getchannel("A").getextrema(), (128, 128))
 
 
 if __name__ == "__main__":

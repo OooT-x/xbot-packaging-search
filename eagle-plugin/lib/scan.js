@@ -565,7 +565,33 @@ function scanDirectory(sourceDir, options = {}) {
     const pngCandidates = files.filter(
       (file) => file.kind === "png" && file.status === "candidate"
     );
-    const previewMatches = matchCollectionPreviews(collectionEntries, pngCandidates);
+    const previewMatches = new Map();
+    const explicitlyUsedPngs = new Set();
+    collectionEntries.forEach((entry, entryIndex) => {
+      const previewName = String(entry.preview_file || "").trim();
+      if (!previewName) return;
+      const previewPath = resolveManifestFile(root, previewName);
+      const previewFile = previewPath
+        ? pngCandidates.find((candidate) => path.resolve(candidate.path) === path.resolve(previewPath))
+        : null;
+      if (!previewFile || explicitlyUsedPngs.has(path.resolve(previewFile.path))) return;
+      explicitlyUsedPngs.add(path.resolve(previewFile.path));
+      previewMatches.set(entryIndex, previewFile);
+    });
+    const fallbackEntries = collectionEntries
+      .map((entry, entryIndex) => ({ entry, entryIndex }))
+      .filter(({ entryIndex }) => !previewMatches.has(entryIndex));
+    const fallbackCandidates = pngCandidates.filter(
+      (candidate) => !explicitlyUsedPngs.has(path.resolve(candidate.path))
+    );
+    const fallbackMatches = matchCollectionPreviews(
+      fallbackEntries.map(({ entry }) => entry),
+      fallbackCandidates
+    );
+    fallbackEntries.forEach(({ entryIndex }, fallbackIndex) => {
+      const previewFile = fallbackMatches.get(fallbackIndex);
+      if (previewFile) previewMatches.set(entryIndex, previewFile);
+    });
     const usedSourcePaths = new Set();
 
     collectionEntries.forEach((entry, entryIndex) => {
@@ -597,14 +623,19 @@ function scanDirectory(sourceDir, options = {}) {
         usedSourcePaths.add(path.resolve(sourcePath));
       }
       if (!previewFile) {
-        const possiblePreviews = pngCandidates.filter(
-          (png) => collectionPreviewScore(compName, png.name) > 0
-        );
-        entryErrors.push(
-          possiblePreviews.length > 0
-            ? `预览图无法唯一配对：${possiblePreviews.map((png) => png.name).join("、")}`
-            : `缺少与合成“${compName || packageName}”匹配的根目录 PNG`
-        );
+        const explicitPreviewName = String(entry.preview_file || "").trim();
+        if (explicitPreviewName) {
+          entryErrors.push(`收集记录引用的根目录 PNG 不存在或被重复引用：${explicitPreviewName}`);
+        } else {
+          const possiblePreviews = pngCandidates.filter(
+            (png) => collectionPreviewScore(compName, png.name) > 0
+          );
+          entryErrors.push(
+            possiblePreviews.length > 0
+              ? `预览图无法唯一配对：${possiblePreviews.map((png) => png.name).join("、")}`
+              : `缺少与合成“${compName || packageName}”匹配的根目录 PNG`
+          );
+        }
       }
 
       const dependencyStatus = String(entry.dependency_status || "").trim();
@@ -727,7 +758,7 @@ function scanDirectory(sourceDir, options = {}) {
       record.note = "存在 manifest 时仅导入 manifest 明确引用的文件";
       return record;
     }
-    if (file.kind === "png" || file.kind === "zip") {
+    if (file.status === "candidate" && (file.kind === "png" || file.kind === "zip")) {
       const packageEntry = packages.find((pkg) => {
         const previewMatch = pkg.preview && path.resolve(pkg.preview.path) === path.resolve(file.path);
         const sourceMatch = pkg.source && path.resolve(pkg.source.path) === path.resolve(file.path);

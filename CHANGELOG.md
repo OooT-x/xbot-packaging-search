@@ -6,6 +6,11 @@
 
 ### Added
 
+- 外部 AEP 收集器新增可调代表帧预览窗口：默认第 2 秒，短合成取最后有效帧；支持秒数输入、时间轴拖动和前后逐帧重新渲染，透明画面使用棋盘格预览。
+- 新增 `aerender` 后台单帧渲染、AE 自带 TIFF+Alpha 输出、本地 PNG 转换和预乘 Alpha 还原；收集 manifest 记录 `preview_file`、时间和 AE 帧号，ZIP 内 manifest 同步刷新。
+- Eagle 扫描器支持收集 manifest 显式预览引用，仍兼容旧版受控名称匹配；子目录依赖 PNG 继续忽略，不误报冲突。
+- 真实“阿宝包装.aep”验证了背景 RGB PNG、人名条 RGBA PNG（Alpha 0–255）和完整“收集 → 预览 → manifest/ZIP → Eagle 扫描”临时闭环；全项目 93 项自动化测试全部通过。
+- 重新构建预览版 `XbotAepCollector.exe`（29,107,983 字节，SHA-256 `895B842F0DD2E9A4E763E3E663341A1CD66D4CD4849CC1DEEB5FA07EC0AE3A15`），6 秒隐藏启动存活检查通过。
 - 新增双 manifest 协议：AEP 收集器输出 `xbot-collection`，AE 正式交付清单输出 `xbot-eagle-ingest`；Eagle 插件兼容没有类型字段的旧版收集记录和正式清单。
 - Eagle 入库扫描器可从收集记录读取合成名称、逐合成 ZIP 和依赖状态，并按唯一优先级配对根目录 PNG；新增角括号/尖括号及横竖屏视频框受控别名，歧义继续阻止而不猜测。
 - 使用真实“支付宝阿宝”6 张 PNG、6 个 ZIP 和 6 个旧版收集 manifest 验证：形成 6 条可导入记录、12 个将导入文件、6 个仅校验 manifest、0 冲突。新增 1 项回归测试，全项目 87 项自动化测试全部通过。
@@ -31,6 +36,8 @@
 
 ### Changed
 
+- Eagle 入库助手升级到 `1.1.5`；优先按 `xbot-collection.preview_file` 配对收集器自动生成的 PNG，并保持子目录依赖 PNG 为忽略状态。
+- 核心文档升级为 v1.16：新增 D-029，固化“默认第 2 秒 + 预览窗口调帧 + 后台 AE 真实渲染 + 显式 PNG/ZIP 配对”。
 - Eagle 入库助手升级到 `1.1.4`；只有 `xbot-eagle-ingest` 或兼容的正式清单会触发“存在 manifest 时仅导入明确引用文件”，`xbot-collection` 只作为配对和依赖校验来源。
 - 核心文档升级为 v1.15：新增 D-028，明确收集记录与正式入库 manifest 的字段边界、兼容规则和安全配对行为。
 - 核心文档升级为 v1.14：逐合成 ZIP 成为外部收集工具的强制产物，新增 D-027，明确 ZIP 结构、manifest 文件名记录、完整性校验、失败清理和 Eagle 候选边界。

@@ -6,7 +6,7 @@ import re
 import shutil
 import uuid
 import zipfile
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -78,6 +78,7 @@ class CompositionInfo:
     height: int
     duration: float
     frame_rate: float
+    display_start_frame: int
     parent_ids: tuple[int, ...]
     parent_names: tuple[str, ...]
     child_ids: tuple[int, ...]
@@ -125,6 +126,10 @@ class CollectionResult:
     copied_bytes: int
     missing_files: tuple[str, ...]
     warnings: tuple[str, ...]
+    preview_file: str | None
+    preview_time: float | None
+    preview_frame: int | None
+    preview_error: str | None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -188,6 +193,7 @@ def inspect_project(aep_path: str | Path) -> ProjectInfo:
                 height=int(comp.height),
                 duration=float(comp.duration),
                 frame_rate=float(comp.frame_rate),
+                display_start_frame=int(getattr(comp, "display_start_frame", 0)),
                 parent_ids=tuple(int(item.id) for item in parents),
                 parent_names=tuple(str(item.name) for item in parents),
                 child_ids=tuple(int(item.id) for item in children),
@@ -513,6 +519,10 @@ def collect_composition(
             copied_bytes=copied_bytes,
             missing_files=tuple(missing),
             warnings=tuple(warnings),
+            preview_file=None,
+            preview_time=None,
+            preview_frame=None,
+            preview_error=None,
         )
     except Exception:
         shutil.rmtree(final_directory, ignore_errors=True)
@@ -526,3 +536,51 @@ def collect_many(
     output_root: str | Path,
 ) -> list[CollectionResult]:
     return [collect_composition(aep_path, comp_id, output_root) for comp_id in composition_ids]
+
+
+def attach_collection_preview(
+    result: CollectionResult,
+    preview_file: str | Path,
+    preview_time: float,
+    preview_frame: int,
+) -> CollectionResult:
+    preview_path = Path(preview_file).expanduser().resolve()
+    manifest_path = Path(result.manifest_file).resolve()
+    collection_directory = Path(result.output_directory).resolve()
+    output_project = Path(result.output_project).resolve()
+    zip_file = Path(result.zip_file).resolve()
+    if not preview_path.is_file() or preview_path.suffix.lower() != ".png":
+        raise CollectorError(f"预览 PNG 不存在：{preview_path}")
+    if preview_path.parent != zip_file.parent:
+        raise CollectorError("预览 PNG 必须与对应 ZIP 位于同一目录。")
+
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise CollectorError(f"无法读取收集 manifest：{exc}") from exc
+    manifest["preview_file"] = preview_path.name
+    manifest["preview"] = {
+        "time_seconds": float(preview_time),
+        "frame": int(preview_frame),
+        "renderer": "aerender",
+    }
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    zip_bytes = _write_collection_archive(
+        collection_directory,
+        zip_file,
+        output_project,
+        manifest_path,
+    )
+    return replace(
+        result,
+        zip_bytes=zip_bytes,
+        preview_file=str(preview_path),
+        preview_time=float(preview_time),
+        preview_frame=int(preview_frame),
+        preview_error=None,
+    )
+
+
+def mark_collection_preview_error(result: CollectionResult, error: Exception | str) -> CollectionResult:
+    message = str(error).strip() or "未知预览错误"
+    return replace(result, preview_error=message)

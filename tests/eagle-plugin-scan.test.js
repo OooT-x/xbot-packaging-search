@@ -196,6 +196,34 @@ test("pairs offline collector manifests with root previews without treating them
   }
 });
 
+test("uses an explicit collection preview even when its filename does not resemble the comp", () => {
+  const temp = makeTempDir("collector-explicit-preview");
+  try {
+    writeFile(temp, "chosen-cover.png", "png");
+    writeFile(temp, "source.zip", "zip");
+    writeFile(temp, "collection/素材/Images/dependency.png", "dependency");
+    writeFile(temp, "collection/manifest.json", JSON.stringify({
+      manifest_version: "1.0",
+      manifest_type: "xbot-collection",
+      composition: { id: 42, name: "标注-方括号" },
+      source_file: "source.zip",
+      preview_file: "chosen-cover.png",
+      dependency_status: "完整",
+    }));
+
+    const result = scanDirectory(temp, { projectName: "阿宝" });
+
+    assert.equal(result.packages.length, 1);
+    assert.equal(result.packages[0].state, "ready");
+    assert.equal(path.basename(result.packages[0].preview.path), "chosen-cover.png");
+    assert.equal(result.stats.toImport, 2);
+    assert.equal(result.stats.conflict, 0);
+    assert.ok(result.files.some((file) => file.relative.endsWith("dependency.png") && file.status === "ignore"));
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
 test("blocks manifest entries with missing or duplicated references", () => {
   const temp = makeTempDir("manifest-bad");
   try {
