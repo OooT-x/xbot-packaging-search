@@ -1,10 +1,14 @@
 import importlib.util
 import json
+import os
 import sys
 import tempfile
+import threading
+import time
 import unittest
 import zipfile
 from pathlib import Path
+from unittest import mock
 
 from PIL import Image
 
@@ -24,6 +28,7 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1] / "aep-collector"
 if str(PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_ROOT))
 from xbot_aep_collector import preview as PREVIEW
+from xbot_aep_collector import bridge as BRIDGE
 
 
 class SafeFilenameTests(unittest.TestCase):
@@ -69,6 +74,100 @@ class CompositionInfoTests(unittest.TestCase):
             child_names=(),
         )
         self.assertEqual(item.role, "顶层 / 未被引用")
+
+    def test_video_frame_prefers_unique_parent_packaging_composition_with_background(self):
+        video_frame = CORE.CompositionInfo(
+            id=2,
+            name="视频框",
+            width=1280,
+            height=720,
+            duration=5,
+            frame_rate=25,
+            display_start_frame=0,
+            parent_ids=(1,),
+            parent_names=("包装",),
+            child_ids=(),
+            child_names=(),
+        )
+        packaging = CORE.CompositionInfo(
+            id=1,
+            name="包装",
+            width=1920,
+            height=1080,
+            duration=10,
+            frame_rate=25,
+            display_start_frame=0,
+            parent_ids=(),
+            parent_names=(),
+            child_ids=(2, 3),
+            child_names=("视频框", "背景"),
+        )
+        background = CORE.CompositionInfo(
+            id=3,
+            name="背景",
+            width=1920,
+            height=1080,
+            duration=10,
+            frame_rate=25,
+            display_start_frame=0,
+            parent_ids=(1,),
+            parent_names=("包装",),
+            child_ids=(),
+            child_names=(),
+        )
+        project = CORE.ProjectInfo(
+            path="project.aep",
+            ae_version="25.6",
+            item_count=3,
+            compositions=(packaging, video_frame, background),
+        )
+
+        recommendation = CORE.recommend_preview_source(project, video_frame)
+
+        self.assertEqual(recommendation.source_id, packaging.id)
+        self.assertEqual(recommendation.relation, "parent-display")
+
+    def test_ambiguous_video_frame_parent_keeps_self_until_user_selects(self):
+        video_frame = CORE.CompositionInfo(
+            id=3,
+            name="横屏视频框",
+            width=1280,
+            height=720,
+            duration=5,
+            frame_rate=25,
+            display_start_frame=0,
+            parent_ids=(1, 2),
+            parent_names=("包装 A", "包装 B"),
+            child_ids=(),
+            child_names=(),
+        )
+        parents = tuple(
+            CORE.CompositionInfo(
+                id=item_id,
+                name=f"包装 {name}",
+                width=1920,
+                height=1080,
+                duration=10,
+                frame_rate=25,
+                display_start_frame=0,
+                parent_ids=(),
+                parent_names=(),
+                child_ids=(3,),
+                child_names=("横屏视频框",),
+            )
+            for item_id, name in ((1, "A"), (2, "B"))
+        )
+        project = CORE.ProjectInfo(
+            path="project.aep",
+            ae_version="25.6",
+            item_count=3,
+            compositions=(*parents, video_frame),
+        )
+
+        recommendation = CORE.recommend_preview_source(project, video_frame)
+
+        self.assertEqual(recommendation.source_id, video_frame.id)
+        self.assertIn("多个", recommendation.reason)
 
 
 class CollectionArchiveTests(unittest.TestCase):
@@ -146,13 +245,23 @@ class CollectionArchiveTests(unittest.TestCase):
                 preview_error=None,
             )
 
-            updated = CORE.attach_collection_preview(result, preview_file, 2.0, 50)
+            updated = CORE.attach_collection_preview(
+                result,
+                preview_file,
+                2.0,
+                50,
+                preview_source_id=9,
+                preview_source_name="包装展示",
+                preview_source_relation="parent-display",
+            )
 
             self.assertEqual(updated.preview_file, str(preview_file))
             self.assertEqual(updated.preview_time, 2.0)
             payload = json.loads(manifest.read_text(encoding="utf-8"))
             self.assertEqual(payload["preview_file"], preview_file.name)
             self.assertEqual(payload["preview"]["frame"], 50)
+            self.assertEqual(payload["preview"]["source_composition"]["id"], 9)
+            self.assertEqual(updated.preview_source_name, "包装展示")
             with zipfile.ZipFile(zip_file, "r") as archive:
                 archived_manifest = json.loads(
                     archive.read("项目_合成_收集/manifest.json").decode("utf-8")
@@ -188,6 +297,72 @@ class PreviewFrameTests(unittest.TestCase):
 
             self.assertEqual(converted.mode, "RGBA")
             self.assertEqual(converted.getchannel("A").getextrema(), (128, 128))
+
+
+class PreviewBridgeTests(unittest.TestCase):
+    def test_live_bridge_renders_complete_png(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            project = root / "project.aep"
+            project.write_bytes(b"aep")
+            status = {
+                "bridge_version": BRIDGE.BRIDGE_VERSION,
+                "running": True,
+                "heartbeat_ms": int(time.time() * 1000),
+                "project_path": str(project),
+            }
+            (root / "status.json").write_text(json.dumps(status), encoding="utf-8")
+
+            def simulate_after_effects():
+                request_path = root / "request.json"
+                deadline = time.monotonic() + 2
+                while time.monotonic() < deadline and not request_path.is_file():
+                    time.sleep(0.01)
+                request = json.loads(request_path.read_text(encoding="utf-8"))
+                Image.new("RGB", (4, 3), (20, 40, 60)).save(request["output_file"], "PNG")
+                response = {
+                    "request_id": request["request_id"],
+                    "ok": True,
+                    "message": "accepted",
+                }
+                (root / "response.json").write_text(json.dumps(response), encoding="utf-8")
+
+            worker = threading.Thread(target=simulate_after_effects, daemon=True)
+            worker.start()
+            with mock.patch.dict(
+                os.environ,
+                {BRIDGE.BRIDGE_DIRECTORY_ENV: str(root)},
+            ):
+                result = BRIDGE.render_bridge_preview(
+                    project,
+                    1,
+                    "包装",
+                    5,
+                    25,
+                    2,
+                    root / "preview.png",
+                    timeout_seconds=2,
+                )
+            worker.join(timeout=2)
+
+            self.assertEqual(result.renderer, "ae-saveFrameToPng-bridge")
+            self.assertTrue(BRIDGE._is_complete_png(Path(result.output_file)))
+
+    def test_bridge_rejects_different_open_project(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            status = {
+                "bridge_version": BRIDGE.BRIDGE_VERSION,
+                "running": True,
+                "heartbeat_ms": int(time.time() * 1000),
+                "project_path": str(root / "other.aep"),
+            }
+            (root / "status.json").write_text(json.dumps(status), encoding="utf-8")
+            with mock.patch.dict(os.environ, {BRIDGE.BRIDGE_DIRECTORY_ENV: str(root)}):
+                available, reason = BRIDGE.bridge_status(root / "project.aep")
+
+            self.assertFalse(available)
+            self.assertIn("不是当前", reason)
 
 
 if __name__ == "__main__":

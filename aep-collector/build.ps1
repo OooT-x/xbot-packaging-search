@@ -52,4 +52,10 @@ finally {
     Pop-Location
 }
 
+$bridgeDist = Join-Path $toolRoot "dist\AE-Preview-Bridge"
+New-Item -ItemType Directory -Force -Path $bridgeDist | Out-Null
+Copy-Item -LiteralPath (Join-Path $toolRoot "ae-bridge\XbotPreviewBridge.jsx") -Destination $bridgeDist -Force
+Copy-Item -LiteralPath (Join-Path $toolRoot "install-preview-bridge.ps1") -Destination $bridgeDist -Force
+
 Write-Host "Build complete: $(Join-Path $toolRoot 'dist\XbotAepCollector.exe')"
+Write-Host "Optional fast preview bridge: $bridgeDist"

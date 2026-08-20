@@ -9,6 +9,8 @@
 - 对每个合成显示尺寸、时长、帧率、父级使用关系和内部预合成。
 - 每个合成默认选择第 2 秒代表帧；短于 2 秒时自动取最后一个有效帧。
 - 单选合成后可打开预览窗口，通过时间轴、秒数输入或前后逐帧调整，透明画面用棋盘格显示。
+- 视频框、横屏框和竖屏框会优先把唯一合适的上层“包装/展示合成”作为预览来源，从而把框体叠在背景上展示；预览窗口仍可切换为自身或其他直接父合成，实际收集目标不会改变。
+- 可选安装 AE 快速预览桥接。AE 已打开同一个 AEP 时，调帧通过常驻 AE 的 `saveFrameToPng` 快速刷新；未连接时自动回退 `aerender`。最终入库 PNG 始终只额外执行一次高质量 `aerender`，避免快速快照的 Alpha 边缘问题。
 - 支持多选合成；每个合成生成独立的收集目录和同名 ZIP。
 - 递归保留选中合成的嵌套合成和直接图层素材。
 - 复制素材并把收集工程重链接到新素材目录。
@@ -44,6 +46,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\aep-collector\build.ps1
 
 产物位于 `aep-collector/dist/XbotAepCollector.exe`。构建产物不提交 Git。
 
+构建目录还会生成 `dist/AE-Preview-Bridge/`。快速桥接是可选组件，不影响离线查看与收集。
+
+## 安装快速预览桥接（可选）
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\aep-collector\install-preview-bridge.ps1
+```
+
+脚本会按需弹出 Windows UAC。重启 After Effects，打开与收集器相同的 AEP，然后在 `窗口` 菜单打开 `XbotPreviewBridge.jsx` 并保持面板运行。收集器解析工程后会在日志中显示“快速预览已连接”；FX Console 无需安装，也不会被调用。
+
+桥接只在本机 `%APPDATA%\XbotAepPreviewBridge` 交换请求、状态和临时路径，不上传工程或画面。若 AE 没打开当前工程、桥接停止或请求超时，收集器会自动走原有高质量后台渲染。
+
 ## 安全边界
 
 - 永远从原 AEP 重新解析，在新目录中保存收集结果。
@@ -52,6 +66,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\aep-collector\build.ps1
 - 不把工程、素材或预览上传到外部服务。
 - 收集结果仍需在 After Effects 中打开，核对表达式、字体、第三方效果、序列素材和最终画面。
 - 离线查看和收集不启动 AE；只有生成真实预览画面时才会在后台启动 `aerender`，不打开 AE 主界面。
+- 快速预览只在用户主动打开同一 AEP 和桥接面板后工作，不会切换或覆盖 AE 当前工程。
 
 ## 当前限制
 
@@ -60,3 +75,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\aep-collector\build.ps1
 - 少数专有媒体格式或目录型素材可能已复制但无法由 `py-aep` 自动重链接，manifest 会保留警告。
 - 输出 AEP 必须经过真实 AE 打开验证后才能正式入库。
 - 预览生成需要本机安装且已授权 After Effects；默认后台渲染超时为 180 秒。预览失败不删除已成功的收集 ZIP，但 Eagle 会等待补齐 PNG。
+- `saveFrameToPng` 快速快照仅用于交互选帧；最终 PNG 不直接复用该快照，而是使用高质量渲染结果。

@@ -43,6 +43,7 @@ class PreviewRenderResult:
     aerender_path: str
     template_name: str
     log: str
+    renderer: str = "aerender"
 
 
 def select_preview_frame(

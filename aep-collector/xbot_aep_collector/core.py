@@ -64,6 +64,9 @@ WINDOWS_RESERVED_NAMES = {
     *(f"COM{i}" for i in range(1, 10)),
     *(f"LPT{i}" for i in range(1, 10)),
 }
+VIDEO_FRAME_NAME = re.compile(r"(?:视频框|横屏框|竖屏框|画面框|视频画框)")
+DISPLAY_COMPOSITION_NAME = re.compile(r"(?:包装|展示|主合成|总合成|成片|预览)")
+BACKGROUND_COMPOSITION_NAME = re.compile(r"(?:背景|底图|底板)")
 
 
 class CollectorError(RuntimeError):
@@ -112,6 +115,14 @@ class ProjectInfo:
 
 
 @dataclass(frozen=True)
+class PreviewSourceRecommendation:
+    source_id: int
+    source_name: str
+    relation: str
+    reason: str
+
+
+@dataclass(frozen=True)
 class CollectionResult:
     source_project: str
     composition_id: int
@@ -130,6 +141,9 @@ class CollectionResult:
     preview_time: float | None
     preview_frame: int | None
     preview_error: str | None
+    preview_source_id: int | None = None
+    preview_source_name: str | None = None
+    preview_renderer: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -207,6 +221,66 @@ def inspect_project(aep_path: str | Path) -> ProjectInfo:
         ae_version=str(app.version),
         item_count=len(list(project)),
         compositions=tuple(rows),
+    )
+
+
+def preview_source_candidates(
+    project: ProjectInfo,
+    target: CompositionInfo,
+) -> tuple[CompositionInfo, ...]:
+    by_id = {item.id: item for item in project.compositions}
+    parents = [by_id[item_id] for item_id in target.parent_ids if item_id in by_id]
+    parents.sort(key=lambda item: (item.name.casefold(), item.id))
+    return (target, *parents)
+
+
+def _preview_parent_score(parent: CompositionInfo, target: CompositionInfo) -> int:
+    display_named = bool(DISPLAY_COMPOSITION_NAME.search(parent.name))
+    has_background = any(BACKGROUND_COMPOSITION_NAME.search(name) for name in parent.child_names)
+    if not display_named and not has_background:
+        return 0
+    score = 4 if display_named else 0
+    score += 3 if has_background else 0
+    score += 1 if any(item_id != target.id for item_id in parent.child_ids) else 0
+    score += 1 if parent.width >= target.width and parent.height >= target.height else 0
+    return score
+
+
+def recommend_preview_source(
+    project: ProjectInfo,
+    target: CompositionInfo,
+) -> PreviewSourceRecommendation:
+    if not VIDEO_FRAME_NAME.search(target.name):
+        return PreviewSourceRecommendation(
+            source_id=target.id,
+            source_name=target.name,
+            relation="self",
+            reason="普通合成默认使用自身画面",
+        )
+
+    parents = preview_source_candidates(project, target)[1:]
+    scored = [(item, _preview_parent_score(item, target)) for item in parents]
+    positive = [(item, score) for item, score in scored if score > 0]
+    if positive:
+        best_score = max(score for _item, score in positive)
+        best = [item for item, score in positive if score == best_score]
+        if len(best) == 1:
+            source = best[0]
+            return PreviewSourceRecommendation(
+                source_id=source.id,
+                source_name=source.name,
+                relation="parent-display",
+                reason="视频框默认使用包含背景的上层包装展示合成",
+            )
+
+    reason = "未找到唯一的上层包装展示合成，暂用视频框自身"
+    if len(positive) > 1:
+        reason = "存在多个同等上层包装展示合成，等待用户选择"
+    return PreviewSourceRecommendation(
+        source_id=target.id,
+        source_name=target.name,
+        relation="self",
+        reason=reason,
     )
 
 
@@ -543,6 +617,10 @@ def attach_collection_preview(
     preview_file: str | Path,
     preview_time: float,
     preview_frame: int,
+    preview_source_id: int | None = None,
+    preview_source_name: str | None = None,
+    preview_source_relation: str = "self",
+    preview_renderer: str = "aerender",
 ) -> CollectionResult:
     preview_path = Path(preview_file).expanduser().resolve()
     manifest_path = Path(result.manifest_file).resolve()
@@ -562,7 +640,12 @@ def attach_collection_preview(
     manifest["preview"] = {
         "time_seconds": float(preview_time),
         "frame": int(preview_frame),
-        "renderer": "aerender",
+        "renderer": str(preview_renderer),
+        "source_composition": {
+            "id": int(preview_source_id if preview_source_id is not None else result.composition_id),
+            "name": str(preview_source_name or result.composition_name),
+            "relation": str(preview_source_relation),
+        },
     }
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     zip_bytes = _write_collection_archive(
@@ -578,6 +661,11 @@ def attach_collection_preview(
         preview_time=float(preview_time),
         preview_frame=int(preview_frame),
         preview_error=None,
+        preview_source_id=int(
+            preview_source_id if preview_source_id is not None else result.composition_id
+        ),
+        preview_source_name=str(preview_source_name or result.composition_name),
+        preview_renderer=str(preview_renderer),
     )
 
 
