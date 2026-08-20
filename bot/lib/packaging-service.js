@@ -251,19 +251,29 @@ class PackagingService {
     return true;
   }
 
-  async tryHandleConfirmation(event) {
+  async tryHandleConfirmation(event, options = {}) {
     try {
-      return await this.handleConfirmation(event);
+      return await this.handleConfirmation(event, options);
     } catch (error) {
       this.log(`packaging confirmation error message_id=${event.message_id}: ${error.message}`);
       return false;
     }
   }
 
-  async handleConfirmation(event) {
+  async handleConfirmation(event, options = {}) {
     if (event.message_type !== "text") return false;
     const content = String(event.content || "").trim();
     if (!isPotentialConfirmation(content) && !hasPackagingDomain(content)) return false;
+
+    if (options.mentioned) {
+      const project = findProject(this.database.listActivePackages(), content);
+      if (project && isPackagingQueryText(content)) {
+        this.log(
+          `packaging confirmation skipped for explicit query message_id=${event.message_id} project=${project.project_name}`
+        );
+        return false;
+      }
+    }
 
     let message;
     try {

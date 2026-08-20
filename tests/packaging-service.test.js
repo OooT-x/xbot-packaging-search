@@ -210,6 +210,51 @@ test("accepts a bare confirmation by falling back to the latest pending query", 
   }
 });
 
+test("routes an explicit project query past expired pending confirmations", async () => {
+  const app = fixture();
+  try {
+    const oldQueryEvent = {
+      type: "im.message.receive_v1",
+      event_id: "event-old-query",
+      message_id: "om_old_root",
+      message_type: "text",
+      chat_id: "oc_chat",
+      sender_id: "ou_requester",
+      content: "@X.bot 找变速箱项目的信息条",
+    };
+    assert.equal(await app.service.tryHandleQuery(oldQueryEvent, { mentioned: true }), true);
+
+    const oldQuery = app.database.getQueryByRootMessage("om_old_root");
+    app.database.db
+      .prepare("UPDATE queries SET expires_at = ? WHERE request_id = ?")
+      .run(Date.now() - 1, oldQuery.request_id);
+
+    const newQueryEvent = {
+      type: "im.message.receive_v1",
+      event_id: "event-new-query",
+      message_id: "om_new_root",
+      message_type: "text",
+      chat_id: "oc_chat",
+      sender_id: "ou_requester",
+      content: "@X.bot 给我变速箱的背景",
+    };
+
+    assert.equal(
+      await app.service.tryHandleConfirmation(newQueryEvent, { mentioned: true }),
+      false
+    );
+    assert.equal(
+      app.calls.some((call) => call.kind === "text" && call.text.includes("超过 20 分钟")),
+      false
+    );
+    assert.equal(await app.service.tryHandleQuery(newQueryEvent, { mentioned: true }), true);
+    assert.equal(app.database.getQueryByRootMessage("om_new_root").status, "pending");
+    assert.equal(app.calls.filter((call) => call.kind === "image").length, 2);
+  } finally {
+    app.close();
+  }
+});
+
 test("rejects a bare confirmation from a non-requester", async () => {
   const app = fixture();
   try {

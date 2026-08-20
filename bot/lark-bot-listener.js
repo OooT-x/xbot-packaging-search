@@ -2723,8 +2723,9 @@ async function handleLine(line) {
   }
 
   const packageSearch = getPackagingService();
+  const mentioned = eventMentionsBot(event, botSelfOpenId, botMentionAliases);
   if (packageSearch && event.message_type === "text") {
-    const handledConfirmation = await packageSearch.tryHandleConfirmation(event);
+    const handledConfirmation = await packageSearch.tryHandleConfirmation(event, { mentioned });
     if (handledConfirmation) return;
   }
 
@@ -2741,7 +2742,6 @@ async function handleLine(line) {
   }
 
   await enqueueConversation(event, async () => {
-    const mentioned = eventMentionsBot(event, botSelfOpenId, botMentionAliases);
     if (
       packageSearch &&
       (await packageSearch.tryHandleQuery(event, {
