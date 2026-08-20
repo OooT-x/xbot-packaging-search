@@ -147,6 +147,55 @@ test("imports exactly the files referenced by a manifest", () => {
   }
 });
 
+test("pairs offline collector manifests with root previews without treating them as ingest manifests", () => {
+  const temp = makeTempDir("collector-manifest");
+  try {
+    const fixtures = [
+      ["人名条", "人名条.png"],
+      ["标注-方括号", "标注方括号.png"],
+      ["标注-角括号", "标注尖括号.png"],
+      ["竖屏框", "竖屏视频框.png"],
+      ["背景", "背景.png"],
+      ["视频框", "横屏视频框.png"],
+    ];
+    fixtures.forEach(([compName, previewName], index) => {
+      const collectionName = `阿宝包装_${compName}_收集`;
+      const sourceName = `${collectionName}.zip`;
+      writeFile(temp, previewName, "png");
+      writeFile(temp, sourceName, "zip");
+      writeFile(temp, `${collectionName}/manifest.json`, JSON.stringify({
+        manifest_version: "1.0",
+        ...(index % 2 === 0 ? { manifest_type: "xbot-collection" } : {}),
+        collector: "X.bot AEP Collector",
+        collector_mode: "offline-py-aep",
+        composition: { id: 1000 + index, name: compName },
+        dependency_status: "完整",
+        source_file: sourceName,
+      }));
+    });
+
+    const result = scanDirectory(temp, { projectName: "支付宝阿宝" });
+
+    assert.equal(result.hasManifest, false);
+    assert.equal(result.hasCollectionManifest, true);
+    assert.equal(result.errors.length, 0);
+    assert.equal(result.packages.length, 6);
+    assert.ok(result.packages.every((pkg) => pkg.state === "ready"));
+    assert.equal(result.packages.find((pkg) => pkg.aeCompName === "竖屏框").packageType, "视频框");
+    assert.equal(result.stats.toImport, 12);
+    assert.equal(result.stats.validateOnly, 6);
+    const video = result.packages.find((pkg) => pkg.aeCompName === "视频框");
+    const vertical = result.packages.find((pkg) => pkg.aeCompName === "竖屏框");
+    assert.equal(path.basename(video.preview.path), "横屏视频框.png");
+    assert.equal(path.basename(vertical.preview.path), "竖屏视频框.png");
+    assert.ok(result.files
+      .filter((file) => file.relative.endsWith("manifest.json"))
+      .every((file) => file.status === "validate-only"));
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
 test("blocks manifest entries with missing or duplicated references", () => {
   const temp = makeTempDir("manifest-bad");
   try {

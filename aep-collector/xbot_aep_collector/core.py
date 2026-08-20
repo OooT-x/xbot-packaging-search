@@ -463,6 +463,7 @@ def collect_composition(
 
         manifest = {
             "manifest_version": "1.0",
+            "manifest_type": "xbot-collection",
             "collector": "X.bot AEP Collector",
             "collector_mode": "offline-py-aep",
             "created_at": datetime.now(timezone.utc).isoformat(),

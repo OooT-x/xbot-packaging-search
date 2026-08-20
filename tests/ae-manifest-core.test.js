@@ -75,6 +75,7 @@ test("builds the standard manifest entry consumed by Eagle", () => {
 
   const manifest = core.buildManifest("变速箱", [entry], "2026-08-20T10:00:00+08:00", "batch-ABCDE12345678");
   assert.equal(manifest.manifest_version, 1);
+  assert.equal(manifest.manifest_type, "xbot-eagle-ingest");
   assert.equal(manifest.packages[0].package_id, entry.package_id);
 });
 

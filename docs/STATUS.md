@@ -6,14 +6,14 @@
 
 | 项目 | 当前值 |
 | --- | --- |
-| 项目阶段 | M1 文字检索闭环已完成；M5 入库助手已完成真实归位验证；外部 AEP 收集工具已实现逐合成独立 ZIP，等待真实 AE 打开验收与代表帧 PNG 衔接 |
-| 核心文档版本 | v1.14 |
+| 项目阶段 | M1 文字检索闭环已完成；M5 入库助手已完成真实归位验证；收集器与 Eagle 插件的双 manifest 协议已打通，等待真实 AE 打开验收与正式入库 |
+| 核心文档版本 | v1.15 |
 | 软件版本 | `0.0.0` 开发版，尚未发布标签 |
 | 当前分支 | `codex/bhy-collector-tool` |
 | 远程仓库 | GitHub：`OooT-x/xbot-packaging-search`（私有），`codex/feishu-bot-m1` 与 `codex/eagle-ingest-plugin` 均已推送 |
 | Eagle 库 | `E:\Eagle资源库\包装.library` |
 | 应用源码 | 已迁入既有 X.bot 监听器，并接入包装检索模块 |
-| 最近交付 | 外部 AEP 收集工具为每个选中合成自动生成展开目录和同名 ZIP；真实“阿宝包装.aep / 背景”生成 20.28 MB、11 个文件的完整 ZIP，CRC、AEP、manifest、9 个素材链接和源工程哈希均通过校验 |
+| 最近交付 | 修复收集 manifest 被误当正式入库清单而导致 PNG/ZIP 全部忽略的问题；Eagle 插件 `1.1.4` 使用真实“支付宝阿宝”6 张 PNG、6 个 ZIP 和 6 个旧版收集 manifest 验证为 6 条可导入记录、0 冲突 |
 
 ## 已完成
 
@@ -89,6 +89,9 @@
 - [x] 生成 `XbotAepCollector.exe`，显式打包 Python 3.14 的 Tcl/Tk 运行时并完成 6 秒启动存活检查。
 - [x] 每个选中合成在收集完成后自动生成一个同名 ZIP；ZIP 使用独立顶层目录封装精简 AEP、素材和 manifest，生成后检查 CRC 以及 AEP/manifest 必需项，失败不保留半成品。新增 2 项 Python 单元测试，全项目 86 项自动化测试全部通过。
 - [x] 使用真实“阿宝包装.aep / 背景”验证逐合成打包：ZIP 为 21,270,338 字节、包含 11 个文件且 CRC 正常；包内 AEP 和 manifest 完整，展开工程仍只含目标合成，9 个素材链接全部存在，manifest `source_file` 与 ZIP 同名。
+- [x] 建立双 manifest 协议：收集器写入 `xbot-collection`，AE 内正式交付清单写入 `xbot-eagle-ingest`；Eagle 插件只对正式入库清单启用“仅导入明确引用文件”，并兼容未带类型字段的旧版两类 manifest。
+- [x] Eagle 插件 `1.1.4` 支持从收集记录读取合成名、ZIP 和依赖状态，按唯一优先级配对根目录 PNG；兼容“角括号/尖括号”“竖屏框/竖屏视频框”等受控别名，歧义仍保持冲突。
+- [x] 使用真实“支付宝阿宝”素材副本验证：6 张 PNG、6 个逐合成 ZIP、6 个旧版收集 manifest 形成 6 条可导入记录，12 个文件将导入、6 个 manifest 仅校验、0 个冲突。新增 1 项扫描回归测试，全项目 87 项自动化测试全部通过。
 
 ## 当前未完成
 

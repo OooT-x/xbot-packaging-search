@@ -199,6 +199,7 @@
   function buildManifest(projectName, packages, createdAt, batchId) {
     return {
       manifest_version: 1,
+      manifest_type: "xbot-eagle-ingest",
       generator: "X.bot AE 包装整理",
       batch_id: batchId,
       project_name: trim(projectName),

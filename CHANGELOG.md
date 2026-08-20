@@ -6,6 +6,9 @@
 
 ### Added
 
+- 新增双 manifest 协议：AEP 收集器输出 `xbot-collection`，AE 正式交付清单输出 `xbot-eagle-ingest`；Eagle 插件兼容没有类型字段的旧版收集记录和正式清单。
+- Eagle 入库扫描器可从收集记录读取合成名称、逐合成 ZIP 和依赖状态，并按唯一优先级配对根目录 PNG；新增角括号/尖括号及横竖屏视频框受控别名，歧义继续阻止而不猜测。
+- 使用真实“支付宝阿宝”6 张 PNG、6 个 ZIP 和 6 个旧版收集 manifest 验证：形成 6 条可导入记录、12 个将导入文件、6 个仅校验 manifest、0 冲突。新增 1 项回归测试，全项目 87 项自动化测试全部通过。
 - 外部 AEP 收集工具现在为每个选中合成自动生成一个展开目录和一个同名 ZIP；ZIP 内以收集目录为顶层，包含精简 AEP、素材和 manifest，并在完成前检查 CRC、AEP 与 manifest 必需项。
 - manifest 新增 `collection_directory` 和 `source_file`，收集结果与 GUI 显示 ZIP 路径和大小；压缩失败时清理该次收集目录和半成品 ZIP。新增 2 项 ZIP 回归测试，全项目 86 项自动化测试全部通过。
 - 使用真实“阿宝包装.aep / 背景”完成逐合成 ZIP 验证：21,270,338 字节、11 个文件、CRC 正常，AEP 可再次解析，9 个重链接素材路径全部存在。
@@ -28,6 +31,8 @@
 
 ### Changed
 
+- Eagle 入库助手升级到 `1.1.4`；只有 `xbot-eagle-ingest` 或兼容的正式清单会触发“存在 manifest 时仅导入明确引用文件”，`xbot-collection` 只作为配对和依赖校验来源。
+- 核心文档升级为 v1.15：新增 D-028，明确收集记录与正式入库 manifest 的字段边界、兼容规则和安全配对行为。
 - 核心文档升级为 v1.14：逐合成 ZIP 成为外部收集工具的强制产物，新增 D-027，明确 ZIP 结构、manifest 文件名记录、完整性校验、失败清理和 Eagle 候选边界。
 - 核心文档升级为 v1.13：AE 包装收集主入口从 ScriptUI + 原生 Collect Files 改为外部 AEP 合成浏览与收集工具；D-025 标记已取代，新增试行决策 D-026。BHY 仅作行为参考，不打包其闭源 EXE。
 - 核心文档升级为 v1.12：确定 AE 包装整理采用“ScriptUI 面板 + AE 原生 Collect Files + 默认不 Reduce Project”的安全边界，并新增决策 D-025。

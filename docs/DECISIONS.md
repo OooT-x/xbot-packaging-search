@@ -197,3 +197,10 @@
 - 状态：有效
 - 决策：外部 AEP 收集工具对每个用户选中的合成分别生成一个展开收集目录和一个同名 ZIP。ZIP 内以该收集目录名称作为唯一顶层目录，包含精简 AEP、复制并重链接的素材和 manifest；manifest 的 `source_file` 必须记录实际 ZIP 文件名。工具必须在报告成功前检查 ZIP CRC，并确认 AEP 与 manifest 均存在；压缩或校验失败时删除该次收集目录和半成品 ZIP，不把不完整产物交给 Eagle。展开目录继续保留用于 AE 打开验收，Eagle 只把同级 ZIP 视为源文件候选。
 - 原因：Eagle 的正式入库和 X.bot 源文件发送都以 ZIP 为稳定交付单元。逐合成自动打包能避免人工压缩时把多个包装混在一起或漏掉依赖，同时保留展开目录便于在真实 AE 中复核画面和链接。
+
+## D-028：收集记录与正式入库 manifest 使用不同类型
+
+- 日期：2026-08-20
+- 状态：有效
+- 决策：逐合成收集器生成的 manifest 使用 `manifest_type: xbot-collection`，只记录合成、对应 ZIP、依赖和收集自检事实；补齐项目、包装、类型、版本、PNG 配对和稳定 ID 的正式入库清单使用 `manifest_type: xbot-eagle-ingest`。Eagle 插件只有在发现正式入库清单时才启用“仅导入 manifest 明确引用文件”；发现收集记录时，读取 `composition.name`、`source_file` 和依赖状态，并按唯一优先级与根目录 PNG 配对。无法唯一配对时必须保持冲突，不允许猜测。旧版未带 `manifest_type` 的收集记录通过 `collector_mode: offline-py-aep` 兼容识别，旧版正式清单继续按 `packages` 或 `package_id` 结构识别。
+- 原因：收集记录在生成时尚不知道最终预览 PNG、包装类型和版本，不具备正式入库清单的完整字段。把两者混为一种 manifest 会使插件错误进入全局白名单模式，导致本来有效的 PNG 和 ZIP 全部被忽略；显式类型能保留上游事实，同时把最终配对和人工补充留在 Eagle 入库环节。

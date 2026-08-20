@@ -12,6 +12,7 @@
 - 复制素材并把收集工程重链接到新素材目录。
 - 输出新的 `.aep`、`素材/` 和 `manifest.json`，并自动压缩成可交给 Eagle 的 ZIP；不覆盖原工程。
 - ZIP 使用独立顶层文件夹封装，生成后自动执行 CRC、自检 AEP 和 manifest 完整性校验。
+- manifest 标记为 `xbot-collection` 收集记录，供 Eagle 插件读取合成名、对应 ZIP 和依赖状态，不冒充已经补齐 PNG、类型和版本的正式入库清单。
 - 缺失素材写入 manifest，并标记为“阻止入库”。
 
 ## 运行

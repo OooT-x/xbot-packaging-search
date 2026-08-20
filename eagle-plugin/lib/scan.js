@@ -6,11 +6,13 @@ const PACKAGE_TYPES = ["信息条", "视频框", "背景", "分镜排版"];
 const PACKAGE_TYPE_SET = new Set(PACKAGE_TYPES);
 const PACKAGE_TYPE_KEYWORDS = new Map([
   ["信息条", ["信息条", "标注", "人名条"]],
-  ["视频框", ["视频框"]],
+  ["视频框", ["视频框", "横屏框", "竖屏框"]],
   ["背景", ["背景"]],
   ["分镜排版", ["分镜排版"]],
 ]);
 const MANIFEST_NAME = "manifest.json";
+const COLLECTION_MANIFEST_TYPE = "xbot-collection";
+const INGEST_MANIFEST_TYPE = "xbot-eagle-ingest";
 const COLLECTED_ROOT = "Root_Collected_Projects";
 const PNG_EXT = ".png";
 const ZIP_EXT = ".zip";
@@ -132,6 +134,79 @@ function similarityGrade(pngStem, zipStem) {
   return "none";
 }
 
+function collectionPreviewCore(value) {
+  return normalizeText(stemWithoutVersion(value))
+    .replace(/角括号/g, "尖括号")
+    .replace(/横向/g, "横屏")
+    .replace(/竖向/g, "竖屏")
+    .replace(/人物条|姓名条/g, "人名条");
+}
+
+function collectionPreviewScore(compName, pngName) {
+  const pngStem = path.basename(String(pngName || ""), path.extname(String(pngName || "")));
+  const compCore = collectionPreviewCore(compName);
+  const pngCore = collectionPreviewCore(pngStem);
+  if (!compCore || !pngCore) return 0;
+  if (compCore === pngCore) return 100;
+
+  const compactComp = compCore.replace(/视频框/g, "框");
+  const compactPng = pngCore.replace(/视频框/g, "框");
+  if (compactComp === compactPng) return 90;
+  if (
+    Math.min(compCore.length, pngCore.length) >= 2 &&
+    (compCore.includes(pngCore) || pngCore.includes(compCore))
+  ) {
+    return 70;
+  }
+  return 0;
+}
+
+function matchCollectionPreviews(collectionEntries, pngCandidates) {
+  const remainingEntries = new Set(collectionEntries.map((_, index) => index));
+  const remainingPngs = new Set(pngCandidates.map((png) => png.path));
+  const matches = new Map();
+  let progress = true;
+
+  while (progress) {
+    progress = false;
+    const proposals = [];
+    for (const entryIndex of remainingEntries) {
+      const entry = collectionEntries[entryIndex];
+      const compName = String(entry.composition && entry.composition.name || "").trim();
+      const scored = pngCandidates
+        .filter((png) => remainingPngs.has(png.path))
+        .map((png) => ({ png, score: collectionPreviewScore(compName, png.name) }))
+        .filter((candidate) => candidate.score > 0);
+      const bestScore = scored.reduce((best, candidate) => Math.max(best, candidate.score), 0);
+      const best = scored.filter((candidate) => candidate.score === bestScore);
+      if (best.length === 1) {
+        proposals.push({ entryIndex, png: best[0].png, score: best[0].score });
+      }
+    }
+
+    proposals.sort((left, right) => right.score - left.score);
+    for (const proposal of proposals) {
+      if (!remainingEntries.has(proposal.entryIndex) || !remainingPngs.has(proposal.png.path)) {
+        continue;
+      }
+      const competingScore = [...remainingEntries]
+        .filter((entryIndex) => entryIndex !== proposal.entryIndex)
+        .reduce((best, entryIndex) => {
+          const entry = collectionEntries[entryIndex];
+          const compName = String(entry.composition && entry.composition.name || "").trim();
+          return Math.max(best, collectionPreviewScore(compName, proposal.png.name));
+        }, 0);
+      if (competingScore >= proposal.score) continue;
+
+      matches.set(proposal.entryIndex, proposal.png);
+      remainingEntries.delete(proposal.entryIndex);
+      remainingPngs.delete(proposal.png.path);
+      progress = true;
+    }
+  }
+  return matches;
+}
+
 function walkFiles(root) {
   const entries = [];
   const resolvedRoot = path.resolve(root);
@@ -231,6 +306,24 @@ function parseManifestEntries(manifestPath) {
     return { entries: [], error: `manifest 解析失败: ${error.message}` };
   }
 
+  const manifestType = String(parsed && parsed.manifest_type || "").trim();
+  const isCollectionManifest = Boolean(
+    parsed &&
+    typeof parsed === "object" &&
+    !Array.isArray(parsed) &&
+    (
+      manifestType === COLLECTION_MANIFEST_TYPE ||
+      (parsed.collector_mode === "offline-py-aep" && parsed.composition && parsed.source_file)
+    )
+  );
+  if (isCollectionManifest) {
+    return {
+      entries: [],
+      collectionEntries: [{ ...parsed, manifestPath, index: 0 }],
+      error: null,
+    };
+  }
+
   let rawEntries = [];
   if (Array.isArray(parsed)) {
     rawEntries = parsed;
@@ -245,7 +338,7 @@ function parseManifestEntries(manifestPath) {
       manifestPath,
       index,
     }));
-  return { entries, error: null };
+  return { entries, collectionEntries: [], error: null };
 }
 
 function resolveManifestFile(sourceDir, fileName) {
@@ -346,13 +439,15 @@ function scanDirectory(sourceDir, options = {}) {
   const warnings = [];
   const manifestPaths = findManifests(allEntries);
   const manifestEntries = [];
+  const collectionEntries = [];
   for (const manifestPath of manifestPaths) {
-    const { entries, error } = parseManifestEntries(manifestPath);
+    const { entries, collectionEntries: parsedCollectionEntries = [], error } = parseManifestEntries(manifestPath);
     if (error) {
       errors.push(error);
       continue;
     }
     manifestEntries.push(...entries);
+    collectionEntries.push(...parsedCollectionEntries);
   }
 
   const projectName = String(options.projectName || "").trim() || inferProjectName(root);
@@ -361,6 +456,7 @@ function scanDirectory(sourceDir, options = {}) {
   const packageIds = new Set();
   const referencedFiles = new Map();
   const hasManifest = manifestEntries.length > 0;
+  const hasCollectionManifest = collectionEntries.length > 0;
 
   const registerReference = (fileName, packageId, role, entryPath) => {
     const resolved = resolveManifestFile(root, fileName);
@@ -465,6 +561,94 @@ function scanDirectory(sourceDir, options = {}) {
         dependencyStatus: /警告|warning/i.test(dependencyStatus) ? "warning" : "complete",
       });
     }
+  } else if (hasCollectionManifest) {
+    const pngCandidates = files.filter(
+      (file) => file.kind === "png" && file.status === "candidate"
+    );
+    const previewMatches = matchCollectionPreviews(collectionEntries, pngCandidates);
+    const usedSourcePaths = new Set();
+
+    collectionEntries.forEach((entry, entryIndex) => {
+      const compName = String(entry.composition && entry.composition.name || "").trim();
+      const sourceName = String(entry.source_file || "").trim();
+      const sourcePath = resolveManifestFile(root, sourceName);
+      const previewFile = previewMatches.get(entryIndex) || null;
+      const version = extractVersion(path.basename(sourceName, path.extname(sourceName)));
+      const packageName = compName || path.basename(sourceName, path.extname(sourceName));
+      const packageId = stableId(
+        "pkg",
+        projectName,
+        packageName,
+        version || "unversioned",
+        entry.composition && entry.composition.id || sourceName
+      );
+      const entryWarnings = [
+        ...(version ? [] : ["缺少版本，确认时默认登记为 v01"]),
+        ...(inferPackageType(packageName) ? [] : ["缺少包装类型，确认时可补充"]),
+        ...normalizeDependencyList(entry.warnings),
+      ];
+      const entryErrors = [];
+
+      if (!sourcePath || !fs.existsSync(sourcePath) || path.extname(sourcePath).toLowerCase() !== ZIP_EXT) {
+        entryErrors.push(`收集记录引用的 ZIP 不存在：${sourceName || "未填写"}`);
+      } else if (usedSourcePaths.has(path.resolve(sourcePath))) {
+        entryErrors.push(`ZIP 被多个收集记录引用：${sourceName}`);
+      } else {
+        usedSourcePaths.add(path.resolve(sourcePath));
+      }
+      if (!previewFile) {
+        const possiblePreviews = pngCandidates.filter(
+          (png) => collectionPreviewScore(compName, png.name) > 0
+        );
+        entryErrors.push(
+          possiblePreviews.length > 0
+            ? `预览图无法唯一配对：${possiblePreviews.map((png) => png.name).join("、")}`
+            : `缺少与合成“${compName || packageName}”匹配的根目录 PNG`
+        );
+      }
+
+      const dependencyStatus = String(entry.dependency_status || "").trim();
+      const blockedByDependency = /阻止|blocked/i.test(dependencyStatus);
+      if (blockedByDependency) entryWarnings.push("收集记录标记为阻止入库");
+      const state = entryErrors.length === 0 && !blockedByDependency ? "ready" : "blocked";
+      const preview = previewFile
+        ? { path: previewFile.path, relative: previewFile.relative }
+        : null;
+      const source = sourcePath && fs.existsSync(sourcePath)
+        ? { path: sourcePath, relative: path.relative(root, sourcePath) }
+        : null;
+
+      packages.push({
+        packageId,
+        projectName,
+        packageName,
+        packageType: inferPackageType(packageName),
+        version,
+        aeCompName: compName || null,
+        preview,
+        source,
+        state,
+        warnings: entryWarnings,
+        errors: entryErrors,
+        manifestPath: entry.manifestPath,
+        fonts: normalizeDependencyList(entry.fonts),
+        effects: normalizeDependencyList(entry.effects),
+        dependencyStatus: /警告|warning/i.test(dependencyStatus) ? "warning" : "complete",
+      });
+
+      if (state === "ready") {
+        referencedFiles.set(path.resolve(preview.path), {
+          packageId,
+          role: "预览图",
+          entryPath: entry.manifestPath,
+        });
+        referencedFiles.set(path.resolve(source.path), {
+          packageId,
+          role: "源文件",
+          entryPath: entry.manifestPath,
+        });
+      }
+    });
   } else {
     for (const pair of pairWithoutManifest(files)) {
       const { png, zip, conflict } = pair;
@@ -510,6 +694,10 @@ function scanDirectory(sourceDir, options = {}) {
   }
 
   const referencedPaths = new Set(referencedFiles.keys());
+  const manifestPathSet = new Set(manifestPaths.map((manifestPath) => path.resolve(manifestPath)));
+  const collectionManifestPathSet = new Set(
+    collectionEntries.map((entry) => path.resolve(entry.manifestPath))
+  );
   const fileRecords = files.map((file) => {
     const record = {
       path: file.path,
@@ -520,6 +708,13 @@ function scanDirectory(sourceDir, options = {}) {
       note: file.note || "",
       packageId: null,
     };
+    if (manifestPathSet.has(path.resolve(file.path))) {
+      record.status = "validate-only";
+      record.note = collectionManifestPathSet.has(path.resolve(file.path))
+        ? "AEP 收集记录，仅用于合成、ZIP 和依赖校验"
+        : "正式入库 manifest，仅用于配对和元数据校验";
+      return record;
+    }
     if (referencedPaths.has(path.resolve(file.path))) {
       const reference = referencedFiles.get(path.resolve(file.path));
       record.packageId = reference.packageId;
@@ -567,6 +762,7 @@ function scanDirectory(sourceDir, options = {}) {
     batchId,
     batchKey,
     hasManifest,
+    hasCollectionManifest,
     manifestFiles: manifestPaths,
     packages,
     files: fileRecords,
@@ -607,9 +803,12 @@ function stableBatchKey(files) {
 
 module.exports = {
   COLLECTED_ROOT,
+  COLLECTION_MANIFEST_TYPE,
+  INGEST_MANIFEST_TYPE,
   MANIFEST_NAME,
   PACKAGE_TYPES,
   classifyFile,
+  collectionPreviewScore,
   createBatchId,
   extractVersion,
   inferProjectName,
