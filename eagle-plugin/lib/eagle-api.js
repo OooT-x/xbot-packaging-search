@@ -43,6 +43,9 @@ function flattenFolderTree(folders) {
   return [...entriesById.entries()].map(([id, folder]) => ({
     ...folder,
     id,
+    name: folder.name || "",
+    description: folder.description || "",
+    children: Array.isArray(folder.children) ? folder.children : [],
     parent: folderId(folder.parent) || inferredParents.get(id) || null,
   }));
 }

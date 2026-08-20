@@ -391,6 +391,46 @@ test("adapter flattens the nested tree returned by Eagle folder.getAll", async (
   );
 });
 
+test("preserves getter-backed fields from real Eagle Folder instances", () => {
+  class EagleFolder {
+    constructor(id, name, children = []) {
+      this._id = id;
+      this._name = name;
+      this._children = children;
+    }
+
+    get id() {
+      return this._id;
+    }
+
+    get name() {
+      return this._name;
+    }
+
+    get description() {
+      return `${this._name}说明`;
+    }
+
+    get children() {
+      return this._children;
+    }
+  }
+
+  const folders = flattenFolderTree([
+    new EagleFolder("ingest-root", "00_待入库", [
+      new EagleFolder("batch-1", "阿宝包装"),
+    ]),
+  ]);
+
+  assert.deepEqual(
+    folders.map((folder) => [folder.id, folder.name, folder.description, folder.parent]),
+    [
+      ["ingest-root", "00_待入库", "00_待入库说明", null],
+      ["batch-1", "阿宝包装", "阿宝包装说明", "ingest-root"],
+    ]
+  );
+});
+
 test("normalizes folder objects attached to Eagle items", () => {
   const [preview, source] = makePair();
   preview.folders = [{ id: "batch-1" }];
