@@ -6,7 +6,7 @@
   "scripts": {
     "test": "node --test tests/*.test.js",
     "sync:eagle": "node bot/sync-eagle.js",
-    "check": "node --check bot/lark-bot-listener.js && node --check bot/sync-eagle.js"
+    "check": "node --check bot/lark-bot-listener.js && node --check bot/sync-eagle.js && node --check eagle-plugin/js/plugin.js && node --check eagle-plugin/lib/scan.js && node --check eagle-plugin/lib/eagle-api.js"
   },
   "engines": {
     "node": ">=24"

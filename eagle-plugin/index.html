@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>X.bot 包装素材入库助手</title>
+    <style>
+      :root {
+        --bg: #f6f7f9;
+        --panel: #ffffff;
+        --border: #e2e5ea;
+        --text: #1f2430;
+        --muted: #6b7280;
+        --accent: #2f6bff;
+        --danger: #d94b4b;
+        --warn: #b7791f;
+        --ok: #1f9d61;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.55 "Microsoft YaHei", system-ui, sans-serif;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 20px;
+        background: var(--panel);
+        border-bottom: 1px solid var(--border);
+      }
+      header h1 { font-size: 16px; margin: 0; }
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        padding: 14px 20px;
+        background: var(--panel);
+        border-bottom: 1px solid var(--border);
+      }
+      button {
+        border: 1px solid var(--border);
+        background: #fff;
+        border-radius: 6px;
+        padding: 7px 14px;
+        cursor: pointer;
+        font-size: 13px;
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      button:disabled { opacity: 0.45; cursor: not-allowed; }
+      input[type="text"] {
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 7px 10px;
+        width: 220px;
+        font-size: 13px;
+      }
+      main { padding: 16px 20px; }
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+        margin-bottom: 16px;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px 12px;
+      }
+      .card b { font-size: 20px; display: block; }
+      .card span { color: var(--muted); font-size: 12px; }
+      .section {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        margin-bottom: 16px;
+        overflow: hidden;
+      }
+      .section h2 {
+        margin: 0;
+        padding: 10px 14px;
+        font-size: 13px;
+        border-bottom: 1px solid var(--border);
+        background: #fafbfc;
+      }
+      table { width: 100%; border-collapse: collapse; font-size: 12px; }
+      th, td {
+        text-align: left;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+      th { color: var(--muted); font-weight: 500; white-space: nowrap; }
+      .badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        white-space: nowrap;
+      }
+      .badge.ready { background: #e6f6ee; color: var(--ok); }
+      .badge.blocked { background: #fdeaea; color: var(--danger); }
+      .badge.validate { background: #eef2ff; color: #4f5fa8; }
+      .badge.ignore { background: #f0f1f3; color: var(--muted); }
+      .badge.conflict { background: #fdf3e0; color: var(--warn); }
+      #log {
+        background: #0f172a;
+        color: #cbd5e1;
+        border-radius: 8px;
+        padding: 12px 14px;
+        font: 12px/1.5 Consolas, monospace;
+        min-height: 72px;
+        white-space: pre-wrap;
+        margin-bottom: 16px;
+      }
+      .hint { color: var(--muted); font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>X.bot 包装素材入库助手</h1>
+      <span class="hint" id="apiState">检测 Eagle 插件环境…</span>
+    </header>
+
+    <div class="toolbar">
+      <input type="file" id="folderPicker" webkitdirectory directory />
+      <input type="text" id="projectName" placeholder="项目名称（可修改）" />
+      <button id="scanBtn">扫描预检</button>
+      <button id="importBtn" class="primary" disabled>确认导入 Eagle</button>
+      <span class="hint" id="batchInfo"></span>
+    </div>
+
+    <main>
+      <div class="cards">
+        <div class="card"><span>将导入</span><b id="statToImport">0</b></div>
+        <div class="card"><span>仅校验</span><b id="statValidate">0</b></div>
+        <div class="card"><span>忽略</span><b id="statIgnore">0</b></div>
+        <div class="card"><span>冲突</span><b id="statConflict">0</b></div>
+      </div>
+
+      <div class="section">
+        <h2>包装记录</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>包装名称</th>
+              <th>类型</th>
+              <th>版本</th>
+              <th>AE 合成</th>
+              <th>预览</th>
+              <th>源文件</th>
+              <th>状态</th>
+              <th>提示</th>
+            </tr>
+          </thead>
+          <tbody id="packageRows"></tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h2>文件预检（四状态）</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>相对路径</th>
+              <th>类别</th>
+              <th>状态</th>
+              <th>说明</th>
+            </tr>
+          </thead>
+          <tbody id="fileRows"></tbody>
+        </table>
+      </div>
+
+      <div id="log">等待选择文件夹…</div>
+    </main>
+
+    <script src="js/plugin.js"></script>
+  </body>
+</html>

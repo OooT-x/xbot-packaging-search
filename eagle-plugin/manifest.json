@@ -1,0 +1,13 @@
+{
+  "id": "LB5UL2P0Q9FFF",
+  "version": "1.0.0",
+  "name": "X.bot 包装素材入库助手",
+  "logo": "/logo.png",
+  "keywords": ["包装", "入库", "Eagle"],
+  "main": {
+    "devTools": true,
+    "url": "index.html",
+    "width": 860,
+    "height": 680
+  }
+}
