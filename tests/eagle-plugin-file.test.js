@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  EaglePluginAdapter,
   buildAnnotation,
   collectBatchItems,
   fileBatch,
@@ -206,4 +207,79 @@ test("collects unfiled pair partners referenced by batch items", () => {
   assert.equal(collected.length, 3);
   assert.ok(collected.some((item) => item.id === "zip-2"));
   assert.ok(!collected.some((item) => item.id === "zip-3"));
+});
+
+test("keeps an incomplete older batch from shadowing a complete newer batch", () => {
+  const [currentPreview, currentSource] = makePair({
+    pkg: { batchId: "batch-CURRENT12345" },
+    previewId: "png-current",
+    sourceId: "zip-current",
+  });
+  const [, oldSource] = makePair({
+    pkg: { batchId: "batch-OLDER123456" },
+    previewId: "png-missing",
+    sourceId: "zip-old",
+  });
+
+  const plan = planFormalFile([currentPreview, currentSource, oldSource]);
+
+  assert.equal(plan.readyPairs.length, 1);
+  assert.equal(plan.readyPairs[0].batchId, "batch-CURRENT12345");
+  assert.equal(plan.readyPairs[0].preview.id, "png-current");
+  assert.equal(plan.readyPairs[0].source.id, "zip-current");
+  assert.ok(
+    plan.blocked.some(
+      (entry) => entry.item.id === "zip-old" && /缺少配对 PNG/.test(entry.reason)
+    )
+  );
+});
+
+test("blocks the same package when two batches both contain complete pairs", () => {
+  const first = makePair({
+    pkg: { batchId: "batch-FIRST123456" },
+    previewId: "png-first",
+    sourceId: "zip-first",
+  });
+  const second = makePair({
+    pkg: { batchId: "batch-SECOND12345" },
+    previewId: "png-second",
+    sourceId: "zip-second",
+  });
+
+  const plan = planFormalFile([...first, ...second]);
+
+  assert.equal(plan.readyPairs.length, 0);
+  assert.equal(plan.blocked.length, 4);
+  assert.ok(plan.blocked.every((entry) => /多个完整批次/.test(entry.reason)));
+});
+
+test("queries the selected folder directly and recalls its unfiled partner", async () => {
+  const [preview, source] = makePair({
+    previewId: "png-direct",
+    sourceId: "zip-unfiled",
+  });
+  source.folders = [];
+  const calls = [];
+  const adapter = new EaglePluginAdapter({
+    item: {
+      async get(options) {
+        calls.push(options);
+        if (options.folders) return [preview];
+        if (options.isUnfiled) return [source];
+        return [];
+      },
+      async getAll() {
+        throw new Error("getAll should not be required");
+      },
+    },
+  });
+
+  const items = await adapter.getItemsByFolder("batch-1");
+
+  assert.deepEqual(
+    items.map((item) => item.id).sort(),
+    ["png-direct", "zip-unfiled"]
+  );
+  assert.ok(calls.some((options) => options.folders?.[0] === "batch-1"));
+  assert.ok(calls.some((options) => options.isUnfiled === true));
 });

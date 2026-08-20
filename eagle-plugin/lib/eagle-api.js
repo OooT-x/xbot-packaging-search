@@ -95,12 +95,19 @@ function collectBatchItems(items, batchFolderId) {
   return [...inFolder, ...related];
 }
 
+function uniqueItems(items) {
+  const byId = new Map();
+  for (const item of items || []) {
+    if (item && item.id && !byId.has(item.id)) byId.set(item.id, item);
+  }
+  return [...byId.values()];
+}
+
 function planFormalFile(items, options = {}) {
   const formalFolderIds = new Set(options.formalFolderIds || []);
   const blocked = [];
   const alreadyFiled = [];
-  const pending = { preview: new Map(), source: new Map() };
-  const duplicates = new Set();
+  const pending = new Map();
 
   for (const item of items) {
     const kind = itemKind(item);
@@ -129,12 +136,17 @@ function planFormalFile(items, options = {}) {
       continue;
     }
 
-    const key = String(packageId);
-    if (pending[kind].has(key)) {
-      duplicates.add(key);
-      continue;
+    const batchId = meta["batch_id"] || "";
+    const key = JSON.stringify([batchId, String(packageId)]);
+    if (!pending.has(key)) {
+      pending.set(key, {
+        packageId: String(packageId),
+        batchId,
+        preview: [],
+        source: [],
+      });
     }
-    pending[kind].set(key, {
+    pending.get(key)[kind].push({
       item,
       meta,
       packageType,
@@ -142,19 +154,25 @@ function planFormalFile(items, options = {}) {
     });
   }
 
-  for (const [key, entry] of [...pending.preview, ...pending.source]) {
-    if (duplicates.has(key)) {
-      blocked.push({ item: entry.item, reason: `重复的包装记录：${key}，无法唯一配对` });
+  const pairCandidates = [];
+  for (const group of pending.values()) {
+    if (group.preview.length > 1 || group.source.length > 1) {
+      const batchLabel = group.batchId || "未记录 batch_id";
+      for (const entry of [...group.preview, ...group.source]) {
+        blocked.push({
+          item: entry.item,
+          reason: `同一批次存在重复的包装记录：${batchLabel} / ${group.packageId}`,
+        });
+      }
+      continue;
     }
-  }
-  for (const key of duplicates) {
-    pending.preview.delete(key);
-    pending.source.delete(key);
-  }
 
-  const readyPairs = [];
-  for (const [packageId, preview] of pending.preview) {
-    const source = pending.source.get(packageId);
+    const preview = group.preview[0];
+    const source = group.source[0];
+    if (!preview) {
+      blocked.push({ item: source.item, reason: "缺少配对 PNG" });
+      continue;
+    }
     if (!source) {
       blocked.push({ item: preview.item, reason: "缺少配对 ZIP" });
       continue;
@@ -181,19 +199,38 @@ function planFormalFile(items, options = {}) {
       });
       continue;
     }
-    readyPairs.push({
-      packageId,
+    pairCandidates.push({
+      packageId: group.packageId,
       packageType: preview.packageType,
       version: preview.meta["版本"] || "v01",
-      batchId: preview.meta["batch_id"] || null,
+      batchId: group.batchId || null,
       preview: preview.item,
       source: source.item,
     });
   }
 
-  for (const [packageId, source] of pending.source) {
-    if (!pending.preview.has(packageId)) {
-      blocked.push({ item: source.item, reason: "缺少配对 PNG" });
+  const candidatesByPackage = new Map();
+  for (const pair of pairCandidates) {
+    if (!candidatesByPackage.has(pair.packageId)) {
+      candidatesByPackage.set(pair.packageId, []);
+    }
+    candidatesByPackage.get(pair.packageId).push(pair);
+  }
+
+  const readyPairs = [];
+  for (const pairs of candidatesByPackage.values()) {
+    if (pairs.length === 1) {
+      readyPairs.push(pairs[0]);
+      continue;
+    }
+    const batchLabels = pairs.map((pair) => pair.batchId || "未记录 batch_id").join("、");
+    for (const pair of pairs) {
+      for (const item of [pair.preview, pair.source]) {
+        blocked.push({
+          item,
+          reason: `同一包装存在多个完整批次（${batchLabels}），请先保留一个批次`,
+        });
+      }
     }
   }
 
@@ -390,15 +427,32 @@ class EaglePluginAdapter {
   }
 
   async getItemsByFolder(folderId) {
-    let items = [];
+    const fields = ["id", "name", "ext", "tags", "annotation", "folders"];
+    let directItems = [];
+    let unfiledItems = [];
+    let directError = null;
     try {
-      items = await this.eagle.item.getAll();
+      const result = await this.eagle.item.get({ folders: [folderId], fields });
+      directItems = Array.isArray(result) ? result : [];
     } catch (error) {
-      const filtered = await this.eagle.item.get({
-        folders: [folderId],
-        fields: ["id", "name", "ext", "tags", "annotation", "folders"],
-      });
-      items = Array.isArray(filtered) ? filtered : [];
+      directError = error;
+    }
+
+    try {
+      const result = await this.eagle.item.get({ isUnfiled: true, fields });
+      unfiledItems = Array.isArray(result) ? result : [];
+    } catch {
+      unfiledItems = [];
+    }
+
+    let items = uniqueItems([...directItems, ...unfiledItems]);
+    if (directError || directItems.length === 0) {
+      try {
+        const allItems = await this.eagle.item.getAll();
+        items = uniqueItems([...items, ...(Array.isArray(allItems) ? allItems : [])]);
+      } catch (error) {
+        if (directError) throw directError;
+      }
     }
     return collectBatchItems(items, folderId);
   }

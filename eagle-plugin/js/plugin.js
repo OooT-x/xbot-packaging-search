@@ -6,6 +6,7 @@ const {
   fileBatch,
   folderId,
   importBatch,
+  parseAnnotation,
   planFormalFile,
   INGEST_ROOT_NAME,
   FORMAL_PREVIEW_ROOT_NAME,
@@ -185,6 +186,7 @@ function renderFilePlan(plan, remainingCount = 0) {
         <td>${escapeHtml(pair.preview.name || pair.packageId)}</td>
         <td>${escapeHtml(pair.packageType)}</td>
         <td>${escapeHtml(pair.version || "v01")}</td>
+        <td>${escapeHtml(pair.batchId || "-")}</td>
         <td>${escapeHtml(path.basename(pair.preview.name || ""))}</td>
         <td>${escapeHtml(path.basename(pair.source.name || ""))}</td>
         <td><span class="badge ready">可入库</span></td>
@@ -193,11 +195,13 @@ function renderFilePlan(plan, remainingCount = 0) {
     `);
   }
   for (const entry of plan.blocked) {
+    const meta = parseAnnotation(entry.item.annotation);
     rows.push(`
       <tr>
         <td>${escapeHtml(entry.item.name || entry.item.id)}</td>
-        <td>-</td>
-        <td>-</td>
+        <td>${escapeHtml(meta["包装类型"] || "-")}</td>
+        <td>${escapeHtml(meta["版本"] || "-")}</td>
+        <td>${escapeHtml(meta["batch_id"] || "-")}</td>
         <td>-</td>
         <td>-</td>
         <td><span class="badge blocked">阻止</span></td>
@@ -206,11 +210,13 @@ function renderFilePlan(plan, remainingCount = 0) {
     `);
   }
   for (const item of plan.alreadyFiled) {
+    const meta = parseAnnotation(item.annotation);
     rows.push(`
       <tr>
         <td>${escapeHtml(item.name || item.id)}</td>
-        <td>-</td>
-        <td>-</td>
+        <td>${escapeHtml(meta["包装类型"] || "-")}</td>
+        <td>${escapeHtml(meta["版本"] || "-")}</td>
+        <td>${escapeHtml(meta["batch_id"] || "-")}</td>
         <td>-</td>
         <td>-</td>
         <td><span class="badge ignore">已入库</span></td>
@@ -219,7 +225,7 @@ function renderFilePlan(plan, remainingCount = 0) {
     `);
   }
   if (rows.length === 0) {
-    rows.push('<tr><td colspan="7" class="hint">没有可入库的记录</td></tr>');
+    rows.push('<tr><td colspan="8" class="hint">没有可入库的记录</td></tr>');
   }
   elements.filePlanRows.innerHTML = rows.join("");
 }
@@ -242,9 +248,18 @@ async function loadFilePlan() {
     ].filter(Boolean);
     state.filePlan = planFormalFile(items, { formalFolderIds });
     renderFilePlan(state.filePlan, items.length);
-    elements.fileInfo.textContent = `批次共 ${items.length} 个文件`;
+    const batchIds = new Set(
+      items
+        .map((item) => parseAnnotation(item.annotation)["batch_id"])
+        .filter(Boolean)
+    );
+    elements.fileInfo.textContent =
+      `批次共 ${items.length} 个关联文件；识别到 ${batchIds.size} 个 batch_id`;
     elements.confirmFileBtn.hidden = state.filePlan.readyPairs.length === 0;
     elements.confirmFileBtn.disabled = false;
+    if (batchIds.size > 1) {
+      log(`检测到 ${batchIds.size} 个 batch_id，已按批次分别配对并保留重复保护`);
+    }
     log(
       `入库预检：${state.filePlan.readyPairs.length} 对可入库，` +
         `${state.filePlan.blocked.length} 条阻止，${state.filePlan.alreadyFiled.length} 条已入库`
