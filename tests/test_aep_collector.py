@@ -298,6 +298,81 @@ class PreviewFrameTests(unittest.TestCase):
             self.assertEqual(converted.mode, "RGBA")
             self.assertEqual(converted.getchannel("A").getextrema(), (128, 128))
 
+    def test_aerender_prefers_direct_png_template(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            project = root / "project.aep"
+            aerender = root / "aerender.exe"
+            target = root / "preview.png"
+            project.write_bytes(b"aep")
+            aerender.write_bytes(b"exe")
+
+            def fake_run(command, timeout_seconds):
+                self.assertEqual(timeout_seconds, PREVIEW.DEFAULT_RENDER_TIMEOUT_SECONDS)
+                template = command[command.index("-OMtemplate") + 1]
+                self.assertEqual(template, "Xbot PNG with Alpha")
+                output_pattern = command[command.index("-output") + 1]
+                rendered = Path(output_pattern.replace("[#####]", "00050"))
+                Image.new("RGBA", (3, 2), (20, 40, 60, 128)).save(rendered, "PNG")
+                return 0, "direct png"
+
+            with mock.patch.object(PREVIEW, "_run_aerender", side_effect=fake_run) as run:
+                result = PREVIEW.render_preview(
+                    project,
+                    "包装展示",
+                    5,
+                    25,
+                    2,
+                    target,
+                    aerender_path=aerender,
+                )
+
+            self.assertEqual(run.call_count, 1)
+            self.assertEqual(result.template_name, "Xbot PNG with Alpha")
+            self.assertEqual(result.renderer, "aerender-png")
+            self.assertTrue(PREVIEW._is_complete_png(target))
+            with Image.open(target) as image:
+                self.assertEqual(image.mode, "RGBA")
+                self.assertEqual(image.getchannel("A").getextrema(), (128, 128))
+
+    def test_aerender_falls_back_to_tiff_when_png_template_is_missing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            project = root / "project.aep"
+            aerender = root / "aerender.exe"
+            target = root / "preview.png"
+            project.write_bytes(b"aep")
+            aerender.write_bytes(b"exe")
+
+            def fake_run(command, _timeout_seconds):
+                template = command[command.index("-OMtemplate") + 1]
+                if template == "Xbot PNG with Alpha":
+                    return 1, "template does not exist"
+                output_pattern = command[command.index("-output") + 1]
+                rendered = Path(output_pattern.replace("[#####]", "00050"))
+                Image.new("RGBA", (3, 2), (80, 60, 40, 192)).save(
+                    rendered,
+                    "TIFF",
+                    compression="raw",
+                )
+                return 0, "tiff fallback"
+
+            with mock.patch.object(PREVIEW, "_run_aerender", side_effect=fake_run) as run:
+                result = PREVIEW.render_preview(
+                    project,
+                    "包装展示",
+                    5,
+                    25,
+                    2,
+                    target,
+                    aerender_path=aerender,
+                )
+
+            self.assertEqual(run.call_count, 2)
+            self.assertEqual(result.renderer, "aerender-tiff-png")
+            self.assertIn("已回退 TIFF 中转", result.log)
+            self.assertTrue(PREVIEW._is_complete_png(target))
+
 
 class PreviewBridgeTests(unittest.TestCase):
     def test_live_bridge_renders_complete_png(self):

@@ -10,7 +10,7 @@
 - 每个合成默认选择第 2 秒代表帧；短于 2 秒时自动取最后一个有效帧。
 - 单选合成后可打开预览窗口，通过时间轴、秒数输入或前后逐帧调整，透明画面用棋盘格显示。
 - 视频框、横屏框和竖屏框会优先把唯一合适的上层“包装/展示合成”作为预览来源，从而把框体叠在背景上展示；预览窗口仍可切换为自身或其他直接父合成，实际收集目标不会改变。
-- 可选安装 AE 快速预览桥接。AE 已打开同一个 AEP 时，调帧通过常驻 AE 的 `saveFrameToPng` 快速刷新；未连接时自动回退 `aerender`。最终入库 PNG 始终只额外执行一次高质量 `aerender`，避免快速快照的 Alpha 边缘问题。
+- 可选安装 AE 快速预览桥接。AE 已打开同一个 AEP 时，调帧通过常驻 AE 的 `saveFrameToPng` 快速刷新；未连接时自动回退 `aerender`。后台渲染优先使用 `Xbot PNG with Alpha` 输出模块直接生成 PNG，模板不存在或失败时自动回退 TIFF+Alpha 中转；最终入库 PNG 始终只额外执行一次高质量 `aerender`。
 - 支持多选合成；每个合成生成独立的收集目录和同名 ZIP。
 - 递归保留选中合成的嵌套合成和直接图层素材。
 - 复制素材并把收集工程重链接到新素材目录。
@@ -58,6 +58,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\aep-collector\install-prev
 
 桥接只在本机 `%APPDATA%\XbotAepPreviewBridge` 交换请求、状态和临时路径，不上传工程或画面。若 AE 没打开当前工程、桥接停止或请求超时，收集器会自动走原有高质量后台渲染。
 
+## 创建后台直接 PNG 模板
+
+在 AE 中打开 `编辑 > 模板 > 输出模块`，新建一个格式为 `PNG 序列`、通道为 `RGB + Alpha`、颜色为 `Straight / Unmatted` 的输出模块，并严格命名为 `Xbot PNG with Alpha`。收集器在 AE 未打开时会优先通过该模板直接输出 PNG；如果其他 AE 版本未安装该模板，会自动回退，不会因此中断收集。
+
+可用环境变量 `XBOT_AERENDER_PNG_TEMPLATE` 指定其他直接 PNG 模板名；原 `XBOT_AERENDER_STILL_TEMPLATE` 仍只用于 TIFF 回退模板。
+
 ## 安全边界
 
 - 永远从原 AEP 重新解析，在新目录中保存收集结果。
@@ -75,4 +81,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\aep-collector\install-prev
 - 少数专有媒体格式或目录型素材可能已复制但无法由 `py-aep` 自动重链接，manifest 会保留警告。
 - 输出 AEP 必须经过真实 AE 打开验证后才能正式入库。
 - 预览生成需要本机安装且已授权 After Effects；默认后台渲染超时为 180 秒。预览失败不删除已成功的收集 ZIP，但 Eagle 会等待补齐 PNG。
-- `saveFrameToPng` 快速快照仅用于交互选帧；最终 PNG 不直接复用该快照，而是使用高质量渲染结果。
+- `saveFrameToPng` 快速快照仅用于交互选帧；最终 PNG 不直接复用该快照，而是使用高质量 `aerender` 结果。直接 PNG 模板不存在时会多执行一次快速失败尝试，随后回退 TIFF 中转。

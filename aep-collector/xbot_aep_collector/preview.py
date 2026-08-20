@@ -4,6 +4,7 @@ import math
 import locale
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -18,11 +19,17 @@ from .core import CollectorError
 DEFAULT_PREVIEW_SECONDS = 2.0
 DEFAULT_RENDER_TIMEOUT_SECONDS = 180
 PREVIEW_TEMPLATE_ENV = "XBOT_AERENDER_STILL_TEMPLATE"
+PNG_PREVIEW_TEMPLATE_ENV = "XBOT_AERENDER_PNG_TEMPLATE"
+DEFAULT_PNG_PREVIEW_TEMPLATE = "Xbot PNG with Alpha"
 AERENDER_PATH_ENV = "XBOT_AERENDER_PATH"
 
 
 class PreviewError(CollectorError):
     """A user-facing preview rendering error."""
+
+
+class DirectPngUnavailable(PreviewError):
+    """The configured direct PNG output module cannot render this frame."""
 
 
 @dataclass(frozen=True)
@@ -110,7 +117,14 @@ def find_aerender() -> Path:
     return candidates[0]
 
 
-def _template_candidates() -> tuple[str, ...]:
+def _png_template_candidates() -> tuple[str, ...]:
+    configured = os.environ.get(PNG_PREVIEW_TEMPLATE_ENV, "").strip()
+    values = [configured] if configured else []
+    values.append(DEFAULT_PNG_PREVIEW_TEMPLATE)
+    return tuple(dict.fromkeys(value for value in values if value))
+
+
+def _tiff_template_candidates() -> tuple[str, ...]:
     configured = os.environ.get(PREVIEW_TEMPLATE_ENV, "")
     values = [configured] if configured else []
     # AE's Chinese built-in template contains a trailing space. Keep it intact.
@@ -230,6 +244,62 @@ def _open_rendered_tiff(path: Path) -> Image.Image:
         return source.convert("RGBA" if "A" in source.getbands() else "RGB")
 
 
+def _is_complete_png(path: Path) -> bool:
+    try:
+        if not path.is_file() or path.stat().st_size < 20:
+            return False
+        with path.open("rb") as stream:
+            if stream.read(8) != b"\x89PNG\r\n\x1a\n":
+                return False
+            stream.seek(-12, os.SEEK_END)
+            return stream.read(12) == b"\x00\x00\x00\x00IEND\xaeB`\x82"
+    except OSError:
+        return False
+
+
+def _render_png(
+    aerender: Path,
+    project: Path,
+    comp_name: str,
+    frame_number: int,
+    temp_root: Path,
+    templates: Iterable[str],
+    timeout_seconds: int,
+) -> tuple[Path, str, str]:
+    failures: list[str] = []
+    for attempt, template_name in enumerate(templates, start=1):
+        attempt_root = temp_root / f"png-attempt-{attempt}"
+        attempt_root.mkdir(parents=True, exist_ok=True)
+        output_pattern = attempt_root / "preview_[#####].png"
+        command = [
+            str(aerender),
+            "-project",
+            str(project),
+            "-comp",
+            comp_name,
+            "-s",
+            str(frame_number),
+            "-e",
+            str(frame_number),
+            "-OMtemplate",
+            template_name,
+            "-output",
+            str(output_pattern),
+            "-v",
+            "ERRORS_AND_PROGRESS",
+            "-sound",
+            "OFF",
+            "-continueOnMissingFootage",
+        ]
+        exit_code, log = _run_aerender(command, timeout_seconds)
+        rendered = [path for path in sorted(attempt_root.glob("preview_*.png")) if _is_complete_png(path)]
+        if exit_code == 0 and len(rendered) == 1:
+            return rendered[0], template_name, log
+        reason = log or f"aerender 退出码 {exit_code}，未生成完整 PNG。"
+        failures.append(f"模板“{template_name}”：{reason}")
+    raise DirectPngUnavailable("直接 PNG 输出不可用。\n\n" + "\n\n".join(failures))
+
+
 def _render_tiff(
     aerender: Path,
     project: Path,
@@ -304,22 +374,39 @@ def render_preview(
 
     with tempfile.TemporaryDirectory(prefix="xbot-aep-preview-") as temp_dir:
         temp_root = Path(temp_dir)
-        rendered, template_name, log = _render_tiff(
-            aerender,
-            project,
-            comp_name,
-            selection.frame_number,
-            temp_root,
-            _template_candidates(),
-            timeout_seconds,
-        )
         partial = target.with_name(f".{target.name}.partial")
         partial.unlink(missing_ok=True)
+        renderer = "aerender-png"
         try:
-            with _open_rendered_tiff(rendered) as image:
-                image.save(partial, format="PNG", optimize=True)
-            if not partial.is_file() or partial.stat().st_size <= 0:
-                raise PreviewError("TIFF 转 PNG 后未生成有效文件。")
+            try:
+                rendered, template_name, log = _render_png(
+                    aerender,
+                    project,
+                    comp_name,
+                    selection.frame_number,
+                    temp_root,
+                    _png_template_candidates(),
+                    timeout_seconds,
+                )
+                shutil.copyfile(rendered, partial)
+                if not _is_complete_png(partial):
+                    raise PreviewError("直接输出的 PNG 文件不完整。")
+            except DirectPngUnavailable as direct_error:
+                rendered, template_name, fallback_log = _render_tiff(
+                    aerender,
+                    project,
+                    comp_name,
+                    selection.frame_number,
+                    temp_root,
+                    _tiff_template_candidates(),
+                    timeout_seconds,
+                )
+                with _open_rendered_tiff(rendered) as image:
+                    image.save(partial, format="PNG", optimize=True)
+                if not _is_complete_png(partial):
+                    raise PreviewError("TIFF 转 PNG 后未生成有效文件。")
+                renderer = "aerender-tiff-png"
+                log = f"{direct_error}\n\n已回退 TIFF 中转。\n{fallback_log}".strip()
             partial.replace(target)
         finally:
             partial.unlink(missing_ok=True)
@@ -332,4 +419,5 @@ def render_preview(
         aerender_path=str(aerender),
         template_name=template_name,
         log=log,
+        renderer=renderer,
     )

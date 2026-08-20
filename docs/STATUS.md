@@ -7,13 +7,13 @@
 | 项目 | 当前值 |
 | --- | --- |
 | 项目阶段 | M1 文字检索闭环已完成；M5 已打通外部收集、逐合成 ZIP、可调代表帧 PNG 与 Eagle 安全配对，等待真实 AE 打开验收与正式归位 |
-| 核心文档版本 | v1.17 |
+| 核心文档版本 | v1.18 |
 | 软件版本 | `0.0.0` 开发版，尚未发布标签 |
 | 当前分支 | `codex/aep-preview-optimization` |
 | 远程仓库 | GitHub：`OooT-x/xbot-packaging-search`（私有），`codex/feishu-bot-m1` 与 `codex/eagle-ingest-plugin` 均已推送 |
 | Eagle 库 | `E:\Eagle资源库\包装.library` |
 | 应用源码 | 已迁入既有 X.bot 监听器，并接入包装检索模块 |
-| 最近交付 | 收集器增加常驻 AE 快速预览桥接，交互调帧优先用 `saveFrameToPng`、最终 PNG 只做一次高质量渲染；视频框默认从包含背景的上层包装合成取景，且可在窗口中改选来源 |
+| 最近交付 | 收集器增加常驻 AE 快速预览桥接；AE 未打开时优先用自定义输出模块直接生成 PNG，失败才回退 TIFF；视频框默认从包含背景的上层包装合成取景 |
 
 ## 已完成
 
@@ -102,6 +102,9 @@
 - [x] 真实“阿宝包装.aep”验证：`视频框`（ID 293）和`竖屏框`（ID 408）均自动推荐父级`包装`（ID 17）；1920×1080 连续快速快照为 2.15–2.25 秒，高质量 `aerender` 为 13.32 秒，交互调帧约快 6 倍。
 - [x] 真实“视频框”完整收集得到 2 个依赖合成、5,286,411 字节 ZIP 和取景`包装`第 50 帧的 PNG；manifest 与 ZIP 内清单均记录 `source_composition: 包装 / parent-display`，Eagle 扫描为 1 条 ready、2 个将导入、0 冲突。全项目 97 项自动化测试通过。
 - [x] 已构建新版 `XbotAepCollector.exe`（29,119,924 字节，SHA-256 `4F4562C1445AB0C4CA7150E49755DF95579B6D138FC1C2310837A79A3C60B672`），同时输出带 UAC 自提升安装脚本的 `AE-Preview-Bridge` 安装包；EXE 隐藏启动 6 秒存活检查通过。
+- [x] `aerender` 高质量预览优先调用用户自定义的 `Xbot PNG with Alpha` 输出模块直接生成 PNG，只接受包含正确 PNG 签名和 IEND 尾标的完整文件；模板缺失或输出失败时自动回退现有 TIFF+Alpha 中转。
+- [x] AE 完全关闭时使用真实“阿宝包装.aep”验证：`Xbot PNG with Alpha` 被 `aerender` 正确识别，`包装` 1920×1080 RGBA PNG 直接输出用时 12.36 秒、大小 4,901,244 字节；`人名条` 500×300 RGBA PNG 用时 10.42 秒、Alpha 范围 0–255。
+- [x] 新增直接 PNG 与 TIFF 回退回归测试，全项目 99 项自动化测试通过；新版 `XbotAepCollector.exe` 为 29,119,138 字节，SHA-256 `52C9C50CF767134EC4CE65B0F795A4350F6D193084B0D16ED1552B48A15AB656`，隐藏启动 6 秒存活检查通过，父子测试进程已全部关闭。
 
 ## 当前未完成
 
