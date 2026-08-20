@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 
 const {
   buildAnnotation,
+  collectBatchItems,
   fileBatch,
   parseAnnotation,
   planFormalFile,
@@ -169,4 +170,40 @@ test("parses annotation facts and replaces the ingest tag", () => {
     "变速箱",
     "01_预览图",
   ]);
+});
+
+test("collects unfiled pair partners referenced by batch items", () => {
+  const items = makePair();
+  const orphanZip = {
+    id: "zip-2",
+    name: "变速箱_小标注_v01.zip",
+    ext: "zip",
+    folders: [],
+    tags: [],
+    annotation: buildAnnotation(
+      {
+        projectName: "变速箱",
+        packageId: "pkg-2",
+        packageName: "小标注",
+        packageType: "信息条",
+        version: "v01",
+        aeCompName: "小标注",
+        batchId: "batch-OTHER1234567",
+      },
+      { previewItemId: "png-1", sourceItemId: "zip-2" }
+    ),
+  };
+  const outside = {
+    id: "zip-3",
+    name: "无关.zip",
+    ext: "zip",
+    folders: ["preview-root"],
+    tags: [],
+    annotation: "项目：其他\npackage_id：pkg-3\nbatch_id：batch-OTHER1234567\n",
+  };
+  const collected = collectBatchItems([...items, orphanZip, outside], "batch-1");
+
+  assert.equal(collected.length, 3);
+  assert.ok(collected.some((item) => item.id === "zip-2"));
+  assert.ok(!collected.some((item) => item.id === "zip-3"));
 });

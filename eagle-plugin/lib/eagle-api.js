@@ -74,6 +74,27 @@ function replaceIngestTag(tags, formalRootName) {
   return (tags || []).map((tag) => (tag === INGEST_ROOT_NAME ? formalRootName : tag));
 }
 
+function collectBatchItems(items, batchFolderId) {
+  const inFolder = items.filter((item) => (item.folders || []).includes(batchFolderId));
+  const inFolderIds = new Set(inFolder.map((item) => item.id));
+  const batchIds = new Set();
+  for (const item of inFolder) {
+    const meta = parseAnnotation(item.annotation);
+    if (meta["batch_id"]) batchIds.add(meta["batch_id"]);
+  }
+  const related = items.filter((item) => {
+    if ((item.folders || []).some((id) => id)) return false;
+    if (inFolderIds.has(item.id)) return false;
+    const meta = parseAnnotation(item.annotation);
+    return (
+      (meta["配对 PNG"] && inFolderIds.has(meta["配对 PNG"])) ||
+      (meta["配对 ZIP"] && inFolderIds.has(meta["配对 ZIP"])) ||
+      (meta["batch_id"] && batchIds.has(meta["batch_id"]))
+    );
+  });
+  return [...inFolder, ...related];
+}
+
 function planFormalFile(items, options = {}) {
   const formalFolderIds = new Set(options.formalFolderIds || []);
   const blocked = [];
@@ -369,11 +390,17 @@ class EaglePluginAdapter {
   }
 
   async getItemsByFolder(folderId) {
-    const items = await this.eagle.item.get({
-      folders: [folderId],
-      fields: ["id", "name", "ext", "tags", "annotation", "folders"],
-    });
-    return Array.isArray(items) ? items : [];
+    let items = [];
+    try {
+      items = await this.eagle.item.getAll();
+    } catch (error) {
+      const filtered = await this.eagle.item.get({
+        folders: [folderId],
+        fields: ["id", "name", "ext", "tags", "annotation", "folders"],
+      });
+      items = Array.isArray(filtered) ? filtered : [];
+    }
+    return collectBatchItems(items, folderId);
   }
 
   async saveItem(item) {
@@ -390,6 +417,7 @@ module.exports = {
   EaglePluginAdapter,
   buildAnnotation,
   buildTags,
+  collectBatchItems,
   ensureFolder,
   fileBatch,
   folderId,

@@ -143,8 +143,15 @@ async function refreshBatches() {
       log("Eagle 中还没有 00_待入库 目录");
       return;
     }
+    const rootChildrenIds = new Set(
+      (root.children || []).map(folderId).filter(Boolean)
+    );
     state.batchFolders = folders
-      .filter((folder) => folderId(folder.parent) === folderId(root))
+      .filter(
+        (folder) =>
+          folderId(folder.parent) === folderId(root) ||
+          rootChildrenIds.has(folderId(folder))
+      )
       .sort((a, b) => String(a.name).localeCompare(String(b.name), "zh-CN"));
     if (state.batchFolders.length === 0) {
       log("00_待入库 下还没有批次文件夹");
@@ -159,6 +166,7 @@ async function refreshBatches() {
     elements.batchSelect.disabled = false;
     elements.fileBtn.disabled = false;
     log(`已加载 ${state.batchFolders.length} 个待入库批次`);
+    await loadFilePlan();
   } catch (error) {
     log(`加载批次失败：${error.message}`);
   }
