@@ -137,9 +137,9 @@ test("sends a preview, accepts only the requester, and delivers the ZIP once", a
     };
     assert.equal(await app.service.tryHandleQuery(queryEvent, { mentioned: true }), true);
 
-    const imageCall = app.calls.find((call) => call.kind === "image");
-    assert.ok(imageCall);
-    app.replyTargets.set("om_other_confirmation", imageCall.message_id);
+    const candidatePost = app.calls.find((call) => call.kind === "post");
+    assert.ok(candidatePost);
+    app.replyTargets.set("om_other_confirmation", candidatePost.message_id);
     assert.equal(
       await app.service.tryHandleConfirmation({
         message_id: "om_other_confirmation",
@@ -152,7 +152,7 @@ test("sends a preview, accepts only the requester, and delivers the ZIP once", a
     );
     assert.equal(app.calls.filter((call) => call.kind === "file").length, 0);
 
-    app.replyTargets.set("om_confirmation", imageCall.message_id);
+    app.replyTargets.set("om_confirmation", candidatePost.message_id);
     const confirmation = {
       message_id: "om_confirmation",
       message_type: "text",
@@ -248,7 +248,7 @@ test("routes an explicit project query past expired pending confirmations", asyn
     );
     assert.equal(await app.service.tryHandleQuery(newQueryEvent, { mentioned: true }), true);
     assert.equal(app.database.getQueryByRootMessage("om_new_root").status, "pending");
-    assert.equal(app.calls.filter((call) => call.kind === "image").length, 2);
+    assert.equal(app.calls.filter((call) => call.kind === "post").length, 2);
   } finally {
     app.close();
   }
@@ -282,7 +282,7 @@ test("ignores a bare confirmation from a non-requester without a reply reference
 
     assert.equal(app.calls.filter((call) => call.kind === "file").length, 0);
     assert.equal(app.database.getQueryByRootMessage("om_root_bare_other").status, "pending");
-    assert.equal(app.calls.filter((call) => call.kind === "text").length, 1);
+    assert.equal(app.calls.filter((call) => call.kind === "text").length, 0);
   } finally {
     app.close();
   }
@@ -304,7 +304,7 @@ test("triggers a query with a project name and only a domain word", async () => 
       { mentioned: true }
     );
     assert.equal(result, true);
-    assert.equal(app.calls.filter((call) => call.kind === "image").length, 1);
+    assert.equal(app.calls.filter((call) => call.kind === "post").length, 1);
   } finally {
     app.close();
   }
@@ -326,7 +326,7 @@ test("triggers a query with natural wording like 我要", async () => {
       { mentioned: true }
     );
     assert.equal(result, true);
-    assert.equal(app.calls.filter((call) => call.kind === "image").length, 1);
+    assert.equal(app.calls.filter((call) => call.kind === "post").length, 1);
   } finally {
     app.close();
   }
@@ -372,7 +372,7 @@ test("triggers a query from an AI hint when no rule keywords match", async () =>
       }
     );
     assert.equal(result, true);
-    assert.equal(app.calls.filter((call) => call.kind === "image").length, 1);
+    assert.equal(app.calls.filter((call) => call.kind === "post").length, 1);
   } finally {
     app.close();
   }
@@ -392,9 +392,9 @@ test("continues from a preview reply and switches to another package type", asyn
     };
     assert.equal(await app.service.tryHandleQuery(queryEvent, { mentioned: true }), true);
 
-    const imageCall = app.calls.find((call) => call.kind === "image");
-    assert.ok(imageCall);
-    app.replyTargets.set("om_followup", imageCall.message_id);
+    const candidatePost = app.calls.find((call) => call.kind === "post");
+    assert.ok(candidatePost);
+    app.replyTargets.set("om_followup", candidatePost.message_id);
     assert.equal(
       await app.service.tryHandleConfirmation({
         message_id: "om_followup",
@@ -406,13 +406,9 @@ test("continues from a preview reply and switches to another package type", asyn
       true
     );
 
-    const images = app.calls.filter((call) => call.kind === "image");
-    assert.equal(images.length, 2);
-    assert.ok(
-      app.calls.some(
-        (call) => call.kind === "text" && call.text.includes("黑色纹理背景")
-      )
-    );
+    const posts = app.calls.filter((call) => call.kind === "post");
+    assert.equal(posts.length, 2);
+    assert.ok(JSON.stringify(posts[1].content).includes("黑色纹理背景"));
     assert.equal(app.database.getQueryByRootMessage("om_root_followup").status, "pending");
   } finally {
     app.close();
@@ -445,8 +441,8 @@ test("ignores a bare follow-up without a reply reference", async () => {
       false
     );
 
-    const images = app.calls.filter((call) => call.kind === "image");
-    assert.equal(images.length, 1);
+    const posts = app.calls.filter((call) => call.kind === "post");
+    assert.equal(posts.length, 1);
   } finally {
     app.close();
   }
@@ -475,7 +471,9 @@ test("merges multiple previews into one post message and keeps number selection"
     assert.equal(postCalls.length, 1);
     assert.equal(imageCalls.length, 0);
     assert.equal(uploadCalls.length, 2);
-    assert.equal(promptCalls.length, 1);
+    assert.equal(promptCalls.length, 0);
+    assert.ok(JSON.stringify(postCalls[0].content).includes("找到 2 个候选"));
+    assert.ok(JSON.stringify(postCalls[0].content).includes("第二个"));
 
     const imageElements = postCalls[0].content.zh_cn.content.filter(
       (row) => row.length === 1 && row[0].tag === "img"
@@ -492,11 +490,11 @@ test("merges multiple previews into one post message and keeps number selection"
     assert.ok(query);
     assert.equal(query.candidates.length, 2);
     assert.equal(query.replied_position, null);
-    assert.equal(query.candidates[0].preview_message_id, postCalls[0].message_id);
+    assert.equal(query.candidates[0].preview_message_id, null);
     assert.equal(query.candidates[1].preview_message_id, null);
     const queryByPrompt = app.database.findQueryByReplyMessage(
       "oc_chat",
-      promptCalls[0].message_id
+      postCalls[0].message_id
     );
     assert.ok(queryByPrompt);
     assert.equal(queryByPrompt.replied_position, null);
@@ -516,19 +514,6 @@ test("merges multiple previews into one post message and keeps number selection"
     assert.ok(
       app.calls.some((call) => call.kind === "text" && call.text.includes("多个候选"))
     );
-
-    app.replyTargets.set("om_merged_this_prompt", promptCalls[0].message_id);
-    assert.equal(
-      await app.service.tryHandleConfirmation({
-        message_id: "om_merged_this_prompt",
-        message_type: "text",
-        chat_id: "oc_chat",
-        sender_id: "ou_requester",
-        content: "这个",
-      }),
-      true
-    );
-    assert.equal(app.calls.filter((call) => call.kind === "file").length, 0);
 
     app.replyTargets.set("om_merged_select", postCalls[0].message_id);
     assert.equal(
@@ -690,8 +675,8 @@ test("uploads oversized source files to Drive and replies with a link", async ()
     };
     assert.equal(await app.service.tryHandleQuery(queryEvent, { mentioned: true }), true);
 
-    const imageCall = app.calls.find((call) => call.kind === "image");
-    app.replyTargets.set("om_drive_confirm", imageCall.message_id);
+    const candidatePost = app.calls.find((call) => call.kind === "post");
+    app.replyTargets.set("om_drive_confirm", candidatePost.message_id);
     assert.equal(
       await app.service.tryHandleConfirmation({
         message_id: "om_drive_confirm",
@@ -739,9 +724,9 @@ test("keeps previous query confirmable after a follow-up", async () => {
     };
     assert.equal(await app.service.tryHandleQuery(queryEvent, { mentioned: true }), true);
 
-    const firstImage = app.calls.find((call) => call.kind === "image");
-    assert.ok(firstImage);
-    app.replyTargets.set("om_followup_keep", firstImage.message_id);
+    const firstPost = app.calls.find((call) => call.kind === "post");
+    assert.ok(firstPost);
+    app.replyTargets.set("om_followup_keep", firstPost.message_id);
     assert.equal(
       await app.service.tryHandleConfirmation({
         message_id: "om_followup_keep",
@@ -756,7 +741,7 @@ test("keeps previous query confirmable after a follow-up", async () => {
     const oldQuery = app.database.getQueryByRootMessage("om_root_keep");
     assert.equal(oldQuery.status, "pending");
 
-    app.replyTargets.set("om_old_preview", firstImage.message_id);
+    app.replyTargets.set("om_old_preview", firstPost.message_id);
     assert.equal(
       await app.service.tryHandleConfirmation({
         message_id: "om_old_preview",

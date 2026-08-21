@@ -36,12 +36,37 @@ function queryPrompt(candidates, expiresMinutes) {
   ].join("\n");
 }
 
-function buildCandidatePost(candidates, imageKeys) {
-  const rows = [];
+function buildCandidatePost(candidates, imageKeys, expiresMinutes) {
+  const rows = [
+    [
+      {
+        tag: "text",
+        text:
+          candidates.length === 1
+            ? "找到一个候选："
+            : `找到 ${candidates.length} 个候选：`,
+      },
+    ],
+  ];
   candidates.forEach((item, index) => {
-    rows.push([{ tag: "text", text: `${index + 1}.` }]);
+    rows.push([{ tag: "text", text: `${index + 1}. ${candidateLabel(item)}` }]);
     rows.push([{ tag: "img", image_key: imageKeys[index] }]);
   });
+  rows.push([
+    {
+      tag: "text",
+      text:
+        candidates.length === 1
+          ? "请直接回复这条消息说“这个”，我再发送源文件。"
+          : "请直接回复这条消息，用数字（比如“第二个”）选择候选。",
+    },
+  ]);
+  rows.push([
+    {
+      tag: "text",
+      text: `${expiresMinutes} 分钟内有效，只有原查询人可以确认。`,
+    },
+  ]);
   return { zh_cn: { content: rows } };
 }
 
@@ -186,54 +211,25 @@ class PackagingService {
     );
 
     try {
-      let promptMessageId = "";
-      if (result.candidates.length > 1) {
-        const imageKeys = [];
-        for (const candidate of result.candidates) {
-          if (!fs.existsSync(candidate.preview_path)) {
-            throw new Error(`preview file missing: ${candidate.preview_eagle_id}`);
-          }
-          imageKeys.push(await this.transport.uploadImage(candidate.preview_path));
-        }
-        const postContent = buildCandidatePost(result.candidates, imageKeys);
-        const reply = await this.transport.replyPost(
-          event.message_id,
-          postContent,
-          `package-query-${requestId}-post`
-        );
-        const postMessageId = safeMessageId(reply);
-        if (!postMessageId) throw new Error("candidate post did not return message_id");
-        this.database.setCandidatePreviewMessage(requestId, 1, postMessageId);
-
-        const prompt = await this.transport.replyText(
-          event.message_id,
-          queryPrompt(result.candidates, this.expiresMinutes),
-          `package-query-${requestId}-prompt`
-        );
-        promptMessageId = safeMessageId(prompt);
-        if (!promptMessageId) throw new Error("candidate prompt did not return message_id");
-      } else {
-        const candidate = result.candidates[0];
+      const imageKeys = [];
+      for (const candidate of result.candidates) {
         if (!fs.existsSync(candidate.preview_path)) {
           throw new Error(`preview file missing: ${candidate.preview_eagle_id}`);
         }
-        const reply = await this.transport.replyImage(
-          event.message_id,
-          candidate.preview_path,
-          `package-query-${requestId}-preview-1`
-        );
-        const previewMessageId = safeMessageId(reply);
-        if (!previewMessageId) throw new Error("preview reply did not return message_id");
-        this.database.setCandidatePreviewMessage(requestId, 1, previewMessageId);
-
-        const prompt = await this.transport.replyText(
-          event.message_id,
-          queryPrompt(result.candidates, this.expiresMinutes),
-          `package-query-${requestId}-prompt`
-        );
-        promptMessageId = safeMessageId(prompt);
-        if (!promptMessageId) throw new Error("candidate prompt did not return message_id");
+        imageKeys.push(await this.transport.uploadImage(candidate.preview_path));
       }
+      const postContent = buildCandidatePost(
+        result.candidates,
+        imageKeys,
+        this.expiresMinutes
+      );
+      const reply = await this.transport.replyPost(
+        event.message_id,
+        postContent,
+        `package-query-${requestId}-candidates`
+      );
+      const promptMessageId = safeMessageId(reply);
+      if (!promptMessageId) throw new Error("candidate post did not return message_id");
 
       this.database.markQueryPending(requestId, promptMessageId);
       this.log(
