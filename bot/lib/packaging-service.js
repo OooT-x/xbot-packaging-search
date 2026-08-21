@@ -79,6 +79,21 @@ function formatFileSize(bytes) {
   return `${mb.toFixed(mb >= 10 ? 1 : 2)}MB`;
 }
 
+function generateProactiveSuggestion(result) {
+  if (!result?.project || !result?.candidates?.length) return null;
+  const allTypes = new Set();
+  const queriedType = result.package_type || "";
+  for (const c of result.candidates) {
+    if (c.package_type) allTypes.add(c.package_type);
+  }
+  const remaining = [...allTypes].filter((t) => t !== queriedType);
+  if (remaining.length === 0) return null;
+  if (queriedType) {
+    return "要不要也看看" + remaining.join("和") + "？回复对应关键词就行。";
+  }
+  return null;
+}
+
 class PackagingService {
   constructor(options) {
     this.database = options.database;
@@ -241,6 +256,16 @@ class PackagingService {
       this.log(
         `packaging query pending request_id=${requestId} candidates=${result.candidates.length}`
       );
+
+
+      const suggestion = generateProactiveSuggestion(result);
+      if (suggestion) {
+        await this.transport.replyText(
+          event.message_id,
+          suggestion,
+          `package-query-${requestId}-suggestion`
+        );
+      }
     } catch (error) {
       this.database.markQueryFailed(requestId, error.message);
       this.log(`packaging query failed request_id=${requestId}: ${error.message}`);

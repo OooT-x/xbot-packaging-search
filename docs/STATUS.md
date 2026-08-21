@@ -14,11 +14,12 @@
 | Eagle 库 | `E:\Eagle资源库\包装.library` |
 | 当前包装索引 | 2 个项目、9 组包装：变速箱 3 组、支付宝阿宝 6 组，配对错误 0 |
 | 应用源码 | 已迁入既有 X.bot 监听器，并接入包装检索模块 |
-| 最近交付 | 实测完整包装查询闭环（候选富文本 → 确认 → ZIP/云盘，含/不含语音）均稳定通过；在 `startQueryFromResult` 增加 `packaging dbg:` 逐步日志供崩溃定位，旧崩溃未复现 |
+| 最近交付 | AI 对话增强上线（情绪感知 + 意图分类 + 主动建议）；实测完整包装查询闭环（候选富文本 → 确认 → ZIP/云盘，含/不含语音）均稳定通过；在 `startQueryFromResult` 增加 `packaging dbg:` 逐步日志供崩溃定位，旧崩溃未复现 |
 
 ## 已完成
 
 - [x] 整理项目本地产物：删除 `aep-collector/` 下可重建的 `.build-venv`、`build`、`__pycache__` 及 `dist/AE-Preview-Bridge` 源码冗余副本，保留交付物 `dist/XbotAepCollector.exe` 与活跃的运行数据/日志；`aep-collector` 由约 130MB 精简至约 28MB，git 工作区干净（变更见 `CHANGELOG.md`）。
+- [x] AI 对话能力增强 + 活人感提升：系统提示精简重写（20+ 规则→12 核心原则）、回复风格变化追踪（`analyzeRecentStyle` 检测重复模式并注入变化提醒）、情绪感知扩展（烦躁/疲惫模式）、消息意图分类器、包装查询主动建议。81 项 JS + 18 项 Python 测试全部通过。
 
 - [x] 新增 `docs/CONTEXT.md` 轻量上下文速览（状态摘要、里程碑、模块地图、关键决策指针、数据/安全边界、常用命令），并将它接入 `AGENTS.md` 必读顺序与 `README.md` 项目管理入口：后续迭代先读速览，命中对应主题时才翻开长文档，降低每次恢复上下文的阅读量。
 - [x] 修复 bot 登录自启动并增强单实例保护：注册 `FeishuBot` 登录自启计划任务（指向 `scripts/start-feishu-bot-autostart.ps1`）；`Get-ExistingBotProcess` 在 pid 文件校验之外，增加按 `lark-bot-listener.js` 运行进程扫描兜底，避免因运行时根不一致导致重复启动 bot。
