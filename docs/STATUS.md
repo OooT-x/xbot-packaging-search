@@ -9,7 +9,7 @@
 | 项目阶段 | M1 文字检索闭环已完成；M5 已打通外部收集、逐合成 ZIP、可调代表帧 PNG 与 Eagle 安全配对，等待真实 AE 打开验收与正式归位 |
 | 核心文档版本 | v1.21 |
 | 软件版本 | `0.0.0` 开发版，尚未发布标签 |
-| 当前分支 | `codex/unified-packaging-preview-message` |
+| 当前分支 | `codex/docs-context-fastpath` |
 | 远程仓库 | GitHub：`OooT-x/xbot-packaging-search`（私有），`codex/feishu-bot-m1` 与 `codex/eagle-ingest-plugin` 均已推送 |
 | Eagle 库 | `E:\Eagle资源库\包装.library` |
 | 当前包装索引 | 2 个项目、9 组包装：变速箱 3 组、支付宝阿宝 6 组，配对错误 0 |
@@ -18,6 +18,7 @@
 
 ## 已完成
 
+- [x] 新增 `docs/CONTEXT.md` 轻量上下文速览（状态摘要、里程碑、模块地图、关键决策指针、数据/安全边界、常用命令），并将它接入 `AGENTS.md` 必读顺序与 `README.md` 项目管理入口：后续迭代先读速览，命中对应主题时才翻开长文档，降低每次恢复上下文的阅读量。
 - [x] 修复 bot 登录自启动并增强单实例保护：注册 `FeishuBot` 登录自启计划任务（指向 `scripts/start-feishu-bot-autostart.ps1`）；`Get-ExistingBotProcess` 在 pid 文件校验之外，增加按 `lark-bot-listener.js` 运行进程扫描兜底，避免因运行时根不一致导致重复启动 bot。
 - [x] 单候选和多候选统一为一条飞书富文本消息；每个候选名称紧跟对应图片，选择提示和有效期不再拆成第二条消息。
 - [x] 移除包装确认和类型追问的无引用历史回退；只有回复机器人候选或提示消息时才读取查询语境，避免旧 `pending` 查询污染新消息。

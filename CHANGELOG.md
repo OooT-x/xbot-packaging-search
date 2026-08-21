@@ -5,6 +5,7 @@
 ## Unreleased
 
 ### Changed
+- 新增 `docs/CONTEXT.md` 轻量上下文速览（状态、里程碑、模块地图、决策指针、数据/安全边界、常用命令），并接入 `AGENTS.md` 必读顺序与 `README.md` 项目管理入口，后续迭代先读速览、命中对应主题时才翻全文，降低每次恢复上下文的阅读量。
 - 在 `startQueryFromResult` 增加逐步诊断日志（`packaging dbg:` 覆盖图片上传/构建 post/发送 replyPost 各节点），用于定位突发崩溃；并在带与不带 `-Voice` 两种模式下实测完整包装查询闭环（候选富文本 → 用户确认 → ZIP 直发/云盘降级），两轮均稳定通过、旧崩溃未复现，`replyPost`、ZIP 发送与语音 TTS 环节均排除为崩溃元凶。
 
 
