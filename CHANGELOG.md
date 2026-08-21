@@ -1,10 +1,11 @@
-# 变更日志
+﻿# 变更日志
 
 本文件记录可交付变化。软件版本与核心文档版本独立管理；在首个可运行闭环完成前，变更记录保留在 `Unreleased`。
 
 ## Unreleased
 
 ### Changed
+- 整理项目本地产物：删除 `aep-collector/` 下可重建的 `.build-venv`（约 62MB 构建虚拟环境）、`build`（PyInstaller 中间产物）与 `__pycache__` 缓存，以及 `dist/AE-Preview-Bridge` 源码冗余副本（原版见 `ae-bridge/XbotPreviewBridge.jsx` 与 `install-preview-bridge.ps1`）；保留当前可用交付物 `dist/XbotAepCollector.exe`、活跃数据库 `data/packaging.sqlite*` 与 `runtime/logs`。`aep-collector` 由约 130MB 精简至约 28MB，git 工作区保持干净，重建命令见 `aep-collector/README.md` 与 `build.ps1`。
 - 新增 `docs/CONTEXT.md` 轻量上下文速览（状态、里程碑、模块地图、决策指针、数据/安全边界、常用命令），并接入 `AGENTS.md` 必读顺序与 `README.md` 项目管理入口，后续迭代先读速览、命中对应主题时才翻全文，降低每次恢复上下文的阅读量。
 - 在 `startQueryFromResult` 增加逐步诊断日志（`packaging dbg:` 覆盖图片上传/构建 post/发送 replyPost 各节点），用于定位突发崩溃；并在带与不带 `-Voice` 两种模式下实测完整包装查询闭环（候选富文本 → 用户确认 → ZIP 直发/云盘降级），两轮均稳定通过、旧崩溃未复现，`replyPost`、ZIP 发送与语音 TTS 环节均排除为崩溃元凶。
 

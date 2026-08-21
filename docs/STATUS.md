@@ -1,4 +1,4 @@
-# 项目当前状态
+﻿# 项目当前状态
 
 最后更新：2026-08-21
 
@@ -17,6 +17,8 @@
 | 最近交付 | 实测完整包装查询闭环（候选富文本 → 确认 → ZIP/云盘，含/不含语音）均稳定通过；在 `startQueryFromResult` 增加 `packaging dbg:` 逐步日志供崩溃定位，旧崩溃未复现 |
 
 ## 已完成
+
+- [x] 整理项目本地产物：删除 `aep-collector/` 下可重建的 `.build-venv`、`build`、`__pycache__` 及 `dist/AE-Preview-Bridge` 源码冗余副本，保留交付物 `dist/XbotAepCollector.exe` 与活跃的运行数据/日志；`aep-collector` 由约 130MB 精简至约 28MB，git 工作区干净（变更见 `CHANGELOG.md`）。
 
 - [x] 新增 `docs/CONTEXT.md` 轻量上下文速览（状态摘要、里程碑、模块地图、关键决策指针、数据/安全边界、常用命令），并将它接入 `AGENTS.md` 必读顺序与 `README.md` 项目管理入口：后续迭代先读速览，命中对应主题时才翻开长文档，降低每次恢复上下文的阅读量。
 - [x] 修复 bot 登录自启动并增强单实例保护：注册 `FeishuBot` 登录自启计划任务（指向 `scripts/start-feishu-bot-autostart.ps1`）；`Get-ExistingBotProcess` 在 pid 文件校验之外，增加按 `lark-bot-listener.js` 运行进程扫描兜底，避免因运行时根不一致导致重复启动 bot。
