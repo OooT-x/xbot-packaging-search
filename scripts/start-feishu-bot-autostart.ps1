@@ -25,27 +25,33 @@ function Write-AutostartLog {
 
 function Get-ExistingBotProcess {
   $pidPath = Join-Path $LogDir "bot.pid"
-  if (-not (Test-Path -LiteralPath $pidPath)) {
-    return $null
+  if (Test-Path -LiteralPath $pidPath) {
+    $pidText = Get-Content -Encoding UTF8 -LiteralPath $pidPath -ErrorAction SilentlyContinue |
+      Select-Object -First 1
+    if ($pidText -match "^\d+$") {
+      $process = Get-Process -Id ([int]$pidText) -ErrorAction SilentlyContinue
+      if ($process -and $process.ProcessName -eq "node") {
+        return $process
+      }
+    }
   }
 
-  $pidText = Get-Content -Encoding UTF8 -LiteralPath $pidPath -ErrorAction SilentlyContinue |
-    Select-Object -First 1
-  if ($pidText -notmatch "^\d+$") {
-    return $null
+  # Fallback: detect a running listener by its script path regardless of runtime root.
+  try {
+    $candidates = Get-CimInstance Win32_Process -Filter "Name='node.exe'" |
+      Where-Object { $_.CommandLine -like "*lark-bot-listener.js*" }
+    foreach ($c in $candidates) {
+      $proc = Get-Process -Id $c.ProcessId -ErrorAction SilentlyContinue
+      if ($proc) {
+        Write-AutostartLog "found running listener without pid file pid=$($proc.Id)"
+        return $proc
+      }
+    }
+  } catch {
+    Write-AutostartLog "listener process scan unavailable: $($_.Exception.Message)"
   }
 
-  $process = Get-Process -Id ([int]$pidText) -ErrorAction SilentlyContinue
-  if (-not $process) {
-    return $null
-  }
-
-  if ($process.ProcessName -ne "node") {
-    Write-AutostartLog "stale pid file points to non-node process pid=$pidText name=$($process.ProcessName)"
-    return $null
-  }
-
-  return $process
+  return $null
 }
 
 Set-Location -LiteralPath $ProjectRoot
