@@ -211,23 +211,29 @@ class PackagingService {
     );
 
     try {
+      this.log(`packaging dbg: upload phase begin request_id=${requestId} candidates=${result.candidates.length}`);
       const imageKeys = [];
       for (const candidate of result.candidates) {
         if (!fs.existsSync(candidate.preview_path)) {
           throw new Error(`preview file missing: ${candidate.preview_eagle_id}`);
         }
         imageKeys.push(await this.transport.uploadImage(candidate.preview_path));
+        this.log(`packaging dbg: uploaded image request_id=${requestId} idx=${imageKeys.length}`);
       }
+      this.log(`packaging dbg: upload phase done request_id=${requestId} imageKeys=${imageKeys.length}`);
       const postContent = buildCandidatePost(
         result.candidates,
         imageKeys,
         this.expiresMinutes
       );
+      this.log(`packaging dbg: built post request_id=${requestId} postLen=${JSON.stringify(postContent).length}`);
+      this.log(`packaging dbg: replyPost begin request_id=${requestId}`);
       const reply = await this.transport.replyPost(
         event.message_id,
         postContent,
         `package-query-${requestId}-candidates`
       );
+      this.log(`packaging dbg: replyPost done request_id=${requestId}`);
       const promptMessageId = safeMessageId(reply);
       if (!promptMessageId) throw new Error("candidate post did not return message_id");
 
