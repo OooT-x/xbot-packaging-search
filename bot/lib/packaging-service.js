@@ -21,8 +21,8 @@ function queryPrompt(candidates, expiresMinutes) {
     candidates.length === 1 ? "找到一个候选：" : `找到 ${candidates.length} 个候选：`;
   const selectHint =
     candidates.length === 1
-      ? "预览图就是这一个，回“这个”就行。"
-      : "预览图按上面的顺序发了，回“这个”或数字（比如“第二个”）选一个。";
+      ? "预览图就是这一个，请直接回复这条消息说“这个”。"
+      : "预览图按上面的顺序发了，请直接回复这条消息，用数字（比如“第二个”）选一个。";
   return [
     intro,
     "",
@@ -283,17 +283,9 @@ class PackagingService {
       return false;
     }
     const replyTo = String(message?.reply_to || "").trim();
-    let query = null;
-    if (replyTo) {
-      query = this.database.findQueryByReplyMessage(event.chat_id, replyTo);
-    } else {
-      query = this.database.findLatestPendingQuery(event.chat_id);
-      if (query) {
-        this.log(
-          `packaging confirmation fell back to latest pending query request_id=${query.request_id} message_id=${event.message_id}`
-        );
-      }
-    }
+    if (!replyTo) return false;
+
+    const query = this.database.findQueryByReplyMessage(event.chat_id, replyTo);
     if (!query) return false;
 
     if (event.sender_id !== query.requester_id) {

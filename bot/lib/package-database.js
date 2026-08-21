@@ -290,20 +290,6 @@ class PackageDatabase {
     return { ...query, replied_position: repliedPosition, candidates };
   }
 
-  findLatestPendingQuery(chatId) {
-    const query = this.db
-      .prepare(`
-        SELECT *
-        FROM queries
-        WHERE chat_id = ? AND status = 'pending'
-        ORDER BY created_at DESC
-        LIMIT 1
-      `)
-      .get(chatId);
-    if (!query) return null;
-    return this.getQueryWithCandidates(query.request_id);
-  }
-
   cancelQuery(requestId) {
     this.db
       .prepare("UPDATE queries SET status = 'cancelled' WHERE request_id = ? AND status = 'pending'")

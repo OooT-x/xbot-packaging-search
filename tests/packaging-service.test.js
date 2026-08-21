@@ -175,7 +175,7 @@ test("sends a preview, accepts only the requester, and delivers the ZIP once", a
   }
 });
 
-test("accepts a bare confirmation by falling back to the latest pending query", async () => {
+test("ignores a bare confirmation without a reply reference", async () => {
   const app = fixture();
   try {
     const queryEvent = {
@@ -198,12 +198,11 @@ test("accepts a bare confirmation by falling back to the latest pending query", 
         sender_id: "ou_requester",
         content: "这个",
       }),
-      true
+      false
     );
 
     const fileCalls = app.calls.filter((call) => call.kind === "file");
-    assert.equal(fileCalls.length, 1);
-    assert.equal(fileCalls[0].messageId, "om_root_bare");
+    assert.equal(fileCalls.length, 0);
     assert.equal(app.database.getQueryByRootMessage("om_root_bare").status, "pending");
   } finally {
     app.close();
@@ -255,7 +254,7 @@ test("routes an explicit project query past expired pending confirmations", asyn
   }
 });
 
-test("rejects a bare confirmation from a non-requester", async () => {
+test("ignores a bare confirmation from a non-requester without a reply reference", async () => {
   const app = fixture();
   try {
     const queryEvent = {
@@ -278,16 +277,12 @@ test("rejects a bare confirmation from a non-requester", async () => {
         sender_id: "ou_other",
         content: "这个",
       }),
-      true
+      false
     );
 
     assert.equal(app.calls.filter((call) => call.kind === "file").length, 0);
     assert.equal(app.database.getQueryByRootMessage("om_root_bare_other").status, "pending");
-    assert.ok(
-      app.calls.some(
-        (call) => call.kind === "text" && call.text.includes("原查询人")
-      )
-    );
+    assert.equal(app.calls.filter((call) => call.kind === "text").length, 1);
   } finally {
     app.close();
   }
@@ -419,13 +414,12 @@ test("continues from a preview reply and switches to another package type", asyn
       )
     );
     assert.equal(app.database.getQueryByRootMessage("om_root_followup").status, "pending");
-    assert.ok(app.database.findLatestPendingQuery("oc_chat"));
   } finally {
     app.close();
   }
 });
 
-test("continues from a bare follow-up message using the latest pending query", async () => {
+test("ignores a bare follow-up without a reply reference", async () => {
   const app = fixture();
   try {
     const queryEvent = {
@@ -448,11 +442,11 @@ test("continues from a bare follow-up message using the latest pending query", a
         sender_id: "ou_requester",
         content: "看看背景",
       }),
-      true
+      false
     );
 
     const images = app.calls.filter((call) => call.kind === "image");
-    assert.equal(images.length, 2);
+    assert.equal(images.length, 1);
   } finally {
     app.close();
   }
@@ -655,7 +649,7 @@ test("blocks candidates of a completed legacy query", async () => {
     };
     assert.equal(await app.service.tryHandleQuery(queryEvent, { mentioned: true }), true);
 
-    const latest = app.database.findLatestPendingQuery("oc_chat");
+    const latest = app.database.getQueryByRootMessage("om_root_legacy");
     assert.ok(latest);
     app.database.db
       .prepare("UPDATE queries SET status = 'completed' WHERE request_id = ?")
