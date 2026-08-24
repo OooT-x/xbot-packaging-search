@@ -9,6 +9,13 @@ $ErrorActionPreference = "Stop"
 $TaskPath = "\"
 $Starter = Join-Path $PSScriptRoot "start-feishu-bot-autostart.ps1"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
+$DocumentsRoot = Join-Path $env:USERPROFILE "Documents"
+$DefaultRuntimeRoot = Get-ChildItem -LiteralPath $DocumentsRoot -Directory -ErrorAction SilentlyContinue |
+  Where-Object {
+    (Test-Path -LiteralPath (Join-Path $_.FullName "bot-reply-rules.md")) -and
+    (Test-Path -LiteralPath (Join-Path $_.FullName "logs"))
+  } |
+  Select-Object -First 1 -ExpandProperty FullName
 
 if ($Remove) {
   $task = Get-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -ErrorAction SilentlyContinue
@@ -25,9 +32,16 @@ if (-not (Test-Path -LiteralPath $Starter)) {
   throw "Autostart script not found: $Starter"
 }
 
+$runtimeRootArgument = if ($DefaultRuntimeRoot) {
+  " -RuntimeRoot `"$DefaultRuntimeRoot`""
+} else {
+  ""
+}
+$actionArguments = "-NoProfile -ExecutionPolicy Bypass -File `"$Starter`"$runtimeRootArgument"
+
 $action = New-ScheduledTaskAction `
   -Execute "powershell.exe" `
-  -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$Starter`"" `
+  -Argument $actionArguments `
   -WorkingDirectory $ProjectRoot
 
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
@@ -44,4 +58,4 @@ $task = New-ScheduledTask -Action $action -Trigger $trigger -Principal $principa
 Register-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -InputObject $task -Force | Out-Null
 
 Write-Host "Registered scheduled task: $TaskName"
-Write-Host "Action: powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$Starter`""
+Write-Host "Action: powershell.exe $actionArguments"

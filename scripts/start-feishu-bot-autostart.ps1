@@ -1,13 +1,31 @@
 param(
-  [switch]$Force
+  [switch]$Force,
+  [string]$RuntimeRoot = ""
 )
 
 $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
-$DefaultRuntimeRoot = "C:\Users\ADMIN\Documents\飞书"
-if (-not $env:LARK_BOT_RUNTIME_ROOT) {
+$DocumentsRoot = Join-Path $env:USERPROFILE "Documents"
+$DefaultRuntimeRoot = Get-ChildItem -LiteralPath $DocumentsRoot -Directory -ErrorAction SilentlyContinue |
+  Where-Object {
+    (Test-Path -LiteralPath (Join-Path $_.FullName "bot-reply-rules.md")) -and
+    (Test-Path -LiteralPath (Join-Path $_.FullName "logs"))
+  } |
+  Select-Object -First 1 -ExpandProperty FullName
+$DefaultRuntimeRoot = if ($DefaultRuntimeRoot) {
+  $DefaultRuntimeRoot
+} else {
+  Join-Path $ProjectRoot "runtime"
+}
+$requestedRuntimeRoot = $RuntimeRoot.Trim()
+if ($requestedRuntimeRoot) {
+  if (-not (Test-Path -LiteralPath $requestedRuntimeRoot)) {
+    throw "Runtime root not found: $requestedRuntimeRoot"
+  }
+  $env:LARK_BOT_RUNTIME_ROOT = $requestedRuntimeRoot
+} elseif (-not $env:LARK_BOT_RUNTIME_ROOT) {
   $env:LARK_BOT_RUNTIME_ROOT = if (Test-Path -LiteralPath $DefaultRuntimeRoot) {
     $DefaultRuntimeRoot
   } else {
@@ -22,6 +40,8 @@ function Write-AutostartLog {
   param([string]$Message)
   Add-Content -Encoding UTF8 -LiteralPath $AutostartLog -Value "[$(Get-Date -Format o)] $Message"
 }
+
+Write-AutostartLog "runtime root=$env:LARK_BOT_RUNTIME_ROOT"
 
 function Get-ExistingBotProcess {
   $pidPath = Join-Path $LogDir "bot.pid"

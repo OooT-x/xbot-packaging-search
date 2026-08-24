@@ -2973,8 +2973,23 @@ async function main() {
     log("packaging search disabled");
   }
 
+  let retryDelayMs = positiveNumber(process.env.LARK_BOT_EVENT_RETRY_DELAY_MS, 5000);
+  const maxRetryDelayMs = positiveNumber(process.env.LARK_BOT_EVENT_MAX_RETRY_DELAY_MS, 60000);
+
   do {
-    await consumeOnce();
+    try {
+      await consumeOnce();
+      retryDelayMs = positiveNumber(process.env.LARK_BOT_EVENT_RETRY_DELAY_MS, 5000);
+    } catch (error) {
+      log(`event consumer failed: ${error.stack || error.message}`);
+      if (options.once) throw error;
+
+      log(`event consumer retry scheduled delayMs=${retryDelayMs}`);
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      retryDelayMs = Math.min(retryDelayMs * 2, maxRetryDelayMs);
+      continue;
+    }
+
     if (!options.once) {
       await new Promise((resolve) => setTimeout(resolve, 2000));
     }

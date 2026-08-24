@@ -5,6 +5,8 @@
 ## Unreleased
 
 ### Changed
+- 运行保障：监听器遇到 `event consume` 非零退出时记录完整错误并按 5 秒起步、最多 60 秒退避重试，不再因单次事件消费者异常直接退出；重新注册 `FeishuBot` 登录自启任务，并通过无编码依赖的目录发现逻辑显式复用既有飞书运行根目录。
+- 运行态验收：2026-08-24 受控终止事件消费者后，父进程自动拉起下一轮监听，`lark-cli event status --json` 保持 `running` 且 `active_consumers=1`。
 - 活人感增强：系统提示从 20+ 条规则精简为 12 条核心原则，聚焦"变化"和"接话"；新增回复风格变化追踪（`analyzeRecentStyle`），检测连续确认式开头/语气词开头/回复长度单一等模式并注入变化提醒；包装查询主动建议和意图分类器保持不变。：(1) 情绪感知扩展——新增烦躁/疲惫模式匹配，系统提示自动注入情绪上下文，引导 AI 根据用户情绪调整回复风格和长度；(2) 结构化意图分类——新增轻量级消息意图分类器（query/emotion/work/chat），与主回复并行执行并记录日志，为后续路由决策提供数据；(3) 包装查询主动建议——查询成功后自动生成相关类型的后续建议，引导用户发现更多素材。
 - 整理项目本地产物：删除 `aep-collector/` 下可重建的 `.build-venv`（约 62MB 构建虚拟环境）、`build`（PyInstaller 中间产物）与 `__pycache__` 缓存，以及 `dist/AE-Preview-Bridge` 源码冗余副本（原版见 `ae-bridge/XbotPreviewBridge.jsx` 与 `install-preview-bridge.ps1`）；保留当前可用交付物 `dist/XbotAepCollector.exe`、活跃数据库 `data/packaging.sqlite*` 与 `runtime/logs`。`aep-collector` 由约 130MB 精简至约 28MB，git 工作区保持干净，重建命令见 `aep-collector/README.md` 与 `build.ps1`。
 - 新增 `docs/CONTEXT.md` 轻量上下文速览（状态、里程碑、模块地图、决策指针、数据/安全边界、常用命令），并接入 `AGENTS.md` 必读顺序与 `README.md` 项目管理入口，后续迭代先读速览、命中对应主题时才翻全文，降低每次恢复上下文的阅读量。
