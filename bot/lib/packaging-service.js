@@ -288,7 +288,7 @@ class PackagingService {
   }
 
   async handleConfirmation(event, options = {}) {
-    if (event.message_type !== "text") return false;
+    if (!["text", "post"].includes(event.message_type)) return false;
     const content = String(event.content || "").trim();
     if (!isPotentialConfirmation(content) && !hasPackagingDomain(content)) return false;
 

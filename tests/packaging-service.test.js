@@ -332,6 +332,36 @@ test("triggers a query with natural wording like 我要", async () => {
   }
 });
 
+test("accepts rich-text post replies when they reference a candidate message", async () => {
+  const app = fixture();
+  try {
+    const queryEvent = {
+      event_id: "evt-post-query",
+      message_id: "om_post_query",
+      message_type: "post",
+      sender_id: "ou_user",
+      chat_id: "oc_chat",
+      content: "@X.bot 找变速箱项目的信息条",
+    };
+    assert.equal(await app.service.tryHandleQuery(queryEvent, { mentioned: true }), true);
+    const previewMessageId = app.calls.find((item) => item.kind === "post").message_id;
+    app.replyTargets.set("om_post_confirm", previewMessageId);
+
+    assert.equal(
+      await app.service.tryHandleConfirmation({
+        message_id: "om_post_confirm",
+        message_type: "post",
+        sender_id: "ou_user",
+        chat_id: "oc_chat",
+        content: "确认",
+      }),
+      true
+    );
+  } finally {
+    app.close();
+  }
+});
+
 test("does not hijack ordinary conversation that only mentions a domain word", async () => {
   const app = fixture();
   try {

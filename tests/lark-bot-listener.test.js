@@ -215,6 +215,66 @@ test("only replies in group chats when the bot is mentioned", () => {
   );
 });
 
+test("normalizes compact rich-text posts for the existing conversation route", () => {
+  const content =
+    '<at user_id="ou_bot">X.bot</at> 看看这段富文本\n![Image](img_v3_example)';
+
+  assert.equal(_test.normalizeRichTextContent(content), "@X.bot 看看这段富文本\n[图片]");
+  assert.equal(
+    _test.conversationContentFor({ message_type: "post", content }),
+    "@X.bot 看看这段富文本\n[图片]"
+  );
+});
+
+test("replies to images in direct chat or when a group image replies to X.bot", async () => {
+  assert.equal(
+    await _test.shouldReplyToImageEvent({ chat_type: "p2p", message_type: "image" }),
+    true
+  );
+  assert.equal(
+    await _test.shouldReplyToImageEvent(
+      {
+        chat_type: "group",
+        message_type: "image",
+        reply_to: "om_parent",
+      },
+      {
+        selfOpenId: "ou_bot",
+        getMessage: async () => ({ sender: { id: { open_id: "ou_bot" } } }),
+      }
+    ),
+    true
+  );
+  assert.equal(
+    await _test.shouldReplyToImageEvent(
+      {
+        chat_type: "group",
+        message_type: "image",
+        reply_to: "om_parent",
+      },
+      {
+        selfOpenId: "ou_bot",
+        getMessage: async () => ({ sender: { id: { open_id: "ou_other" } } }),
+      }
+    ),
+    false
+  );
+  assert.equal(
+    await _test.shouldReplyToImageEvent(
+      { chat_type: "group", message_type: "image" },
+      { selfOpenId: "ou_bot", getMessage: async () => null }
+    ),
+    false
+  );
+});
+
+test("pure-image reply is explicit about the current no-vision boundary", () => {
+  const reply = _test.imageReplyText();
+  assert.match(reply, /图片收到了/);
+  assert.match(reply, /没接入视觉识别/);
+  assert.doesNotMatch(reply, /看起来|图里是|我看到了/);
+});
+
 test("formats recent group messages as context before the current mention", () => {
   const context = _test.formatGroupHistoryContext(
     [

@@ -411,6 +411,40 @@ function cleanMarkup(text) {
     .trim();
 }
 
+function normalizeRichTextContent(content) {
+  return cleanMarkup(
+    String(content || "")
+      .replace(
+        /<at\b[^>]*(?:user_id|open_id|id)=["'][^"']+["'][^>]*>([^<]*)<\/at>/gi,
+        (_, name) => (String(name || "").trim() ? `@${String(name).trim()}` : "")
+      )
+      .replace(/!\[(?:Image|图片)[^\]]*\]\([^)]+\)/gi, "[图片]")
+      .replace(/\[Image(?::[^\]]+)?\]/gi, "[图片]")
+  );
+}
+
+function conversationContentFor(event) {
+  const type = String(event?.message_type || "").trim().toLowerCase();
+  if (type === "post") return normalizeRichTextContent(event?.content);
+  return String(event?.content || "").trim();
+}
+
+function conversationEventFor(event) {
+  return {
+    ...event,
+    content: conversationContentFor(event),
+  };
+}
+
+function isTextConversationMessage(event) {
+  const type = String(event?.message_type || "").trim().toLowerCase();
+  return type === "text" || type === "post";
+}
+
+function imageReplyText() {
+  return "图片收到了。不过我现在还没接入视觉识别，不能准确判断图里的内容。你补一句想让我关注什么，我可以先结合文字继续聊。";
+}
+
 function unique(items) {
   const seen = new Set();
   const result = [];
@@ -2527,6 +2561,40 @@ class LarkPackagingTransport {
   }
 }
 
+function senderOpenIdForMessage(message) {
+  const sender = message?.sender || {};
+  const senderId = sender.sender_id || sender.id || message?.sender_id || {};
+  if (typeof senderId === "string") return String(senderId).trim();
+  return String(
+    senderId.open_id ||
+      senderId.openId ||
+      sender.open_id ||
+      sender.openId ||
+      message?.sender_open_id ||
+      ""
+  ).trim();
+}
+
+async function shouldReplyToImageEvent(event, options = {}) {
+  const selfOpenId = String(options.selfOpenId ?? botSelfOpenId).trim();
+  const aliases = options.aliases || botMentionAliases;
+  if (isDirectChat(event)) return true;
+  if (eventMentionsBot(event, selfOpenId, aliases)) return true;
+
+  const replyTo = String(event?.reply_to || event?.message?.reply_to || "").trim();
+  if (!replyTo || !selfOpenId) return false;
+
+  const getMessage =
+    options.getMessage || ((messageId) => new LarkPackagingTransport().getMessage(messageId));
+  try {
+    const parent = await getMessage(replyTo);
+    return senderOpenIdForMessage(parent) === selfOpenId;
+  } catch (error) {
+    log(`image reply lookup failed message_id=${event?.message_id || ""}: ${error.message}`);
+    return false;
+  }
+}
+
 function getPackagingService() {
   if (!packagingEnabled) return null;
   if (packagingService) return packagingService;
@@ -2836,57 +2904,69 @@ async function handleLine(line) {
     return;
   }
 
+  const conversationEvent = conversationEventFor(event);
   const packageSearch = getPackagingService();
   const mentioned = eventMentionsBot(event, botSelfOpenId, botMentionAliases);
-  if (packageSearch && event.message_type === "text") {
-    const handledConfirmation = await packageSearch.tryHandleConfirmation(event, { mentioned });
+  if (packageSearch && isTextConversationMessage(event)) {
+    const handledConfirmation = await packageSearch.tryHandleConfirmation(conversationEvent, {
+      mentioned,
+    });
     if (handledConfirmation) return;
   }
 
-  if (!shouldReplyToEvent(event)) {
+  const shouldReply =
+    event.message_type === "image"
+      ? await shouldReplyToImageEvent(event)
+      : shouldReplyToEvent(event);
+  if (!shouldReply) {
     log(
       `skip unmentioned group message_id=${event.message_id} chat_type=${event.chat_type || ""}`
     );
     return;
   }
 
-  if (event.message_type !== "text") {
+  if (event.message_type === "image") {
+    await sendReply(event, imageReplyText());
+    return;
+  }
+
+  if (!isTextConversationMessage(event)) {
     await sendReply(event, `我现在先支持文本消息，收到了一条 ${event.message_type} 消息。`);
     return;
   }
 
-  await enqueueConversation(event, async () => {
+  await enqueueConversation(conversationEvent, async () => {
     if (
       packageSearch &&
-      (await packageSearch.tryHandleQuery(event, {
+      (await packageSearch.tryHandleQuery(conversationEvent, {
         mentioned,
       }))
     ) {
       return;
     }
 
-    if (packageSearch && mentioned && !voiceRequestFor(event.content)) {
+    if (packageSearch && mentioned && !voiceRequestFor(conversationEvent.content)) {
       const aiHint = await judgePackagingIntent(
-        event.content,
+        conversationEvent.content,
         packagingProjectCatalog(packageSearch)
       );
       if (aiHint) {
         log(
           `packaging ai judge matched message_id=${event.message_id} project=${aiHint.project_name || ""} type=${aiHint.package_type || ""}`
         );
-        if (await packageSearch.tryHandleQuery(event, { mentioned, aiHint })) {
+        if (await packageSearch.tryHandleQuery(conversationEvent, { mentioned, aiHint })) {
           return;
         }
       }
     }
 
-    const voiceRequest = voiceRequestFor(event.content);
+    const voiceRequest = voiceRequestFor(conversationEvent.content);
     if (voiceRequest) {
-      await handleVoiceRequest(event, voiceRequest);
+      await handleVoiceRequest(conversationEvent, voiceRequest);
       return;
     }
 
-    await sendReply(event, await replyFor(event));
+    await sendReply(event, await replyFor(conversationEvent));
   });
 }
 
@@ -3017,10 +3097,15 @@ module.exports = {
     modelForProvider,
     normalizeComparableTitle,
     normalizeAiReplyText,
+    normalizeRichTextContent,
     parseAiPackagingHint,
     reportDateRank,
     selectBestTitleMatch,
     shouldReplyToEvent,
+    shouldReplyToImageEvent,
+    senderOpenIdForMessage,
+    conversationContentFor,
+    imageReplyText,
     speechTextFor,
     songTextForRequest,
     styleModeInstruction,

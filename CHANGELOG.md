@@ -5,6 +5,7 @@
 ## Unreleased
 
 ### Changed
+- 飞书消息兼容：带文字的 `post` 富文本规范化后进入现有 AI 对话、包装查询和候选确认链路；纯图片在私聊、有效提及或群聊回复 X.bot 时返回诚实的未识图提示。群聊低噪音门控保持不变，图片二进制不下载、不发送外部 AI。新增回归测试后 85 项 JS + 18 项 Python 测试全部通过。
 - 飞书权限：发布 X.bot 的 `im:message.group_msg` 后，bot 身份群历史列表接口恢复；重启 `FeishuBot` 后事件总线保持 `running`、`active_consumers=1`。
 - 运行保障：监听器遇到 `event consume` 非零退出时记录完整错误并按 5 秒起步、最多 60 秒退避重试，不再因单次事件消费者异常直接退出；重新注册 `FeishuBot` 登录自启任务，并通过无编码依赖的目录发现逻辑显式复用既有飞书运行根目录。
 - 运行态验收：2026-08-24 受控终止事件消费者后，父进程自动拉起下一轮监听，`lark-cli event status --json` 保持 `running` 且 `active_consumers=1`。
