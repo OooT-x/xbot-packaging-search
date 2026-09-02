@@ -322,6 +322,73 @@ class PackageDatabase {
     return this.getBatch(batchId);
   }
 
+  claimBatchSyncEvent(eventId, batchId, payload = {}, now = Date.now()) {
+    const normalizedEventId = String(eventId || "").trim();
+    const normalizedBatchId = String(batchId || "").trim();
+    if (!normalizedEventId) throw new Error("event_id is required");
+    if (!normalizedBatchId) throw new Error("batch_id is required");
+    const payloadJson = JSON.stringify(payload || {});
+    return this.transaction(() => {
+      const existing = this.db
+        .prepare("SELECT * FROM batch_sync_events WHERE event_id = ?")
+        .get(normalizedEventId);
+      if (existing?.status === "completed") return { state: "completed", event: existing };
+      if (existing?.status === "processing") return { state: "processing", event: existing };
+      if (existing) {
+        this.db
+          .prepare(
+            `UPDATE batch_sync_events
+             SET batch_id = ?, status = 'processing', attempts = attempts + 1,
+                 payload_json = ?, last_error = NULL, updated_at = ?
+             WHERE event_id = ?`
+          )
+          .run(normalizedBatchId, payloadJson, now, normalizedEventId);
+      } else {
+        this.db
+          .prepare(
+            `INSERT INTO batch_sync_events(
+              event_id, batch_id, status, attempts, payload_json, created_at, updated_at
+            ) VALUES (?, ?, 'processing', 1, ?, ?, ?)`
+          )
+          .run(normalizedEventId, normalizedBatchId, payloadJson, now, now);
+      }
+      return {
+        state: "claimed",
+        event: this.db
+          .prepare("SELECT * FROM batch_sync_events WHERE event_id = ?")
+          .get(normalizedEventId),
+      };
+    });
+  }
+
+  markBatchSyncEventCompleted(eventId, now = Date.now()) {
+    this.db
+      .prepare(
+        "UPDATE batch_sync_events SET status = 'completed', last_error = NULL, updated_at = ? WHERE event_id = ?"
+      )
+      .run(now, String(eventId));
+    return this.db
+      .prepare("SELECT * FROM batch_sync_events WHERE event_id = ?")
+      .get(String(eventId));
+  }
+
+  markBatchSyncEventFailed(eventId, errorMessage, now = Date.now()) {
+    this.db
+      .prepare(
+        "UPDATE batch_sync_events SET status = 'failed', last_error = ?, updated_at = ? WHERE event_id = ?"
+      )
+      .run(String(errorMessage || "").slice(0, 1000), now, String(eventId));
+    return this.db
+      .prepare("SELECT * FROM batch_sync_events WHERE event_id = ?")
+      .get(String(eventId));
+  }
+
+  getBatchSyncEvent(eventId) {
+    return this.db
+      .prepare("SELECT * FROM batch_sync_events WHERE event_id = ?")
+      .get(String(eventId));
+  }
+
   getPackage(packageId) {
     return hydratePackage(
       this.db

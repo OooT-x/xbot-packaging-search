@@ -5,6 +5,7 @@ const crypto = require("crypto");
 const { spawn } = require("child_process");
 const { PackageDatabase } = require("./lib/package-database");
 const { PackagingService } = require("./lib/packaging-service");
+const { IngestEventWatcher } = require("./lib/ingest-sync");
 
 const projectRoot = path.resolve(__dirname, "..");
 const workspace = path.resolve(process.env.LARK_BOT_RUNTIME_ROOT || __dirname);
@@ -29,6 +30,7 @@ const botMentionAliases = parseListEnv("LARK_BOT_MENTION_ALIASES", ["X.bot"]);
 const packagingEnabled = process.env.LARK_BOT_PACKAGING_SEARCH !== "off";
 const packagingAiJudgeEnabled = process.env.LARK_BOT_PACKAGING_AI_JUDGE !== "off";
 let packagingService = null;
+let ingestWatcher = null;
 
 const configuredAiProvider = inferAiProvider();
 
@@ -2620,6 +2622,22 @@ function getPackagingService() {
   return packagingService;
 }
 
+function startIngestEventWatcher(service) {
+  if (!service || ingestWatcher) return ingestWatcher;
+  ingestWatcher = new IngestEventWatcher({
+    database: service.database,
+    refreshCatalog: () => service.refreshCatalog(true),
+    eventFile:
+      process.env.LARK_BOT_INGEST_EVENT_FILE ||
+      path.join(workspace, "packaging-ingest-events.jsonl"),
+    intervalMs: positiveNumber(process.env.LARK_BOT_INGEST_EVENT_INTERVAL_MS, 3000),
+    log,
+  });
+  ingestWatcher.start();
+  log(`packaging ingest watcher started file=${ingestWatcher.eventFile}`);
+  return ingestWatcher;
+}
+
 function relativePathForCli(filePath) {
   const resolvedWorkspace = path.resolve(workspace);
   const resolvedFile = path.resolve(filePath);
@@ -3039,8 +3057,9 @@ async function main() {
   );
 
   if (packagingEnabled) {
+    const service = getPackagingService();
     try {
-      const report = await getPackagingService().initialize();
+      const report = await service.initialize();
       if (report) {
         log(
           `packaging search ready library=${report.library_name} packages=${report.package_count}`
@@ -3049,6 +3068,7 @@ async function main() {
     } catch (error) {
       log(`packaging search starts without a live catalog: ${error.message}`);
     }
+    startIngestEventWatcher(service);
   } else {
     log("packaging search disabled");
   }

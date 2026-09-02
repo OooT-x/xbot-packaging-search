@@ -144,6 +144,10 @@ test("files a batch into preview and source folders with updated tags", async ()
   const result = await fileBatch(adapter, "batch-1");
 
   assert.equal(result.filed.length, 1);
+  assert.equal(result.projectName, "变速箱");
+  assert.ok(result.batchId);
+  assert.equal(result.filed[0].packageName, "黑色纹理背景");
+  assert.equal(result.filed[0].batchId, result.batchId);
   assert.equal(result.batchEmpty, true);
   assert.equal(adapter.folders.length, 4);
   assert.equal(adapter.folders[0].name, "01_预览图");

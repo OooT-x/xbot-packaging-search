@@ -19,12 +19,36 @@ test("migrates batches and batch details tables", () => {
       .prepare("SELECT name FROM schema_migrations ORDER BY name")
       .all()
       .map((row) => row.name);
-    assert.deepEqual(migrations, ["001_initial.sql", "002_batches.sql"]);
+    assert.deepEqual(migrations, [
+      "001_initial.sql",
+      "002_batches.sql",
+      "003_batch_sync_events.sql",
+    ]);
     assert.equal(database.db.prepare("SELECT COUNT(*) AS count FROM batches").get().count, 0);
     assert.equal(
       database.db.prepare("SELECT COUNT(*) AS count FROM batch_details").get().count,
       0
     );
+  } finally {
+    database.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("claims, retries, and deduplicates a batch sync event", () => {
+  const { root, database } = makeDatabase();
+  try {
+    assert.equal(
+      database.claimBatchSyncEvent("event-1", "batch-1", { payload: 1 }, 100).state,
+      "claimed"
+    );
+    assert.equal(database.claimBatchSyncEvent("event-1", "batch-1", {}, 110).state, "processing");
+    database.markBatchSyncEventFailed("event-1", "temporary error", 120);
+    const retry = database.claimBatchSyncEvent("event-1", "batch-1", {}, 130);
+    assert.equal(retry.state, "claimed");
+    assert.equal(retry.event.attempts, 2);
+    database.markBatchSyncEventCompleted("event-1", 140);
+    assert.equal(database.claimBatchSyncEvent("event-1", "batch-1", {}, 150).state, "completed");
   } finally {
     database.close();
     fs.rmSync(root, { recursive: true, force: true });

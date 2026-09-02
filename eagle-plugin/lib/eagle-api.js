@@ -881,6 +881,7 @@ function canonicalSourceName(metadata) {
 async function fileBatch(adapter, batchFolderId, options = {}) {
   const inspection = await inspectBatch(adapter, batchFolderId, options);
   const { folderIds, plan } = inspection;
+  const folderMeta = parseAnnotation(inspection.batchFolder?.description);
 
   const filed = [];
   const failed = [];
@@ -921,10 +922,17 @@ async function fileBatch(adapter, batchFolderId, options = {}) {
       await adapter.saveItem(sourceItem);
       filed.push({
         packageId: pair.packageId,
+        projectName: metadata.projectName,
+        packageName: metadata.packageName,
         packageType: pair.packageType,
         version: pair.version,
+        aeCompName: metadata.aeCompName,
+        batchId: metadata.batchId,
+        dependencyStatus: metadata.dependencyStatus,
         previewItemId: previewItem.id,
         sourceItemId: sourceItem.id,
+        previewPath: previewItem.filePath || previewItem.filepath || "",
+        sourcePath: sourceItem.filePath || sourceItem.filepath || "",
         previewFolderId: folderId(previewFolder),
         sourceFolderId: folderId(sourceFolder),
       });
@@ -934,7 +942,19 @@ async function fileBatch(adapter, batchFolderId, options = {}) {
   }
 
   const remaining = await adapter.getItemsByFolder(batchFolderId, { folderIds });
+  const filedBatchIds = [...new Set(filed.map((item) => item.batchId).filter(Boolean))];
+  const filedProjectNames = [...new Set(filed.map((item) => item.projectName).filter(Boolean))];
   return {
+    batchId: filedBatchIds.length === 1 ? filedBatchIds[0] : inspection.planOptions.batchId,
+    batchFolderId,
+    projectName:
+      filedProjectNames.length === 1
+        ? filedProjectNames[0]
+        : inspection.planOptions.projectName,
+    sourcePath: folderMeta["来源"] || "",
+    batchKey: folderMeta.batch_key || "",
+    manifestKey: folderMeta.manifest_key || "",
+    importMode: folderMeta["导入模式"] || "new",
     filed,
     failed,
     blocked: plan.blocked,

@@ -13,6 +13,7 @@ const {
   INGEST_ROOT_NAME,
   KNOWN_PACKAGE_TYPES,
 } = require("../lib/eagle-api.js");
+const { publishIngestEvent } = require("../lib/ingest-bridge.js");
 
 const state = {
   sourceDir: null,
@@ -346,6 +347,16 @@ async function confirmFile() {
     log(`入库完成：${result.filed.length} 对进入正式目录`);
     for (const item of result.failed) {
       log(`入库失败：${item.pair.packageId} - ${item.reason}`);
+    }
+    try {
+      const published = publishIngestEvent(result);
+      if (published.skipped) {
+        log("没有新的正式入库记录，无需同步 SQLite");
+      } else {
+        log(`已写入 bot 索引同步队列：${published.filePath}`);
+      }
+    } catch (error) {
+      log(`写入 bot 索引同步队列失败：${error.message}`);
     }
     await refreshBatches();
   } catch (error) {
