@@ -6,6 +6,7 @@ const {
   fileBatch,
   folderId,
   importBatch,
+  IMPORT_MODES,
   inspectBatch,
   parseAnnotation,
   planFormalFile,
@@ -28,6 +29,7 @@ const elements = {
   projectName: document.getElementById("projectName"),
   scanBtn: document.getElementById("scanBtn"),
   importBtn: document.getElementById("importBtn"),
+  importMode: document.getElementById("importMode"),
   batchInfo: document.getElementById("batchInfo"),
   statToImport: document.getElementById("statToImport"),
   statValidate: document.getElementById("statValidate"),
@@ -399,9 +401,28 @@ elements.importBtn.addEventListener("click", async () => {
     const adapter = new EaglePluginAdapter(window.eagle);
     elements.importBtn.disabled = true;
     log("正在调用 Eagle API 导入…");
-    const result = await importBatch(adapter, state.scan);
+    const mode = elements.importMode.value;
+    if (!IMPORT_MODES.includes(mode)) {
+      throw new Error("请选择有效的重复批次处理方式");
+    }
+    const result = await importBatch(adapter, state.scan, { mode });
+    if (result.state === "duplicate") {
+      elements.importBtn.disabled = false;
+      const labels = {
+        reuse: "复用现有批次",
+        update: "更新现有批次",
+        new: "新建独立批次",
+      };
+      const matched = result.matches
+        .map((match) => `${match.batchId || match.batchFolderId}（${match.matchedBy.join("、")}）`)
+        .join("；");
+      elements.batchInfo.textContent = `检测到重复批次：${matched}`;
+      log(`检测到重复批次，请选择${Object.values(labels).join("、")}后再次确认`);
+      return;
+    }
     log(
-      `导入完成：批次 ${result.batchId}，共 ${result.imported.length} 条记录（${result.imported.length * 2} 个文件）`
+      `导入完成：批次 ${result.batchId}，${result.mode === "reuse" ? "复用" : result.mode === "update" ? "更新" : "新建"} ` +
+        `${result.imported.length + result.reused.length + result.updated.length} 条记录（新增 ${result.imported.length * 2} 个文件）`
     );
     elements.batchInfo.textContent = `batch_id：${result.batchId}（已导入）`;
   } catch (error) {

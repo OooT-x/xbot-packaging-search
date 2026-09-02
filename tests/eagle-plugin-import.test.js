@@ -68,6 +68,10 @@ class FakeAdapter {
     return this.items.find((item) => item.id === id) || null;
   }
 
+  async getItemsByFolder(folderId) {
+    return this.items.filter((item) => (item.folders || []).includes(folderId));
+  }
+
   async saveItem(item) {
     return item;
   }
@@ -96,18 +100,112 @@ test("imports a ready batch into a created batch folder", async () => {
   );
 });
 
-test("reuses existing folders and keeps item annotations aligned", async () => {
+test("prompts before importing a duplicate batch", async () => {
   const adapter = new FakeAdapter();
   await importBatch(adapter, makeScanResult());
-  const second = await importBatch(adapter, makeScanResult());
+  const second = await importBatch(adapter, makeScanResult({ batchId: "batch-OTHER123456" }), {
+    mode: "prompt",
+  });
 
   assert.equal(adapter.folders.length, 2);
+  assert.equal(adapter.items.length, 2);
+  assert.equal(second.state, "duplicate");
+  assert.deepEqual(second.choices, ["reuse", "update", "new"]);
+  assert.deepEqual(second.matches[0].matchedBy, ["batch_key", "source_path"]);
+});
+
+test("detects duplicates from a manifest identity when other fields change", async () => {
+  const adapter = new FakeAdapter();
+  await importBatch(
+    adapter,
+    makeScanResult({
+      batchId: "batch-FIRST123456",
+      batchKey: "content-key-first",
+      sourceDir: "D:\\exports\\first",
+      manifestFiles: ["D:\\exports\\shared\\manifest.json"],
+    })
+  );
+  const result = await importBatch(
+    adapter,
+    makeScanResult({
+      batchId: "batch-SECOND12345",
+      batchKey: "content-key-second",
+      sourceDir: "D:\\exports\\second",
+      manifestFiles: ["d:/exports/shared/manifest.json"],
+    }),
+    { mode: "prompt" }
+  );
+
+  assert.equal(result.state, "duplicate");
+  assert.deepEqual(result.matches[0].matchedBy, ["manifest"]);
+});
+
+test("reuses an existing batch without creating duplicate items", async () => {
+  const adapter = new FakeAdapter();
+  await importBatch(adapter, makeScanResult());
+  const second = await importBatch(adapter, makeScanResult(), { mode: "reuse" });
+
+  assert.equal(adapter.folders.length, 2);
+  assert.equal(adapter.items.length, 2);
+  assert.equal(second.mode, "reuse");
+  assert.equal(second.reused.length, 1);
+  assert.equal(second.imported.length, 0);
   assert.equal(second.batchFolderId, "folder-2");
-  const preview = await adapter.getItem(second.imported[0].previewItemId);
-  const source = await adapter.getItem(second.imported[0].sourceItemId);
+  const preview = await adapter.getItem(second.reused[0].previewItemId);
+  const source = await adapter.getItem(second.reused[0].sourceItemId);
   assert.equal(preview.annotation, source.annotation);
-  assert.ok(preview.annotation.includes(`配对 PNG：${second.imported[0].previewItemId}`));
-  assert.ok(preview.annotation.includes(`配对 ZIP：${second.imported[0].sourceItemId}`));
+  assert.ok(preview.annotation.includes(`配对 PNG：${second.reused[0].previewItemId}`));
+  assert.ok(preview.annotation.includes(`配对 ZIP：${second.reused[0].sourceItemId}`));
+});
+
+test("updates metadata in an existing batch without creating a second batch", async () => {
+  const adapter = new FakeAdapter();
+  await importBatch(adapter, makeScanResult());
+  const updatedScan = makeScanResult({
+    packages: [
+      {
+        ...makeScanResult().packages[0],
+        packageName: "黑底背景更新",
+        version: "v02",
+      },
+    ],
+  });
+  const result = await importBatch(adapter, updatedScan, { mode: "update" });
+
+  assert.equal(adapter.folders.length, 2);
+  assert.equal(adapter.items.length, 2);
+  assert.equal(result.updated.length, 1);
+  const preview = await adapter.getItem(result.updated[0].previewItemId);
+  assert.ok(preview.annotation.includes("包装名称：黑底背景更新"));
+  assert.ok(preview.annotation.includes("版本：v02"));
+});
+
+test("fills a partial existing pair without duplicating the present item", async () => {
+  const adapter = new FakeAdapter();
+  const first = await importBatch(adapter, makeScanResult());
+  adapter.items = adapter.items.filter(
+    (item) => item.id === first.imported[0].previewItemId
+  );
+
+  const result = await importBatch(adapter, makeScanResult(), { mode: "update" });
+
+  assert.equal(adapter.items.length, 2);
+  assert.equal(result.updated.length, 1);
+  assert.equal(result.updated[0].previewItemId, first.imported[0].previewItemId);
+  assert.notEqual(result.updated[0].sourceItemId, first.imported[0].sourceItemId);
+});
+
+test("creates an independent batch when new mode is selected", async () => {
+  const adapter = new FakeAdapter();
+  await importBatch(adapter, makeScanResult());
+  const result = await importBatch(adapter, makeScanResult(), { mode: "new" });
+
+  assert.equal(adapter.folders.length, 3);
+  assert.equal(adapter.items.length, 4);
+  assert.equal(result.mode, "new");
+  assert.equal(result.imported.length, 1);
+  assert.notEqual(result.batchId, "batch-MSZQTI9M9MJOZ");
+  assert.match(adapter.folders[2].name, /^变速箱包装-/u);
 });
 
 test("refuses to import when no package is ready", async () => {

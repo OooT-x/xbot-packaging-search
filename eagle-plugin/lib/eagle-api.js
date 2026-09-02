@@ -1,6 +1,7 @@
 const path = require("path");
 const {
   COLLECTED_ROOT,
+  createBatchId,
   inferPackageType,
   metadataFromPair,
   normalizeDependencyList,
@@ -14,6 +15,7 @@ const BATCH_SUFFIX = "包装";
 const FORMAL_PREVIEW_ROOT_NAME = "01_预览图";
 const FORMAL_SOURCE_ROOT_NAME = "02_AE源文件";
 const KNOWN_PACKAGE_TYPES = ["信息条", "视频框", "背景", "分镜排版"];
+const IMPORT_MODES = ["prompt", "reuse", "update", "new"];
 
 function folderId(folder) {
   if (!folder) return null;
@@ -131,6 +133,136 @@ function buildAnnotation(pkg, pair) {
     lines.push(`效果：${pkg.effects.join("、")}`);
   }
   return lines.join("\n");
+}
+
+function normalizeIdentity(value) {
+  return String(value || "")
+    .trim()
+    .replace(/[\\/]+/g, "/")
+    .replace(/\/+$/u, "")
+    .toLowerCase();
+}
+
+function manifestIdentity(scanResult) {
+  if (scanResult?.manifestKey) return String(scanResult.manifestKey);
+  const paths = (scanResult?.manifestFiles || [])
+    .map((filePath) => normalizeIdentity(filePath))
+    .filter(Boolean)
+    .sort();
+  return paths.length > 0 ? stableId("manifest", ...paths) : "";
+}
+
+function batchIdentity(scanResult) {
+  const ready = (scanResult?.packages || [])
+    .filter((pkg) => pkg.state === "ready")
+    .map((pkg) => [
+      pkg.packageId,
+      pkg.preview?.path || "",
+      pkg.source?.path || "",
+      pkg.manifestPath || "",
+    ]);
+  return {
+    batchId: String(scanResult?.batchId || createBatchId()),
+    batchKey:
+      String(scanResult?.batchKey || "").trim() ||
+      stableId("batch-key", scanResult?.sourceDir || "", ...ready.flat()),
+    sourcePath: String(scanResult?.sourceDir || ""),
+    sourcePathKey: normalizeIdentity(scanResult?.sourceDir),
+    manifestKey: manifestIdentity(scanResult),
+  };
+}
+
+function upsertDescription(description, fields) {
+  const keys = new Set(Object.keys(fields));
+  const lines = String(description || "")
+    .split(/\r?\n/u)
+    .filter((line) => {
+      const index = line.indexOf("：");
+      return index <= 0 || !keys.has(line.slice(0, index).trim());
+    });
+  for (const [key, value] of Object.entries(fields)) {
+    if (value !== undefined && value !== null && String(value) !== "") {
+      lines.push(`${key}：${value}`);
+    }
+  }
+  return lines.filter(Boolean).join("\n");
+}
+
+function packageDetailFromItems(items) {
+  const byPackage = new Map();
+  for (const item of items || []) {
+    const meta = parseAnnotation(item.annotation);
+    const packageId = String(meta.package_id || "").trim();
+    if (!packageId) continue;
+    if (!byPackage.has(packageId)) {
+      byPackage.set(packageId, {
+        packageId,
+        items: [],
+        preview: null,
+        source: null,
+        meta,
+      });
+    }
+    const entry = byPackage.get(packageId);
+    entry.items.push(item);
+    const kind = itemKind(item);
+    if (kind === "preview") entry.preview = item;
+    if (kind === "source") entry.source = item;
+    entry.meta = { ...entry.meta, ...meta };
+  }
+  return byPackage;
+}
+
+async function findDuplicateBatches(adapter, scanResult, rootFolderId) {
+  const identity = batchIdentity(scanResult);
+  const folders = await adapter.getFolders();
+  const packageIds = new Set(
+    (scanResult?.packages || [])
+      .filter((pkg) => pkg.state === "ready")
+      .map((pkg) => String(pkg.packageId || "").trim())
+      .filter(Boolean)
+  );
+  const candidates = folders.filter(
+    (folder) => folderId(folder.parent) === rootFolderId
+  );
+  const matches = [];
+  for (const folder of candidates) {
+    const meta = parseAnnotation(folder.description);
+    const matchedBy = [];
+    if (meta.batch_id && meta.batch_id === identity.batchId) matchedBy.push("batch_id");
+    if (meta.batch_key && meta.batch_key === identity.batchKey) matchedBy.push("batch_key");
+    if (
+      identity.sourcePathKey &&
+      meta["来源"] &&
+      normalizeIdentity(meta["来源"]) === identity.sourcePathKey
+    ) {
+      matchedBy.push("source_path");
+    }
+    if (identity.manifestKey && meta.manifest_key === identity.manifestKey) {
+      matchedBy.push("manifest");
+    }
+
+    let items = [];
+    if (
+      matchedBy.length === 0 &&
+      folder.name === `${scanResult.projectName}${BATCH_SUFFIX}` &&
+      typeof adapter.getItemsByFolder === "function"
+    ) {
+      items = await adapter.getItemsByFolder(folderId(folder));
+      const itemPackageIds = new Set(
+        items
+          .map((item) => parseAnnotation(item.annotation).package_id)
+          .filter(Boolean)
+      );
+      if ([...packageIds].some((packageId) => itemPackageIds.has(packageId))) {
+        matchedBy.push("package_id");
+      }
+    }
+    if (matchedBy.length > 0) {
+      matches.push({ folder, folderId: folderId(folder), meta, items, matchedBy });
+    }
+  }
+  return matches;
 }
 
 function buildTags(pkg) {
@@ -505,19 +637,67 @@ async function importBatch(adapter, scanResult, options = {}) {
   if (ready.length === 0) {
     throw new Error("没有可导入的包装记录，请先处理冲突或补全 manifest");
   }
-
+  const mode = String(options.mode || "prompt").trim();
+  if (!IMPORT_MODES.includes(mode)) {
+    throw new Error(`未知的批次导入模式：${mode}`);
+  }
+  const identity = batchIdentity(scanResult);
   const rootFolder = await ensureFolder(adapter, INGEST_ROOT_NAME, null);
-  const batchFolder = await ensureFolder(
+  const duplicateMatches = await findDuplicateBatches(
     adapter,
-    `${scanResult.projectName}${BATCH_SUFFIX}`,
+    scanResult,
     folderId(rootFolder)
   );
+  if (duplicateMatches.length > 0 && mode === "prompt") {
+    return {
+      state: "duplicate",
+      duplicate: true,
+      mode,
+      batchId: identity.batchId,
+      rootFolderId: folderId(rootFolder),
+      matches: duplicateMatches.map((match) => ({
+        batchFolderId: match.folderId,
+        batchId: match.meta.batch_id || null,
+        matchedBy: match.matchedBy,
+      })),
+      choices: ["reuse", "update", "new"],
+      imported: [],
+      reused: [],
+      updated: [],
+    };
+  }
+
+  const matched = duplicateMatches[0] || null;
+  let actualMode = matched && ["reuse", "update"].includes(mode) ? mode : "new";
+  let batchFolder;
+  let batchId = identity.batchId;
+  if (matched && ["reuse", "update"].includes(mode)) {
+    batchFolder = matched.folder;
+    batchId = matched.meta.batch_id || stableId("batch", matched.folderId);
+  } else {
+    if (matched && mode === "new") batchId = createBatchId();
+    const name =
+      matched && mode === "new"
+        ? `${scanResult.projectName}${BATCH_SUFFIX}-${batchId.replace(/^batch-/u, "").slice(-6)}`
+        : `${scanResult.projectName}${BATCH_SUFFIX}`;
+    batchFolder = await ensureFolder(adapter, name, folderId(rootFolder));
+  }
+
+  const existingItems =
+    matched && typeof adapter.getItemsByFolder === "function"
+      ? matched.items.length > 0
+        ? matched.items
+        : await adapter.getItemsByFolder(folderId(batchFolder))
+      : [];
+  const existingPackages = packageDetailFromItems(existingItems);
 
   const results = [];
+  const reused = [];
+  const updated = [];
   for (const pkg of ready) {
     const pair = {
       packageId: pkg.packageId,
-      batchId: scanResult.batchId,
+      batchId,
       projectName: scanResult.projectName,
       sourceProjectName: pkg.sourceProjectName || null,
       packageName: pkg.packageName,
@@ -527,7 +707,58 @@ async function importBatch(adapter, scanResult, options = {}) {
       dependencyStatus: pkg.dependencyStatus || "complete",
       fonts: pkg.fonts || [],
       effects: pkg.effects || [],
+      previewPath: pkg.preview.path,
+      sourcePath: pkg.source.path,
     };
+    const existing = existingPackages.get(String(pkg.packageId));
+    if (existing && existing.items.length > 0) {
+      let previewItemId = existing.preview?.id || null;
+      let sourceItemId = existing.source?.id || null;
+      if (!previewItemId) {
+        previewItemId = await adapter.addFromPath(pkg.preview.path, {
+          name: itemName(pkg.preview.path, "png"),
+          tags: buildTags(pair),
+          folders: [folderId(batchFolder)],
+          annotation: buildAnnotation(pair, null),
+        });
+      }
+      if (!sourceItemId) {
+        sourceItemId = await adapter.addFromPath(pkg.source.path, {
+          name: itemName(pkg.source.path, "zip"),
+          tags: buildTags(pair),
+          folders: [folderId(batchFolder)],
+          annotation: buildAnnotation(pair, { previewItemId, sourceItemId: null }),
+        });
+      }
+      const record = {
+        packageId: pkg.packageId,
+        previewItemId,
+        sourceItemId,
+        previewPath: pkg.preview.path,
+        sourcePath: pkg.source.path,
+      };
+      if (mode === "reuse" && existing.preview && existing.source) {
+        reused.push(record);
+      } else {
+        const annotation = buildAnnotation(pair, {
+          previewItemId,
+          sourceItemId,
+          previewPath: pkg.preview.path,
+          sourcePath: pkg.source.path,
+        });
+        for (const itemId of [previewItemId, sourceItemId]) {
+          const item = await adapter.getItem(itemId);
+          if (!item) continue;
+          item.annotation = annotation;
+          item.tags = buildTags(pair);
+          item.folders = [folderId(batchFolder)];
+          await adapter.saveItem(item);
+        }
+        updated.push(record);
+      }
+      continue;
+    }
+
     const tags = buildTags(pair);
     const previewItemId = await adapter.addFromPath(pkg.preview.path, {
       name: itemName(pkg.preview.path, "png"),
@@ -555,26 +786,40 @@ async function importBatch(adapter, scanResult, options = {}) {
       previewPath: pkg.preview.path,
       sourcePath: pkg.source.path,
     });
+    if (existing) updated.push(results[results.length - 1]);
   }
 
   const batchFolderInstance = await adapter.getFolder(folderId(batchFolder));
   if (batchFolderInstance) {
-    batchFolderInstance.description = [
-      batchFolderInstance.description || "",
-      `batch_id：${scanResult.batchId}`,
-      `来源：${scanResult.sourceDir}`,
-      `记录：${ready.length} 条`,
-    ]
-      .filter(Boolean)
-      .join("\n");
+    batchFolderInstance.description = upsertDescription(
+      batchFolderInstance.description,
+      {
+        batch_id: batchId,
+        batch_key: identity.batchKey,
+        来源: identity.sourcePath,
+        manifest_key: identity.manifestKey,
+        记录: `${ready.length} 条`,
+        导入模式: actualMode,
+      }
+    );
     await adapter.saveFolder(batchFolderInstance);
   }
 
   return {
-    batchId: scanResult.batchId,
+    state: actualMode === "new" ? "imported" : actualMode,
+    duplicate: duplicateMatches.length > 0,
+    mode: actualMode,
+    batchId,
     batchFolderId: folderId(batchFolder),
     rootFolderId: folderId(rootFolder),
     imported: results,
+    reused,
+    updated,
+    matches: duplicateMatches.map((match) => ({
+      batchFolderId: match.folderId,
+      batchId: match.meta.batch_id || null,
+      matchedBy: match.matchedBy,
+    })),
   };
 }
 
@@ -780,6 +1025,7 @@ module.exports = {
   FORMAL_PREVIEW_ROOT_NAME,
   FORMAL_SOURCE_ROOT_NAME,
   INGEST_ROOT_NAME,
+  IMPORT_MODES,
   KNOWN_PACKAGE_TYPES,
   EaglePluginAdapter,
   buildAnnotation,
@@ -790,11 +1036,15 @@ module.exports = {
   fileBatch,
   flattenFolderTree,
   folderId,
+  findDuplicateBatches,
   importBatch,
   inferProjectNameFromBatch,
   inspectBatch,
   itemKind,
   itemName,
+  batchIdentity,
+  manifestIdentity,
+  normalizeIdentity,
   parseAnnotation,
   planFormalFile,
   replaceIngestTag,

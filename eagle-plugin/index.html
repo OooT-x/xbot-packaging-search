@@ -141,7 +141,7 @@
   </head>
   <body>
     <header>
-      <h1>X.bot 包装素材入库助手 <span class="version">v1.1.3</span></h1>
+      <h1>X.bot 包装素材入库助手 <span class="version">v1.2.0</span></h1>
       <span class="hint" id="apiState">检测 Eagle 插件环境…</span>
     </header>
 
@@ -150,6 +150,13 @@
       <input type="file" id="folderPicker" webkitdirectory directory />
       <input type="text" id="projectName" placeholder="项目名称（可修改）" />
       <button id="scanBtn">扫描预检</button>
+      <label class="hint" for="importMode">重复批次</label>
+      <select id="importMode" aria-label="重复批次处理方式">
+        <option value="prompt">检测到重复时停下</option>
+        <option value="reuse">复用现有批次</option>
+        <option value="update">更新现有批次</option>
+        <option value="new">新建独立批次</option>
+      </select>
       <button id="importBtn" class="primary" disabled>确认导入 Eagle</button>
       <span class="hint" id="batchInfo"></span>
     </div>

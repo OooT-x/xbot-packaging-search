@@ -11,6 +11,22 @@ function jsonArray(value) {
   }
 }
 
+function normalizeBatchPath(value) {
+  return String(value || "")
+    .trim()
+    .replace(/[\\/]+/g, "/")
+    .replace(/\/+$/u, "")
+    .toLowerCase();
+}
+
+function hydrateBatch(row, details = []) {
+  if (!row) return null;
+  return {
+    ...row,
+    details: details.map((detail) => ({ ...detail })),
+  };
+}
+
 function hydratePackage(row) {
   if (!row) return null;
   return {
@@ -167,6 +183,143 @@ class PackageDatabase {
     return Number(
       this.db.prepare("SELECT COUNT(*) AS count FROM packages WHERE status = 'active'").get().count
     );
+  }
+
+  listBatches(filters = {}) {
+    const clauses = [];
+    const params = [];
+    if (filters.batchId) {
+      clauses.push("batch_id = ?");
+      params.push(String(filters.batchId));
+    }
+    if (filters.batchKey) {
+      clauses.push("batch_key = ?");
+      params.push(String(filters.batchKey));
+    }
+    if (filters.sourcePath) {
+      clauses.push("source_path_key = ?");
+      params.push(normalizeBatchPath(filters.sourcePath));
+    }
+    if (filters.manifestKey) {
+      clauses.push("manifest_key = ?");
+      params.push(String(filters.manifestKey));
+    }
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+    const rows = this.db
+      .prepare(`SELECT * FROM batches ${where} ORDER BY updated_at DESC, batch_id`)
+      .all(...params);
+    const detailStatement = this.db.prepare(
+      "SELECT * FROM batch_details WHERE batch_id = ? ORDER BY package_id"
+    );
+    return rows.map((row) => hydrateBatch(row, detailStatement.all(row.batch_id)));
+  }
+
+  findBatch(filters = {}) {
+    return this.listBatches(filters)[0] || null;
+  }
+
+  getBatch(batchId) {
+    return this.findBatch({ batchId });
+  }
+
+  recordBatchImport(batch, details = [], options = {}) {
+    const batchId = String(batch?.batchId || batch?.batch_id || "").trim();
+    if (!batchId) throw new Error("batch_id is required");
+    const mode = String(
+      options.mode || batch?.importMode || batch?.import_mode || "new"
+    ).trim();
+    if (!["reuse", "update", "new"].includes(mode)) {
+      throw new Error(`invalid batch import mode: ${mode}`);
+    }
+    const status = String(
+      options.status || batch?.status || (mode === "update" ? "updated" : "imported")
+    ).trim();
+    const now = Number(options.now || Date.now());
+    const sourcePath = String(batch?.sourceDir || batch?.sourcePath || batch?.source_path || "");
+    const sourcePathKey = normalizeBatchPath(
+      batch?.sourcePathKey || batch?.source_path_key || sourcePath
+    );
+    const upsertBatch = this.db.prepare(`
+      INSERT INTO batches(
+        batch_id, project_name, source_path, source_path_key, batch_key, manifest_key,
+        batch_folder_id, import_mode, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(batch_id) DO UPDATE SET
+        project_name = excluded.project_name,
+        source_path = excluded.source_path,
+        source_path_key = excluded.source_path_key,
+        batch_key = excluded.batch_key,
+        manifest_key = excluded.manifest_key,
+        batch_folder_id = excluded.batch_folder_id,
+        import_mode = excluded.import_mode,
+        status = excluded.status,
+        updated_at = excluded.updated_at
+    `);
+    const upsertDetail = this.db.prepare(`
+      INSERT INTO batch_details(
+        batch_id, package_id, package_name, package_type, version, ae_comp_name,
+        preview_path, source_path, manifest_path, preview_eagle_id, source_eagle_id,
+        package_key, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(batch_id, package_id) DO UPDATE SET
+        package_name = excluded.package_name,
+        package_type = excluded.package_type,
+        version = excluded.version,
+        ae_comp_name = excluded.ae_comp_name,
+        preview_path = excluded.preview_path,
+        source_path = excluded.source_path,
+        manifest_path = excluded.manifest_path,
+        preview_eagle_id = excluded.preview_eagle_id,
+        source_eagle_id = excluded.source_eagle_id,
+        package_key = excluded.package_key,
+        status = excluded.status,
+        updated_at = excluded.updated_at
+    `);
+
+    this.transaction(() => {
+      upsertBatch.run(
+        batchId,
+        String(batch?.projectName || batch?.project_name || "未命名项目"),
+        sourcePath,
+        sourcePathKey,
+        String(batch?.batchKey || batch?.batch_key || ""),
+        String(batch?.manifestKey || batch?.manifest_key || ""),
+        batch?.batchFolderId || batch?.batch_folder_id || null,
+        mode,
+        status,
+        now,
+        now
+      );
+      for (const detail of details || []) {
+        const packageId = String(detail?.packageId || detail?.package_id || "").trim();
+        if (!packageId) throw new Error("batch detail package_id is required");
+        upsertDetail.run(
+          batchId,
+          packageId,
+          String(detail?.packageName || detail?.package_name || ""),
+          String(detail?.packageType || detail?.package_type || ""),
+          String(detail?.version || "v01"),
+          String(detail?.aeCompName || detail?.ae_comp_name || ""),
+          String(detail?.previewPath || detail?.preview_path || ""),
+          String(detail?.sourcePath || detail?.source_path || ""),
+          String(detail?.manifestPath || detail?.manifest_path || ""),
+          detail?.previewEagleId || detail?.preview_eagle_id || null,
+          detail?.sourceEagleId || detail?.source_eagle_id || null,
+          String(detail?.packageKey || detail?.package_key || ""),
+          String(detail?.status || (mode === "update" ? "updated" : "imported")),
+          now,
+          now
+        );
+      }
+    });
+    return this.getBatch(batchId);
+  }
+
+  markBatchStatus(batchId, status, now = Date.now()) {
+    this.db
+      .prepare("UPDATE batches SET status = ?, updated_at = ? WHERE batch_id = ?")
+      .run(String(status), now, String(batchId));
+    return this.getBatch(batchId);
   }
 
   getPackage(packageId) {
@@ -372,4 +525,9 @@ class PackageDatabase {
   }
 }
 
-module.exports = { PackageDatabase, hydratePackage };
+module.exports = {
+  PackageDatabase,
+  hydrateBatch,
+  hydratePackage,
+  normalizeBatchPath,
+};
