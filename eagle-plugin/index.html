@@ -70,8 +70,9 @@
       .workspace-tab.active { color: var(--ink); border-color: var(--blue); }
       .count-pill { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; margin-left: 4px; padding: 0 5px; border-radius: 99px; background: var(--panel-muted); color: var(--ink-faint); font: 10px var(--font-mono); }
       .workspace-tab.active .count-pill { color: var(--blue); background: var(--blue-soft); }
-      .workspace-view { display: none; flex: 1; }
-      .workspace-view.active { display: block; animation: view-in 180ms ease-out both; }
+      .workspace-view { display: block; flex: 1; min-height: 0; }
+      .workspace-view[hidden] { display: none !important; }
+      .workspace-view.active { animation: view-in 180ms ease-out both; }
       @keyframes view-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
       .screen-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; padding: 22px 20px 15px; }
       .eyebrow { color: var(--blue); font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
@@ -247,7 +248,7 @@
   <body data-theme="light">
     <div class="app">
       <header class="topbar">
-        <div class="brand"><img src="logo.png" alt="X.bot" /><div><strong>X.bot 包装素材入库助手</strong><span>批次审核工作台 · v1.3.0</span></div></div>
+        <div class="brand"><img src="logo.png" alt="X.bot" /><div><strong>X.bot 包装素材入库助手</strong><span>批次审核工作台 · v1.3.1</span></div></div>
         <div class="top-context"><strong id="contextTitle">正式入库</strong><br /><span id="contextSub">检查配对、补全元数据，再归位到正式目录</span></div>
         <div class="top-actions"><div class="api-state"><span class="api-dot" id="apiDot"></span><span id="apiState">正在检测 Eagle API…</span></div><button class="icon-btn" type="button" data-action="toast" data-title="帮助" data-message="选择批次后，可在右侧查看预览和事实字段。">?</button><button class="icon-btn" type="button" data-action="toggle-theme" aria-label="切换主题">◐</button></div>
       </header>
@@ -258,7 +259,7 @@
         <button class="workspace-tab" type="button" data-view="diagnostics">系统诊断</button>
       </nav>
 
-      <section class="workspace-view" id="view-import">
+      <section class="workspace-view" id="view-import" hidden>
         <div class="screen-head"><div><div class="eyebrow">Import / 01</div><h1>把本地项目整理进待入库批次</h1><p>拖入一个项目包装文件夹，插件会自动读取 PNG、ZIP、manifest 和配对关系。素材先停留在待入库区，等待正式审核。</p></div><div class="head-actions"><button class="quiet-btn" type="button" data-action="toast" data-title="导入说明" data-message="导入只负责搬运到 00_待入库，不会直接进入正式目录。">查看说明</button></div></div>
         <div class="import-shell"><div class="import-main">
           <div class="drop-card"><div class="drop-copy"><div class="drop-mark">↥</div><div><strong>拖入项目包装文件夹</strong><span>支持收集器输出的 PNG、ZIP、manifest，以及 Eagle 已导入的项目目录</span></div></div><div class="drop-actions"><label class="folder-input">选择文件夹<input type="file" id="folderPicker" webkitdirectory directory /></label><button class="primary-btn" id="scanBtn" type="button" disabled>开始扫描</button></div></div>
@@ -281,8 +282,8 @@
         <details class="log-drawer"><summary>运行记录</summary><div id="logFormal">等待加载待入库批次…</div></details>
       </section>
 
-      <section class="workspace-view" id="view-history"><div class="screen-head"><div><div class="eyebrow">History / 03</div><h1>批次记录</h1><p>每一次导入、正式归位和 Bot 同步都保留在可追溯的批次摘要中。</p></div></div><div class="import-main" style="margin:0 20px 20px;border:1px solid var(--line);border-radius:12px;"><div class="package-grid"><div class="package-card"><div class="package-thumb thumb-green"></div><div class="card-copy"><div class="card-title-row"><span class="card-title">阿宝包装 · 最近批次</span><span class="status-badge status-ready">已完成</span></div><div class="card-meta">6 条记录 · bot 索引同步完成</div></div></div><div class="package-card"><div class="package-thumb thumb-blue"></div><div class="card-copy"><div class="card-title-row"><span class="card-title">变速箱包装 · 已归位</span><span class="status-badge status-ready">已完成</span></div><div class="card-meta">3 对素材 · 保留空批次目录</div></div></div></div></div></section>
-      <section class="workspace-view" id="view-diagnostics"><div class="screen-head"><div><div class="eyebrow">System / 04</div><h1>系统诊断</h1><p>在正式操作前确认 Eagle、目录和批量命名所需的基础环境。</p></div></div><div class="import-main" style="margin:0 20px 20px;border:1px solid var(--line);border-radius:12px;"><div class="check-list"><div class="check-row"><span>Eagle Plugin API</span><strong class="check-ok" id="diagApi">检测中</strong></div><div class="check-row"><span>当前活动库</span><strong>由 Eagle 提供</strong></div><div class="check-row"><span>正式目录结构</span><strong class="check-ok">按需创建</strong></div><div class="check-row"><span>命名校验</span><strong class="check-ok">已启用</strong></div><div class="check-row"><span>Bot 同步事件</span><strong class="check-warn">依赖运行根目录</strong></div></div></div></section>
+      <section class="workspace-view" id="view-history" hidden><div class="screen-head"><div><div class="eyebrow">History / 03</div><h1>批次记录</h1><p>每一次导入、正式归位和 Bot 同步都保留在可追溯的批次摘要中。</p></div></div><div class="import-main" style="margin:0 20px 20px;border:1px solid var(--line);border-radius:12px;"><div class="package-grid"><div class="package-card"><div class="package-thumb thumb-green"></div><div class="card-copy"><div class="card-title-row"><span class="card-title">阿宝包装 · 最近批次</span><span class="status-badge status-ready">已完成</span></div><div class="card-meta">6 条记录 · bot 索引同步完成</div></div></div><div class="package-card"><div class="package-thumb thumb-blue"></div><div class="card-copy"><div class="card-title-row"><span class="card-title">变速箱包装 · 已归位</span><span class="status-badge status-ready">已完成</span></div><div class="card-meta">3 对素材 · 保留空批次目录</div></div></div></div></div></section>
+      <section class="workspace-view" id="view-diagnostics" hidden><div class="screen-head"><div><div class="eyebrow">System / 04</div><h1>系统诊断</h1><p>在正式操作前确认 Eagle、目录和批量命名所需的基础环境。</p></div></div><div class="import-main" style="margin:0 20px 20px;border:1px solid var(--line);border-radius:12px;"><div class="check-list"><div class="check-row"><span>Eagle Plugin API</span><strong class="check-ok" id="diagApi">检测中</strong></div><div class="check-row"><span>当前活动库</span><strong>由 Eagle 提供</strong></div><div class="check-row"><span>正式目录结构</span><strong class="check-ok">按需创建</strong></div><div class="check-row"><span>命名校验</span><strong class="check-ok">已启用</strong></div><div class="check-row"><span>Bot 同步事件</span><strong class="check-warn">依赖运行根目录</strong></div></div></div></section>
     </div>
 
     <div class="modal-backdrop" id="duplicateModal" role="dialog" aria-modal="true" aria-labelledby="duplicateTitle"><div class="modal" style="max-width:520px;"><div class="modal-head"><div><h2 id="duplicateTitle">检测到重复批次</h2><p class="modal-sub" id="duplicateSub">请选择处理方式，系统不会静默生成重复素材。</p></div><button class="icon-btn" type="button" data-close-modal aria-label="关闭">×</button></div><div class="duplicate-options"><button class="duplicate-choice" type="button" data-duplicate-mode="reuse"><div><strong>复用现有批次</strong><span>不新增重复文件，沿用已有批次关系</span></div><span class="status-badge status-ready">安全</span></button><button class="duplicate-choice" type="button" data-duplicate-mode="update"><div><strong>更新现有批次</strong><span>补齐变化内容，保留原批次 ID</span></div><span class="status-badge status-review">更新</span></button><button class="duplicate-choice" type="button" data-duplicate-mode="new"><div><strong>新建独立批次</strong><span>保留为新版本，生成独立 batch_id</span></div><span class="status-badge status-muted">新建</span></button></div></div></div>
