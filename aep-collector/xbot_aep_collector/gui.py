@@ -24,9 +24,12 @@ from .core import (
     ProjectInfo,
     attach_collection_preview,
     collect_composition,
+    direct_precompositions,
     inspect_project,
     mark_collection_preview_error,
     preview_source_candidates,
+    preview_source_layer_usage,
+    preview_time_for_source,
     recommend_preview_source,
 )
 from .bridge import BridgeUnavailable, bridge_status, render_bridge_preview
@@ -44,6 +47,7 @@ class PreviewDialog:
         initial_time: float,
         cache_file: Path,
         on_confirm,
+        source_times: dict[int, float] | None = None,
     ) -> None:
         self.parent = parent
         self.aep_path = aep_path
@@ -58,6 +62,7 @@ class PreviewDialog:
         )
         self.cache_file = cache_file
         self.on_confirm = on_confirm
+        self.source_times = source_times or {}
         self.busy = False
         self.photo: ImageTk.PhotoImage | None = None
         self.rendered_frame_index: int | None = None
@@ -82,7 +87,13 @@ class PreviewDialog:
         self.frame_label_var = tk.StringVar()
         self.title_var = tk.StringVar()
         self.source_var = tk.StringVar(value=self._source_label(self.composition))
-        self.status_var = tk.StringVar(value="默认选择第 2 秒的帧。")
+        self.status_var = tk.StringVar(
+            value=(
+                "按视频框图层出现后的第 2 秒取父级画面。"
+                if self.composition.id != self.collection_composition.id
+                else "默认选择第 2 秒的帧。"
+            )
+        )
 
         self._build_ui()
         self._sync_frame_label(selection.frame_index)
@@ -176,7 +187,16 @@ class PreviewDialog:
         if selected is None or selected.id == self.composition.id:
             return
         self.composition = selected
-        selection = select_preview_frame(selected.duration, selected.frame_rate)
+        requested_time = self.source_times.get(
+            selected.id,
+            default_preview_time(selected.duration, selected.frame_rate),
+        )
+        selection = select_preview_frame(
+            selected.duration,
+            selected.frame_rate,
+            requested_time=requested_time,
+            display_start_frame=selected.display_start_frame,
+        )
         self.scale.configure(to=selection.last_frame_index)
         self.frame_var.set(selection.frame_index)
         self.time_var.set(f"{selection.time:.3f}")
@@ -186,7 +206,11 @@ class PreviewDialog:
         self.confirm_button.configure(state=tk.DISABLED)
         self._sync_title()
         self._sync_frame_label(selection.frame_index)
-        self.status_var.set("预览来源已更改，正在生成第 2 秒画面…")
+        self.status_var.set(
+            "预览来源已更改，正在生成视频框图层出现后的第 2 秒画面…"
+            if selected.id != self.collection_composition.id
+            else "预览来源已更改，正在生成第 2 秒画面…"
+        )
         self.render_from_time()
 
     def _scale_changed(self, value: str) -> None:
@@ -357,6 +381,95 @@ class PreviewDialog:
         self.window.destroy()
 
 
+class PrecompositionDialog:
+    def __init__(
+        self,
+        parent: tk.Tk,
+        target: CompositionInfo,
+        children: tuple[CompositionInfo, ...],
+        on_export,
+    ) -> None:
+        self.on_export = on_export
+        self.window = tk.Toplevel(parent)
+        self.window.title(f"直属预合成 · {target.name}")
+        self.window.geometry("920x460")
+        self.window.minsize(720, 360)
+        self.window.transient(parent)
+        self.window.protocol("WM_DELETE_WINDOW", self.window.destroy)
+
+        outer = ttk.Frame(self.window, padding=12)
+        outer.pack(fill=tk.BOTH, expand=True)
+        ttk.Label(
+            outer,
+            text=(
+                f"“{target.name}”直接包含 {len(children)} 个预合成。"
+                "列表按图层出现顺序展示；分别导出时，每个预合成会继续递归收集自己的下层依赖。"
+            ),
+            wraplength=880,
+            justify=tk.LEFT,
+        ).pack(fill=tk.X, pady=(0, 10))
+
+        table_frame = ttk.Frame(outer)
+        table_frame.pack(fill=tk.BOTH, expand=True)
+        table_frame.rowconfigure(0, weight=1)
+        table_frame.columnconfigure(0, weight=1)
+        columns = ("id", "size", "duration", "fps", "parents", "children")
+        self.tree = ttk.Treeview(
+            table_frame,
+            columns=columns,
+            show="tree headings",
+            selectmode="browse",
+        )
+        self.tree.heading("#0", text="预合成名称")
+        self.tree.heading("id", text="ID")
+        self.tree.heading("size", text="尺寸")
+        self.tree.heading("duration", text="时长")
+        self.tree.heading("fps", text="帧率")
+        self.tree.heading("parents", text="被哪些合成使用")
+        self.tree.heading("children", text="下层预合成")
+        self.tree.column("#0", width=220, minwidth=160)
+        self.tree.column("id", width=70, anchor=tk.E)
+        self.tree.column("size", width=110, anchor=tk.CENTER)
+        self.tree.column("duration", width=85, anchor=tk.E)
+        self.tree.column("fps", width=70, anchor=tk.E)
+        self.tree.column("parents", width=180)
+        self.tree.column("children", width=220)
+        for index, comp in enumerate(children, start=1):
+            self.tree.insert(
+                "",
+                tk.END,
+                iid=str(comp.id),
+                text=f"{index}. {comp.name}",
+                values=(
+                    comp.id,
+                    f"{comp.width}×{comp.height}",
+                    f"{comp.duration:.2f}s",
+                    f"{comp.frame_rate:g}",
+                    "、".join(comp.parent_names) or "—",
+                    "、".join(comp.child_names) or "—",
+                ),
+            )
+        scroll_y = ttk.Scrollbar(table_frame, orient=tk.VERTICAL, command=self.tree.yview)
+        scroll_x = ttk.Scrollbar(table_frame, orient=tk.HORIZONTAL, command=self.tree.xview)
+        self.tree.configure(yscrollcommand=scroll_y.set, xscrollcommand=scroll_x.set)
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        scroll_y.grid(row=0, column=1, sticky="ns")
+        scroll_x.grid(row=1, column=0, sticky="ew")
+
+        footer = ttk.Frame(outer)
+        footer.pack(fill=tk.X, pady=(10, 0))
+        ttk.Button(footer, text="关闭", command=self.window.destroy).pack(side=tk.RIGHT)
+        ttk.Button(
+            footer,
+            text="分别导出这些预合成",
+            command=self.export_children,
+        ).pack(side=tk.RIGHT, padx=(0, 8))
+
+    def export_children(self) -> None:
+        self.window.destroy()
+        self.on_export()
+
+
 class CollectorWindow:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -433,11 +546,23 @@ class CollectorWindow:
         self.preview_button.grid(row=0, column=2, padx=(8, 0))
         self.collect_button = ttk.Button(output_frame, text="收集所选合成", command=self.collect_selected)
         self.collect_button.grid(row=0, column=3, padx=(8, 0))
-        ttk.Button(output_frame, text="打开输出目录", command=self.open_output).grid(row=0, column=4, padx=(8, 0))
+        self.precomp_button = ttk.Button(
+            output_frame,
+            text="查看直属预合成",
+            command=self.show_precompositions,
+        )
+        self.precomp_button.grid(row=0, column=4, padx=(8, 0))
+        self.export_precomp_button = ttk.Button(
+            output_frame,
+            text="分别导出预合成",
+            command=self.export_precompositions,
+        )
+        self.export_precomp_button.grid(row=0, column=5, padx=(8, 0))
+        ttk.Button(output_frame, text="打开输出目录", command=self.open_output).grid(row=0, column=6, padx=(8, 0))
         ttk.Label(
             output_frame,
             text="每个合成生成独立 AEP、素材目录、manifest 和同名 ZIP；原工程不会被修改。",
-        ).grid(row=1, column=0, columnspan=5, sticky="w", pady=(8, 0))
+        ).grid(row=1, column=0, columnspan=7, sticky="w", pady=(8, 0))
 
         log_frame = ttk.LabelFrame(outer, text="运行记录", padding=8)
         log_frame.pack(fill=tk.BOTH, pady=(10, 0))
@@ -454,6 +579,8 @@ class CollectorWindow:
     def set_busy(self, busy: bool, status: str) -> None:
         self.collect_button.configure(state=tk.DISABLED if busy else tk.NORMAL)
         self.preview_button.configure(state=tk.DISABLED if busy else tk.NORMAL)
+        self.precomp_button.configure(state=tk.DISABLED if busy else tk.NORMAL)
+        self.export_precomp_button.configure(state=tk.DISABLED if busy else tk.NORMAL)
         self.status_var.set(status)
         if not busy:
             self._update_action_states()
@@ -462,6 +589,8 @@ class CollectorWindow:
         selected_count = len(self.tree.selection())
         self.preview_button.configure(state=tk.NORMAL if selected_count == 1 else tk.DISABLED)
         self.collect_button.configure(state=tk.NORMAL if selected_count > 0 else tk.DISABLED)
+        self.precomp_button.configure(state=tk.NORMAL if selected_count == 1 else tk.DISABLED)
+        self.export_precomp_button.configure(state=tk.NORMAL if selected_count == 1 else tk.DISABLED)
 
     def choose_aep(self) -> None:
         path = filedialog.askopenfilename(title="选择 AEP 工程", filetypes=[("After Effects Project", "*.aep")])
@@ -499,7 +628,12 @@ class CollectorWindow:
         for comp in project.compositions:
             recommendation = recommend_preview_source(project, comp)
             source = by_id.get(recommendation.source_id, comp)
-            preview_time = default_preview_time(source.duration, source.frame_rate)
+            source_candidates = preview_source_candidates(project, comp)
+            source_times = {
+                candidate.id: preview_time_for_source(project, comp, candidate)
+                for candidate in source_candidates
+            }
+            preview_time = source_times[source.id]
             preview_selection = select_preview_frame(
                 source.duration,
                 source.frame_rate,
@@ -569,15 +703,21 @@ class CollectorWindow:
                 f"（AE 帧号 {frame_number}，{renderer}）。"
             )
 
+        source_candidates = preview_source_candidates(self.project, comp)
+        source_times = {
+            candidate.id: preview_time_for_source(self.project, comp, candidate)
+            for candidate in source_candidates
+        }
         PreviewDialog(
             self.root,
             self.aep_var.get().strip(),
             comp,
-            preview_source_candidates(self.project, comp),
+            source_candidates,
             source_id,
             self.preview_times.get(comp.id, default_preview_time(comp.duration, comp.frame_rate)),
             cache_file,
             confirmed,
+            source_times,
         )
 
     def choose_output(self) -> None:
@@ -585,21 +725,89 @@ class CollectorWindow:
         if path:
             self.output_var.set(path)
 
+    def _output_directory(self) -> str:
+        output = self.output_var.get().strip()
+        if not output:
+            self.choose_output()
+            output = self.output_var.get().strip()
+        return output
+
     def _selected_compositions(self) -> list[CompositionInfo]:
         if self.project is None:
             return []
         selected_ids = {int(item) for item in self.tree.selection()}
         return [item for item in self.project.compositions if item.id in selected_ids]
 
+    def show_precompositions(self) -> None:
+        selected = self._selected_compositions()
+        if len(selected) != 1:
+            messagebox.showinfo("请选择一个合成", "查看预合成时请只选择一个合成。")
+            return
+        target = selected[0]
+        children = direct_precompositions(self.project, target)
+        if not children:
+            messagebox.showinfo(
+                "没有直属预合成",
+                f"“{target.name}”没有直接作为图层源使用的预合成。",
+            )
+            return
+        PrecompositionDialog(
+            self.root,
+            target,
+            children,
+            lambda target=target, children=children: self._export_precomposition_items(
+                target,
+                children,
+            ),
+        )
+
+    def export_precompositions(self) -> None:
+        selected = self._selected_compositions()
+        if len(selected) != 1:
+            messagebox.showinfo("请选择一个合成", "分别导出预合成时请只选择一个合成。")
+            return
+        target = selected[0]
+        children = list(direct_precompositions(self.project, target))
+        if not children:
+            messagebox.showinfo(
+                "没有直属预合成",
+                f"“{target.name}”没有可分别导出的直属预合成。",
+            )
+            return
+        self._export_precomposition_items(target, children)
+
+    def _export_precomposition_items(
+        self,
+        target: CompositionInfo,
+        children: list[CompositionInfo] | tuple[CompositionInfo, ...],
+    ) -> None:
+        output = self._output_directory()
+        if not output:
+            return
+        names = "、".join(item.name for item in children)
+        if not messagebox.askyesno(
+            "确认导出预合成",
+            (
+                f"将把“{target.name}”的 {len(children)} 个直属预合成分别收集并打包：\n"
+                f"{names}\n\n"
+                "每个预合成生成独立 AEP、素材目录、manifest、PNG 和 ZIP；"
+                "不会导出上层包装合成，原 AEP 也不会被修改。继续吗？"
+            ),
+        ):
+            return
+        self._start_collection(
+            children,
+            output,
+            f"开始分别导出“{target.name}”的直属预合成：{names}",
+            status_label="正在导出直属预合成…",
+        )
+
     def collect_selected(self) -> None:
         selected = self._selected_compositions()
         if not selected:
             messagebox.showinfo("请选择合成", "请在合成列表中选择至少一个合成。")
             return
-        output = self.output_var.get().strip()
-        if not output:
-            self.choose_output()
-            output = self.output_var.get().strip()
+        output = self._output_directory()
         if not output:
             return
         names = "、".join(item.name for item in selected)
@@ -608,26 +816,44 @@ class CollectorWindow:
             f"将分别收集 {len(selected)} 个合成：\n{names}\n\n所有结果写入新目录，原 AEP 不会被修改。继续吗？",
         ):
             return
+        self._start_collection(
+            selected,
+            output,
+            f"开始收集：{names}",
+            status_label="正在收集所选合成…",
+        )
 
-        self.set_busy(True, "正在收集所选合成…")
-        self.append_log(f"开始收集：{names}")
+    def _start_collection(
+        self,
+        selected: list[CompositionInfo],
+        output: str,
+        log_label: str,
+        status_label: str,
+    ) -> None:
+        self.set_busy(True, status_label)
+        self.append_log(log_label)
         aep = self.aep_var.get().strip()
+        project = self.project
+        if project is None:
+            self.set_busy(False, "尚未解析工程")
+            return
 
         def worker() -> None:
             try:
                 results: list[CollectionResult] = []
-                by_id = {item.id: item for item in self.project.compositions}
+                by_id = {item.id: item for item in project.compositions}
                 for index, comp in enumerate(selected, start=1):
                     self.root.after(
                         0,
                         lambda index=index, comp=comp: self.status_var.set(
-                            f"正在收集 {index}/{len(selected)}：{comp.name}"
+                            f"正在导出 {index}/{len(selected)}：{comp.name}"
                         ),
                     )
                     result = collect_composition(aep, comp.id, output)
                     preview_target = Path(result.zip_file).with_suffix(".png")
                     try:
                         source = by_id.get(self.preview_source_ids.get(comp.id, comp.id), comp)
+                        source_layer = preview_source_layer_usage(project, comp, source)
                         self.root.after(
                             0,
                             lambda comp=comp, source=source: self.status_var.set(
@@ -639,23 +865,25 @@ class CollectorWindow:
                             source.name,
                             source.duration,
                             source.frame_rate,
-                            self.preview_times[comp.id],
+                            self.preview_times.get(
+                                comp.id,
+                                default_preview_time(comp.duration, comp.frame_rate),
+                            ),
                             preview_target,
                             display_start_frame=source.display_start_frame,
                         )
-                        preview_time = rendered.time
-                        preview_frame = rendered.frame_number
                         result = attach_collection_preview(
                             result,
                             preview_target,
-                            preview_time,
-                            preview_frame,
+                            rendered.time,
+                            rendered.frame_number,
                             preview_source_id=source.id,
                             preview_source_name=source.name,
                             preview_source_relation=(
                                 "self" if source.id == comp.id else "parent-display"
                             ),
                             preview_renderer=rendered.renderer,
+                            preview_source_layer=source_layer,
                         )
                     except Exception as preview_error:
                         preview_target.unlink(missing_ok=True)

@@ -8,6 +8,7 @@ import time
 import unittest
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from PIL import Image
@@ -43,6 +44,211 @@ class SafeFilenameTests(unittest.TestCase):
 
 
 class CompositionInfoTests(unittest.TestCase):
+    def test_inspection_records_parent_layer_timing_for_precomposition(self):
+        class CompItem:
+            def __init__(self, comp_id, name, duration):
+                self.id = comp_id
+                self.name = name
+                self.width = 1920
+                self.height = 1080
+                self.duration = duration
+                self.frame_rate = 25
+                self.display_start_frame = 0
+                self.used_in = []
+                self.composition_layers = []
+
+        class Layer:
+            def __init__(self, layer_id, source):
+                self.id = layer_id
+                self.name = source.name
+                self.source = source
+                self.start_time = 3.0
+                self.in_point = 4.0
+                self.out_point = 9.0
+
+        parent = CompItem(1, "包装", 12.0)
+        child = CompItem(2, "视频框", 5.0)
+        layer = Layer(21, child)
+        parent.composition_layers = [layer]
+        child.used_in = [parent]
+
+        class FakeProject:
+            compositions = [parent, child]
+
+            def __iter__(self):
+                return iter(self.compositions)
+
+        fake_app = SimpleNamespace(
+            project=FakeProject(),
+            version="25.6",
+        )
+        fake_py_aep = SimpleNamespace(parse=lambda _path: fake_app)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            aep = Path(temp_dir) / "project.aep"
+            aep.write_bytes(b"aep")
+            with mock.patch.object(CORE, "_load_py_aep", return_value=fake_py_aep):
+                project = CORE.inspect_project(aep)
+
+        inspected_child = next(item for item in project.compositions if item.id == 2)
+        self.assertEqual(inspected_child.child_ids, ())
+        self.assertEqual(len(inspected_child.parent_layer_usages), 1)
+        usage = inspected_child.parent_layer_usages[0]
+        self.assertEqual(usage.parent_id, 1)
+        self.assertEqual(usage.in_point, 4.0)
+        self.assertEqual(usage.out_point, 9.0)
+
+    def test_video_frame_parent_preview_starts_two_seconds_after_layer_in_point(self):
+        usage = CORE.CompositionLayerUsage(
+            parent_id=1,
+            parent_name="包装",
+            layer_id=21,
+            layer_name="视频框",
+            start_time=3.0,
+            in_point=4.0,
+            out_point=12.0,
+        )
+        video_frame = CORE.CompositionInfo(
+            id=2,
+            name="视频框",
+            width=1280,
+            height=720,
+            duration=5,
+            frame_rate=25,
+            display_start_frame=0,
+            parent_ids=(1,),
+            parent_names=("包装",),
+            child_ids=(),
+            child_names=(),
+            parent_layer_usages=(usage,),
+        )
+        packaging = CORE.CompositionInfo(
+            id=1,
+            name="包装",
+            width=1920,
+            height=1080,
+            duration=20,
+            frame_rate=25,
+            display_start_frame=0,
+            parent_ids=(),
+            parent_names=(),
+            child_ids=(2,),
+            child_names=("视频框",),
+        )
+        project = CORE.ProjectInfo(
+            path="project.aep",
+            ae_version="25.6",
+            item_count=2,
+            compositions=(packaging, video_frame),
+        )
+
+        self.assertEqual(
+            CORE.preview_source_layer_usage(project, video_frame, packaging),
+            usage,
+        )
+        self.assertEqual(CORE.preview_time_for_source(project, video_frame, packaging), 6.0)
+
+    def test_video_frame_parent_preview_clamps_to_last_visible_parent_frame(self):
+        usage = CORE.CompositionLayerUsage(
+            parent_id=1,
+            parent_name="包装",
+            layer_id=21,
+            layer_name="视频框",
+            start_time=3.0,
+            in_point=4.0,
+            out_point=5.0,
+        )
+        video_frame = CORE.CompositionInfo(
+            id=2,
+            name="视频框",
+            width=1280,
+            height=720,
+            duration=5,
+            frame_rate=25,
+            display_start_frame=0,
+            parent_ids=(1,),
+            parent_names=("包装",),
+            child_ids=(),
+            child_names=(),
+            parent_layer_usages=(usage,),
+        )
+        packaging = CORE.CompositionInfo(
+            id=1,
+            name="包装",
+            width=1920,
+            height=1080,
+            duration=20,
+            frame_rate=25,
+            display_start_frame=0,
+            parent_ids=(),
+            parent_names=(),
+            child_ids=(2,),
+            child_names=("视频框",),
+        )
+        project = CORE.ProjectInfo(
+            path="project.aep",
+            ae_version="25.6",
+            item_count=2,
+            compositions=(packaging, video_frame),
+        )
+
+        self.assertAlmostEqual(
+            CORE.preview_time_for_source(project, video_frame, packaging),
+            4.96,
+        )
+
+    def test_lists_unique_direct_precompositions_in_layer_order(self):
+        target = CORE.CompositionInfo(
+            id=1,
+            name="包装",
+            width=1920,
+            height=1080,
+            duration=5,
+            frame_rate=25,
+            display_start_frame=0,
+            parent_ids=(),
+            parent_names=(),
+            child_ids=(3, 2, 3, 999, 1),
+            child_names=("背景", "标注", "背景", "已删除", "包装"),
+        )
+        background = CORE.CompositionInfo(
+            id=3,
+            name="背景",
+            width=1920,
+            height=1080,
+            duration=5,
+            frame_rate=25,
+            display_start_frame=0,
+            parent_ids=(1,),
+            parent_names=("包装",),
+            child_ids=(),
+            child_names=(),
+        )
+        label = CORE.CompositionInfo(
+            id=2,
+            name="标注",
+            width=500,
+            height=300,
+            duration=5,
+            frame_rate=25,
+            display_start_frame=0,
+            parent_ids=(1,),
+            parent_names=("包装",),
+            child_ids=(),
+            child_names=(),
+        )
+        project = CORE.ProjectInfo(
+            path="project.aep",
+            ae_version="25.6",
+            item_count=3,
+            compositions=(target, background, label),
+        )
+
+        result = CORE.direct_precompositions(project, target)
+
+        self.assertEqual([item.id for item in result], [3, 2])
+        self.assertEqual([item.name for item in result], ["背景", "标注"])
+
     def test_marks_referenced_composition_as_precomp(self):
         item = CORE.CompositionInfo(
             id=2,
@@ -170,6 +376,56 @@ class CompositionInfoTests(unittest.TestCase):
         self.assertIn("多个", recommendation.reason)
 
 
+class PrecompositionCollectionTests(unittest.TestCase):
+    def test_collects_each_direct_precomposition_as_an_independent_item(self):
+        target = CORE.CompositionInfo(
+            id=1,
+            name="包装",
+            width=1920,
+            height=1080,
+            duration=5,
+            frame_rate=25,
+            display_start_frame=0,
+            parent_ids=(),
+            parent_names=(),
+            child_ids=(2, 3),
+            child_names=("信息条", "背景"),
+        )
+        children = tuple(
+            CORE.CompositionInfo(
+                id=item_id,
+                name=name,
+                width=1920,
+                height=1080,
+                duration=5,
+                frame_rate=25,
+                display_start_frame=0,
+                parent_ids=(1,),
+                parent_names=("包装",),
+                child_ids=(),
+                child_names=(),
+            )
+            for item_id, name in ((2, "信息条"), (3, "背景"))
+        )
+        project = CORE.ProjectInfo(
+            path="project.aep",
+            ae_version="25.6",
+            item_count=3,
+            compositions=(target, *children),
+        )
+
+        with mock.patch.object(CORE, "inspect_project", return_value=project), mock.patch.object(
+            CORE, "collect_many", return_value=[]
+        ) as collect_many:
+            result = CORE.collect_precompositions("project.aep", 1, "output")
+
+        self.assertEqual(result, [])
+        args = collect_many.call_args.args
+        self.assertEqual(tuple(args[1]), (2, 3))
+        self.assertEqual(args[0], "project.aep")
+        self.assertEqual(args[2], "output")
+
+
 class CollectionArchiveTests(unittest.TestCase):
     def test_output_directory_skips_existing_sibling_zip(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -253,6 +509,15 @@ class CollectionArchiveTests(unittest.TestCase):
                 preview_source_id=9,
                 preview_source_name="包装展示",
                 preview_source_relation="parent-display",
+                preview_source_layer=CORE.CompositionLayerUsage(
+                    parent_id=9,
+                    parent_name="包装展示",
+                    layer_id=21,
+                    layer_name="视频框",
+                    start_time=0.5,
+                    in_point=1.0,
+                    out_point=8.0,
+                ),
             )
 
             self.assertEqual(updated.preview_file, str(preview_file))
@@ -261,6 +526,8 @@ class CollectionArchiveTests(unittest.TestCase):
             self.assertEqual(payload["preview_file"], preview_file.name)
             self.assertEqual(payload["preview"]["frame"], 50)
             self.assertEqual(payload["preview"]["source_composition"]["id"], 9)
+            self.assertEqual(payload["preview"]["source_layer"]["in_point"], 1.0)
+            self.assertEqual(payload["preview"]["source_layer"]["sample_offset_seconds"], 1.0)
             self.assertEqual(updated.preview_source_name, "包装展示")
             with zipfile.ZipFile(zip_file, "r") as archive:
                 archived_manifest = json.loads(

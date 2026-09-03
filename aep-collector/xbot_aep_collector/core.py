@@ -74,6 +74,19 @@ class CollectorError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class CompositionLayerUsage:
+    """One composition-layer placement of a precomposition in a parent."""
+
+    parent_id: int
+    parent_name: str
+    layer_id: int
+    layer_name: str
+    start_time: float
+    in_point: float
+    out_point: float
+
+
+@dataclass(frozen=True)
 class CompositionInfo:
     id: int
     name: str
@@ -86,6 +99,7 @@ class CompositionInfo:
     parent_names: tuple[str, ...]
     child_ids: tuple[int, ...]
     child_names: tuple[str, ...]
+    parent_layer_usages: tuple[CompositionLayerUsage, ...] = ()
 
     @property
     def role(self) -> str:
@@ -176,7 +190,11 @@ def _composition_children(comp: Any) -> list[Any]:
     for layer in getattr(comp, "composition_layers", ()):
         source = getattr(layer, "source", None)
         source_id = getattr(source, "id", None)
-        if source_id is not None and source_id not in seen:
+        if (
+            source_id is not None
+            and source.__class__.__name__ == "CompItem"
+            and source_id not in seen
+        ):
             seen.add(source_id)
             children.append(source)
     return children
@@ -195,6 +213,24 @@ def inspect_project(aep_path: str | Path) -> ProjectInfo:
 
     project = app.project
     compositions = list(project.compositions)
+    parent_usages: dict[int, list[CompositionLayerUsage]] = {}
+    for parent in compositions:
+        for layer in getattr(parent, "composition_layers", ()):
+            source = getattr(layer, "source", None)
+            source_id = getattr(source, "id", None)
+            if source_id is None:
+                continue
+            parent_usages.setdefault(int(source_id), []).append(
+                CompositionLayerUsage(
+                    parent_id=int(parent.id),
+                    parent_name=str(parent.name),
+                    layer_id=int(layer.id),
+                    layer_name=str(getattr(layer, "name", "")),
+                    start_time=float(getattr(layer, "start_time", 0.0)),
+                    in_point=float(getattr(layer, "in_point", 0.0)),
+                    out_point=float(getattr(layer, "out_point", 0.0)),
+                )
+            )
     rows: list[CompositionInfo] = []
     for comp in compositions:
         parents = list(getattr(comp, "used_in", ()))
@@ -212,6 +248,7 @@ def inspect_project(aep_path: str | Path) -> ProjectInfo:
                 parent_names=tuple(str(item.name) for item in parents),
                 child_ids=tuple(int(item.id) for item in children),
                 child_names=tuple(str(item.name) for item in children),
+                parent_layer_usages=tuple(parent_usages.get(int(comp.id), ())),
             )
         )
 
@@ -222,6 +259,74 @@ def inspect_project(aep_path: str | Path) -> ProjectInfo:
         item_count=len(list(project)),
         compositions=tuple(rows),
     )
+
+
+def direct_precompositions(
+    project: ProjectInfo,
+    target: CompositionInfo,
+) -> tuple[CompositionInfo, ...]:
+    """Return the unique CompItems directly used as layers in ``target``.
+
+    The inspection model stores child IDs in layer order. Resolve those IDs
+    through the project snapshot so the GUI and CLI share the same precise
+    definition of "precomposition" and never infer a relationship from names.
+    """
+
+    by_id = {item.id: item for item in project.compositions}
+    children: list[CompositionInfo] = []
+    seen: set[int] = set()
+    for child_id in target.child_ids:
+        if child_id == target.id or child_id in seen:
+            continue
+        child = by_id.get(child_id)
+        if child is not None:
+            seen.add(child_id)
+            children.append(child)
+    return tuple(children)
+
+
+def preview_source_layer_usage(
+    project: ProjectInfo,
+    target: CompositionInfo,
+    source: CompositionInfo,
+) -> CompositionLayerUsage | None:
+    """Return the earliest visible parent-layer placement for a preview source."""
+
+    if source.id == target.id:
+        return None
+    usages = [
+        usage
+        for usage in target.parent_layer_usages
+        if usage.parent_id == source.id
+    ]
+    if not usages:
+        return None
+    return min(usages, key=lambda usage: (usage.in_point, usage.layer_id))
+
+
+def preview_time_for_source(
+    project: ProjectInfo,
+    target: CompositionInfo,
+    source: CompositionInfo,
+    offset_seconds: float = 2.0,
+) -> float:
+    """Choose the source-comp time for a target's default preview frame.
+
+    Video-frame previews rendered from a parent composition should sample two
+    seconds after that frame layer becomes visible, rather than blindly using
+    the parent's absolute 2-second mark. Clamp to the last frame while the
+    layer is still visible when its duration is shorter than the offset.
+    """
+
+    usage = preview_source_layer_usage(project, target, source)
+    if usage is None:
+        return float(offset_seconds)
+
+    frame_duration = 1.0 / max(float(source.frame_rate), 1.0)
+    visible_end = min(float(source.duration), float(usage.out_point))
+    last_visible_frame_time = max(0.0, visible_end - frame_duration)
+    requested = float(usage.in_point) + float(offset_seconds)
+    return min(max(0.0, requested), last_visible_frame_time)
 
 
 def preview_source_candidates(
@@ -612,6 +717,24 @@ def collect_many(
     return [collect_composition(aep_path, comp_id, output_root) for comp_id in composition_ids]
 
 
+def collect_precompositions(
+    aep_path: str | Path,
+    composition_id: int,
+    output_root: str | Path,
+) -> list[CollectionResult]:
+    """Collect each direct precomposition of one composition independently."""
+
+    project = inspect_project(aep_path)
+    target = next(
+        (item for item in project.compositions if item.id == int(composition_id)),
+        None,
+    )
+    if target is None:
+        raise CollectorError(f"找不到合成 ID：{composition_id}")
+    children = direct_precompositions(project, target)
+    return collect_many(aep_path, (item.id for item in children), output_root)
+
+
 def attach_collection_preview(
     result: CollectionResult,
     preview_file: str | Path,
@@ -621,6 +744,7 @@ def attach_collection_preview(
     preview_source_name: str | None = None,
     preview_source_relation: str = "self",
     preview_renderer: str = "aerender",
+    preview_source_layer: CompositionLayerUsage | None = None,
 ) -> CollectionResult:
     preview_path = Path(preview_file).expanduser().resolve()
     manifest_path = Path(result.manifest_file).resolve()
@@ -637,7 +761,7 @@ def attach_collection_preview(
     except Exception as exc:
         raise CollectorError(f"无法读取收集 manifest：{exc}") from exc
     manifest["preview_file"] = preview_path.name
-    manifest["preview"] = {
+    preview_metadata = {
         "time_seconds": float(preview_time),
         "frame": int(preview_frame),
         "renderer": str(preview_renderer),
@@ -647,6 +771,18 @@ def attach_collection_preview(
             "relation": str(preview_source_relation),
         },
     }
+    if preview_source_layer is not None:
+        preview_metadata["source_layer"] = {
+            "parent_id": int(preview_source_layer.parent_id),
+            "parent_name": str(preview_source_layer.parent_name),
+            "layer_id": int(preview_source_layer.layer_id),
+            "layer_name": str(preview_source_layer.layer_name),
+            "start_time": float(preview_source_layer.start_time),
+            "in_point": float(preview_source_layer.in_point),
+            "out_point": float(preview_source_layer.out_point),
+            "sample_offset_seconds": float(preview_time - preview_source_layer.in_point),
+        }
+    manifest["preview"] = preview_metadata
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     zip_bytes = _write_collection_archive(
         collection_directory,

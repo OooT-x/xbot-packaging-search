@@ -7,9 +7,11 @@
 - 不启动 After Effects，直接打开 `.aep`。
 - 显示工程内全部合成，而不是只显示外部素材。
 - 对每个合成显示尺寸、时长、帧率、父级使用关系和内部预合成。
+- 选中一个合成后可一键查看直属预合成；也可将这些直属预合成逐个独立收集、渲染预览并打包为 ZIP。
+- 预合成导出只处理直接作为图层源的 `CompItem`，每个子合成的 ZIP 会继续递归包含它自己的下层预合成和素材，不会把上层包装合成一起导出。
 - 每个合成默认选择第 2 秒代表帧；短于 2 秒时自动取最后一个有效帧。
 - 单选合成后可打开预览窗口，通过时间轴、秒数输入或前后逐帧调整，透明画面用棋盘格显示。
-- 视频框、横屏框和竖屏框会优先把唯一合适的上层“包装/展示合成”作为预览来源，从而把框体叠在背景上展示；预览窗口仍可切换为自身或其他直接父合成，实际收集目标不会改变。
+- 视频框、横屏框和竖屏框会优先把唯一合适的上层“包装/展示合成”作为预览来源，从而把框体叠在背景上展示；默认取父级中视频框图层出现后的第 2 秒，预览窗口仍可切换为自身或其他直接父合成，实际收集目标不会改变。
 - 可选安装 AE 快速预览桥接。AE 已打开同一个 AEP 时，调帧通过常驻 AE 的 `saveFrameToPng` 快速刷新；未连接时自动回退 `aerender`。后台渲染优先使用 `Xbot PNG with Alpha` 输出模块直接生成 PNG，模板不存在或失败时自动回退 TIFF+Alpha 中转；最终入库 PNG 始终只额外执行一次高质量 `aerender`。
 - 支持多选合成；每个合成生成独立的收集目录和同名 ZIP。
 - 递归保留选中合成的嵌套合成和直接图层素材。
@@ -34,6 +36,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\aep-collector\run.ps1
 
 ```powershell
 & .\aep-collector\.venv\Scripts\python.exe -m xbot_aep_collector.cli inspect "E:\项目\example.aep"
+
+# 按 inspect 返回的合成 ID 查看直属预合成
+& .\aep-collector\.venv\Scripts\python.exe -m xbot_aep_collector.cli list-precomps "E:\项目\example.aep" --comp-id 17
+
+# 将指定合成的直属预合成分别输出为独立收集目录和 ZIP
+& .\aep-collector\.venv\Scripts\python.exe -m xbot_aep_collector.cli collect-precomps "E:\项目\example.aep" --comp-id 17 --output "E:\项目\Xbot_Collected_Projects"
 ```
 
 需要先把当前目录切换到 `aep-collector`，或者将该目录加入 `PYTHONPATH`。
