@@ -1,0 +1,953 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>X.bot 包装工作台 · UI 预览</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --canvas: #ebe9e4;
+        --canvas-deep: #e1ded7;
+        --panel: #f8f7f3;
+        --panel-strong: #fffefa;
+        --panel-muted: #f1f0eb;
+        --ink: #1f2523;
+        --ink-soft: #4f5854;
+        --ink-faint: #7d8580;
+        --line: #d9d8d0;
+        --line-strong: #c8c7bd;
+        --blue: #2854d9;
+        --blue-soft: #e3e9ff;
+        --blue-deep: #173aa6;
+        --green: #287457;
+        --green-soft: #dff1e7;
+        --amber: #aa6a1e;
+        --amber-soft: #f9ead0;
+        --red: #b84743;
+        --red-soft: #f9dfdd;
+        --shadow: 0 18px 48px rgba(35, 39, 34, 0.1), 0 2px 8px rgba(35, 39, 34, 0.05);
+        --shadow-soft: 0 4px 18px rgba(35, 39, 34, 0.06);
+        --radius-lg: 16px;
+        --radius-md: 10px;
+        --radius-sm: 7px;
+        --space: 8px;
+        --font-ui: "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+        --font-mono: "Cascadia Code", Consolas, monospace;
+      }
+
+      [data-theme="dark"] {
+        color-scheme: dark;
+        --canvas: #171a19;
+        --canvas-deep: #101211;
+        --panel: #202422;
+        --panel-strong: #272b28;
+        --panel-muted: #1b1f1d;
+        --ink: #f0f1ed;
+        --ink-soft: #c3c8c3;
+        --ink-faint: #8e9891;
+        --line: #363b37;
+        --line-strong: #4a514c;
+        --blue: #7694ff;
+        --blue-soft: #29396f;
+        --blue-deep: #9badff;
+        --green: #6ed0a4;
+        --green-soft: #203b2e;
+        --amber: #f1b660;
+        --amber-soft: #49351c;
+        --red: #ff8a83;
+        --red-soft: #4c2523;
+        --shadow: 0 18px 52px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.18);
+        --shadow-soft: 0 4px 18px rgba(0, 0, 0, 0.2);
+      }
+
+      * { box-sizing: border-box; }
+      html, body { min-height: 100%; }
+      body {
+        margin: 0;
+        background:
+          radial-gradient(circle at 16% 0%, rgba(40, 84, 217, 0.08), transparent 28rem),
+          var(--canvas);
+        color: var(--ink);
+        font: 13px/1.5 var(--font-ui);
+        text-wrap: pretty;
+      }
+      button, input, select { font: inherit; }
+      button { color: inherit; }
+      button, [role="button"] { -webkit-tap-highlight-color: transparent; }
+      button:focus-visible, input:focus-visible, select:focus-visible {
+        outline: 3px solid color-mix(in srgb, var(--blue) 35%, transparent);
+        outline-offset: 2px;
+      }
+
+      .app-shell { min-height: 100vh; padding: 24px; }
+      .app-window {
+        width: min(1480px, 100%);
+        min-height: calc(100vh - 48px);
+        margin: 0 auto;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+        position: relative;
+      }
+
+      .topbar {
+        min-height: 74px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        padding: 14px 22px;
+        border-bottom: 1px solid var(--line);
+        background: color-mix(in srgb, var(--panel-strong) 86%, transparent);
+        backdrop-filter: blur(16px);
+      }
+      .brand-lockup, .top-actions, .app-context, .status-inline, .button-row, .tab-row, .chip-row, .metric-row, .file-pills, .queue-actions, .inspector-actions { display: flex; align-items: center; }
+      .brand-lockup { gap: 11px; min-width: 250px; }
+      .brand-mark {
+        width: 36px; height: 36px; border-radius: 10px; object-fit: cover;
+        background: #202735; border: 1px solid rgba(255,255,255,0.12);
+      }
+      .brand-name { font-size: 15px; font-weight: 760; letter-spacing: -0.02em; }
+      .brand-sub { color: var(--ink-faint); font-size: 11px; margin-top: 1px; }
+      .app-context { gap: 11px; min-width: 0; }
+      .context-divider { width: 1px; height: 20px; background: var(--line); }
+      .context-title { font-size: 12px; color: var(--ink-soft); white-space: nowrap; }
+      .context-title strong { color: var(--ink); font-weight: 650; }
+      .top-actions { gap: 8px; }
+      .status-inline { gap: 7px; color: var(--ink-soft); font-size: 11px; white-space: nowrap; }
+      .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px color-mix(in srgb, var(--green) 15%, transparent); }
+
+      .icon-button, .ghost-button, .primary-button, .quiet-button, .danger-button {
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        background: var(--panel-strong);
+        min-height: 34px;
+        padding: 0 12px;
+        cursor: pointer;
+        transition: transform 160ms ease, background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+      }
+      .icon-button { width: 34px; padding: 0; display: grid; place-items: center; color: var(--ink-soft); }
+      .ghost-button:hover, .quiet-button:hover, .icon-button:hover { background: var(--panel-muted); border-color: var(--line-strong); }
+      .primary-button { background: var(--blue); border-color: var(--blue); color: #fff; font-weight: 650; box-shadow: 0 5px 12px color-mix(in srgb, var(--blue) 22%, transparent); }
+      .primary-button:hover { background: var(--blue-deep); border-color: var(--blue-deep); transform: translateY(-1px); }
+      .danger-button { color: var(--red); border-color: color-mix(in srgb, var(--red) 28%, var(--line)); background: color-mix(in srgb, var(--red-soft) 50%, var(--panel-strong)); }
+      .button-label { margin-left: 6px; }
+      .glyph { font-family: Georgia, serif; font-size: 15px; line-height: 1; }
+      .mono { font-family: var(--font-mono); font-size: 11px; letter-spacing: -0.02em; }
+
+      .workspace-tabs {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 10px 22px 0;
+        background: var(--panel);
+        border-bottom: 1px solid var(--line);
+      }
+      .tab {
+        border: 0; border-bottom: 2px solid transparent; background: transparent;
+        padding: 11px 14px 12px; color: var(--ink-faint); cursor: pointer; font-weight: 650;
+        transition: color 160ms ease, border-color 160ms ease;
+      }
+      .tab:hover { color: var(--ink-soft); }
+      .tab.active { color: var(--ink); border-color: var(--blue); }
+      .tab-count { display: inline-flex; align-items: center; justify-content: center; min-width: 19px; height: 19px; margin-left: 5px; padding: 0 5px; border-radius: 99px; background: var(--panel-muted); color: var(--ink-soft); font: 10px var(--font-mono); }
+      .tab.active .tab-count { background: var(--blue-soft); color: var(--blue); }
+
+      .screen { display: none; }
+      .screen.active { display: block; animation: screen-in 220ms ease-out both; }
+      @keyframes screen-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+      .screen-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 26px 28px 18px; }
+      .eyebrow { color: var(--blue); font-size: 11px; font-weight: 760; letter-spacing: 0.1em; text-transform: uppercase; }
+      h1, h2, h3, p { margin: 0; }
+      h1 { margin-top: 4px; font-size: clamp(22px, 2.1vw, 30px); line-height: 1.15; letter-spacing: -0.045em; }
+      .screen-description { margin-top: 7px; color: var(--ink-soft); max-width: 680px; }
+      .head-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+      .workspace-grid { display: grid; grid-template-columns: 216px minmax(0, 1fr) 332px; gap: 1px; background: var(--line); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); min-height: 645px; }
+      .panel { background: var(--panel); min-width: 0; }
+      .side-panel, .inspector { padding: 18px 16px; }
+      .side-panel { background: var(--panel-muted); }
+      .panel-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 700; margin-bottom: 14px; }
+      .panel-title small { color: var(--ink-faint); font-size: 10px; font-weight: 500; }
+      .side-label { margin: 19px 0 8px; color: var(--ink-faint); font-size: 10px; font-weight: 760; letter-spacing: 0.09em; text-transform: uppercase; }
+      .filter-list { display: grid; gap: 3px; }
+      .filter-button { display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 0; background: transparent; border-radius: 7px; padding: 8px 9px; color: var(--ink-soft); text-align: left; cursor: pointer; }
+      .filter-button:hover { background: var(--panel); color: var(--ink); }
+      .filter-button.active { background: var(--blue-soft); color: var(--blue); font-weight: 700; }
+      .filter-count { color: var(--ink-faint); font: 10px var(--font-mono); }
+      .filter-button.active .filter-count { color: var(--blue); }
+      .batch-mini { padding: 10px 10px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); cursor: pointer; }
+      .batch-mini.selected { border-color: color-mix(in srgb, var(--blue) 55%, var(--line)); box-shadow: inset 3px 0 var(--blue); }
+      .batch-mini + .batch-mini { margin-top: 7px; }
+      .batch-mini-title { font-weight: 700; font-size: 12px; }
+      .batch-mini-meta { color: var(--ink-faint); font-size: 10px; margin-top: 3px; }
+      .batch-progress { height: 4px; border-radius: 99px; background: var(--line); margin-top: 9px; overflow: hidden; }
+      .batch-progress > span { display: block; width: 76%; height: 100%; background: var(--green); border-radius: inherit; }
+      .help-note { margin-top: 22px; padding: 10px; border: 1px dashed var(--line-strong); border-radius: 9px; color: var(--ink-soft); font-size: 11px; }
+
+      .content-panel { background: var(--panel-strong); padding: 18px 20px 22px; overflow: hidden; }
+      .content-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+      .search-box { flex: 1; position: relative; }
+      .search-box input { width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); padding: 9px 12px 9px 34px; outline: none; }
+      .search-box input:focus { border-color: color-mix(in srgb, var(--blue) 55%, var(--line)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 12%, transparent); }
+      .search-mark { position: absolute; left: 12px; top: 8px; color: var(--ink-faint); font-size: 15px; }
+      .view-toggle { display: flex; gap: 2px; border: 1px solid var(--line); padding: 3px; border-radius: 8px; background: var(--panel); }
+      .view-toggle button { border: 0; background: transparent; border-radius: 5px; padding: 5px 8px; color: var(--ink-faint); cursor: pointer; }
+      .view-toggle button.active { background: var(--panel-strong); color: var(--ink); box-shadow: var(--shadow-soft); }
+      .summary-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
+      .metric { border: 1px solid var(--line); border-radius: 9px; background: var(--panel); padding: 10px 11px; }
+      .metric-label { color: var(--ink-faint); font-size: 10px; }
+      .metric-value { display: block; margin-top: 3px; font-size: 21px; font-weight: 730; letter-spacing: -0.04em; }
+      .metric-note { color: var(--green); font-size: 10px; }
+      .drop-zone { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 15px; border: 1px dashed color-mix(in srgb, var(--blue) 50%, var(--line)); border-radius: 11px; background: color-mix(in srgb, var(--blue-soft) 35%, var(--panel-strong)); margin-bottom: 17px; }
+      .drop-zone.hidden { display: none; }
+      .drop-copy { display: flex; align-items: center; gap: 11px; }
+      .drop-mark { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; background: var(--blue-soft); color: var(--blue); font-size: 19px; }
+      .drop-copy strong { display: block; font-size: 12px; }
+      .drop-copy span { display: block; color: var(--ink-soft); font-size: 11px; margin-top: 1px; }
+      .drop-actions { display: flex; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
+      .rename-modal .modal { width: min(1120px, calc(100vw - 40px)); max-height: calc(100vh - 40px); overflow: auto; }
+      .rename-toolbar { display: grid; grid-template-columns: minmax(260px, 1.4fr) minmax(130px, 0.7fr) minmax(130px, 0.7fr); gap: 8px; margin-top: 17px; }
+      .rename-field label { display: block; color: var(--ink-faint); font-size: 10px; margin-bottom: 5px; }
+      .rename-field input { width: 100%; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--ink); padding: 8px 9px; }
+      .rename-field input:focus { border-color: color-mix(in srgb, var(--blue) 55%, var(--line)); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 12%, transparent); }
+      .token-bank { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+      .token-bank > span { color: var(--ink-faint); font-size: 10px; margin-right: 2px; }
+      .token-chip { border: 1px solid var(--line); border-radius: 99px; background: var(--panel); color: var(--ink-soft); padding: 4px 7px; cursor: pointer; font: 10px var(--font-mono); }
+      .token-chip:hover { border-color: color-mix(in srgb, var(--blue) 50%, var(--line)); color: var(--blue); background: var(--blue-soft); }
+      .rename-note { display: flex; gap: 8px; align-items: flex-start; margin-top: 12px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-muted); color: var(--ink-soft); font-size: 10px; }
+      .rename-note strong { color: var(--ink); }
+      .rename-table-wrap { margin-top: 16px; border: 1px solid var(--line); border-radius: 10px; overflow: auto; }
+      .rename-grid { display: grid; grid-template-columns: 150px minmax(180px, 0.8fr) minmax(240px, 1.1fr) minmax(240px, 1.1fr) 92px; min-width: 900px; }
+      .rename-grid > div { padding: 9px 10px; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); }
+      .rename-grid > div:nth-child(5n) { border-right: 0; }
+      .rename-grid > div:nth-last-child(-n + 5) { border-bottom: 0; }
+      .rename-head { background: var(--panel-muted); color: var(--ink-faint); font-size: 10px; font-weight: 760; letter-spacing: 0.06em; text-transform: uppercase; }
+      .rename-cell { background: var(--panel-strong); min-width: 0; }
+      .rename-package { display: flex; align-items: center; gap: 8px; }
+      .rename-thumb { width: 29px; height: 29px; border-radius: 6px; flex: none; }
+      .rename-package strong { display: block; font-size: 11px; }
+      .rename-package span { display: block; color: var(--ink-faint); font-size: 9px; margin-top: 1px; }
+      .old-name { color: var(--ink-soft); font: 10px/1.4 var(--font-mono); word-break: break-all; }
+      .rename-input { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); padding: 7px 8px; font: 10px var(--font-mono); }
+      .rename-input.manual { border-color: color-mix(in srgb, var(--blue) 58%, var(--line)); background: color-mix(in srgb, var(--blue-soft) 34%, var(--panel)); }
+      .rename-input.invalid { border-color: var(--red); background: var(--red-soft); }
+      .rename-status { display: inline-flex; align-items: center; gap: 5px; padding: 4px 7px; border-radius: 99px; font-size: 10px; white-space: nowrap; }
+      .rename-status.auto { color: var(--green); background: var(--green-soft); }
+      .rename-status.manual { color: var(--blue); background: var(--blue-soft); }
+      .rename-status.invalid { color: var(--red); background: var(--red-soft); }
+      .rename-footnote { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 11px; color: var(--ink-faint); font-size: 10px; }
+      .rename-footnote strong { color: var(--ink-soft); }
+      .rename-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; }
+      .rename-actions .button-row { gap: 7px; }
+      .rename-error { color: var(--red); font-size: 10px; }
+      .section-kicker { display: flex; align-items: center; justify-content: space-between; margin: 2px 0 10px; }
+      .section-kicker h2 { font-size: 13px; letter-spacing: -0.02em; }
+      .section-kicker span { color: var(--ink-faint); font-size: 10px; }
+      .package-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      .package-card { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 11px; padding: 10px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); cursor: pointer; transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease; }
+      .package-card:hover { transform: translateY(-2px); border-color: var(--line-strong); box-shadow: var(--shadow-soft); }
+      .package-card.selected { border-color: color-mix(in srgb, var(--blue) 63%, var(--line)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 12%, transparent); }
+      .thumb { min-height: 88px; border-radius: 8px; position: relative; overflow: hidden; background: #d8d5cf; }
+      .thumb::before, .thumb::after { content: ""; position: absolute; }
+      .thumb::before { width: 70px; height: 70px; left: 12px; top: 11px; border: 1px solid rgba(31,37,35,0.22); transform: rotate(12deg); }
+      .thumb::after { width: 112px; height: 19px; left: -8px; bottom: 14px; background: rgba(255,255,255,0.42); transform: rotate(-7deg); }
+      .thumb.blue { background: linear-gradient(145deg, #a9b8e9, #eff0ec 57%, #c3c8d9); }
+      .thumb.ink { background: linear-gradient(145deg, #273334, #899da0 58%, #d9d5c7); }
+      .thumb.amber { background: linear-gradient(145deg, #d9b77d, #f0e6d1 56%, #b26f49); }
+      .thumb.green { background: linear-gradient(145deg, #9cc3af, #edf1e9 55%, #84a5a0); }
+      .thumb-label { position: absolute; left: 7px; top: 7px; z-index: 1; padding: 2px 5px; border-radius: 4px; background: rgba(255,255,255,0.72); color: #27302e; font: 9px var(--font-mono); }
+      .thumb-size { position: absolute; left: 7px; bottom: 6px; color: rgba(31,37,35,0.7); font: 9px var(--font-mono); }
+      .card-main { min-width: 0; display: flex; flex-direction: column; }
+      .card-topline { display: flex; justify-content: space-between; gap: 8px; align-items: start; }
+      .card-name { font-size: 13px; font-weight: 730; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .card-meta { color: var(--ink-faint); font-size: 10px; margin-top: 3px; }
+      .status-badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 6px; border-radius: 99px; font-size: 10px; white-space: nowrap; }
+      .status-badge::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+      .status-ready { color: var(--green); background: var(--green-soft); }
+      .status-review { color: var(--amber); background: var(--amber-soft); }
+      .status-blocked { color: var(--red); background: var(--red-soft); }
+      .card-bottom { margin-top: auto; padding-top: 13px; display: flex; align-items: center; justify-content: space-between; gap: 7px; }
+      .file-pills { gap: 4px; flex-wrap: wrap; }
+      .file-pill { padding: 2px 5px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink-soft); font: 9px var(--font-mono); }
+      .card-arrow { color: var(--ink-faint); font-size: 17px; }
+      .empty-card { grid-column: 1 / -1; border: 1px dashed var(--line-strong); border-radius: 10px; padding: 28px; text-align: center; color: var(--ink-faint); }
+
+      .inspector { background: var(--panel); overflow: hidden; }
+      .inspector-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+      .inspector-heading { min-width: 0; }
+      .inspector-heading h2 { font-size: 17px; letter-spacing: -0.03em; }
+      .inspector-heading p { color: var(--ink-faint); font-size: 11px; margin-top: 3px; }
+      .inspect-preview { height: 172px; margin: 17px 0; border-radius: 11px; overflow: hidden; position: relative; background: #d6d4ce; }
+      .inspect-preview .thumb { height: 100%; border-radius: 0; }
+      .preview-overlay { position: absolute; left: 11px; right: 11px; bottom: 10px; display: flex; justify-content: space-between; align-items: end; color: #fff; }
+      .preview-overlay strong { display: block; font-size: 11px; text-shadow: 0 1px 4px rgba(0,0,0,0.45); }
+      .preview-overlay span { display: block; font: 9px var(--font-mono); opacity: 0.82; margin-top: 2px; }
+      .preview-button { border: 1px solid rgba(255,255,255,0.48); background: rgba(20,23,22,0.46); color: #fff; border-radius: 6px; padding: 6px 8px; cursor: pointer; backdrop-filter: blur(8px); }
+      .inspector-section { border-top: 1px solid var(--line); padding: 14px 0; }
+      .inspector-section:first-of-type { border-top: 0; padding-top: 0; }
+      .inspector-section h3 { color: var(--ink-faint); font-size: 10px; font-weight: 760; letter-spacing: 0.09em; text-transform: uppercase; margin-bottom: 10px; }
+      .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px 14px; }
+      .detail-item span { display: block; color: var(--ink-faint); font-size: 10px; }
+      .detail-item strong { display: block; margin-top: 2px; font-size: 11px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .check-list { display: grid; gap: 8px; }
+      .check-row { display: flex; justify-content: space-between; gap: 10px; color: var(--ink-soft); font-size: 11px; }
+      .check-row strong { font-weight: 650; color: var(--ink); }
+      .check-ok { color: var(--green) !important; }
+      .check-warn { color: var(--amber) !important; }
+      .check-bad { color: var(--red) !important; }
+      .inspector-actions { gap: 7px; margin-top: 3px; }
+      .inspector-actions button { flex: 1; }
+      .action-bar { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 62px; padding: 13px 22px; background: var(--panel); }
+      .selection-copy { color: var(--ink-soft); font-size: 11px; }
+      .selection-copy strong { color: var(--ink); }
+      .action-bar .button-row { gap: 7px; }
+
+      /* AEP screen */
+      .aep-grid { grid-template-columns: 238px minmax(0, 1fr) 340px; }
+      .comp-list { display: grid; gap: 4px; }
+      .comp-row { display: grid; grid-template-columns: 19px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 9px 8px; border-radius: 8px; cursor: pointer; color: var(--ink-soft); }
+      .comp-row:hover { background: var(--panel); color: var(--ink); }
+      .comp-row.selected { background: var(--blue-soft); color: var(--blue); }
+      .comp-mark { width: 19px; height: 19px; display: grid; place-items: center; border: 1px solid currentColor; border-radius: 5px; font-size: 10px; }
+      .comp-row.selected .comp-mark { background: var(--blue); color: #fff; border-color: var(--blue); }
+      .comp-name { font-size: 12px; font-weight: 650; }
+      .comp-meta { color: var(--ink-faint); font-size: 10px; }
+      .comp-row.selected .comp-meta { color: color-mix(in srgb, var(--blue) 70%, var(--ink-faint)); }
+      .tree-indent { padding-left: 20px; }
+      .aep-stage { background: #202522; border-radius: 12px; min-height: 338px; display: grid; place-items: center; position: relative; overflow: hidden; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08); }
+      .checkerboard { position: absolute; inset: 0; opacity: 0.24; background-image: linear-gradient(45deg, #98a09a 25%, transparent 25%), linear-gradient(-45deg, #98a09a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #98a09a 75%), linear-gradient(-45deg, transparent 75%, #98a09a 75%); background-size: 28px 28px; background-position: 0 0, 0 14px, 14px -14px, -14px 0; }
+      .stage-art { width: 78%; height: 62%; position: relative; border: 1px solid rgba(255,255,255,0.35); background: linear-gradient(120deg, rgba(58,82,130,0.78), rgba(211,180,127,0.72) 53%, rgba(42,56,56,0.82)); box-shadow: 0 20px 50px rgba(0,0,0,0.24); }
+      .stage-art::before { content: "包装展示画面"; position: absolute; inset: 22% 15%; border: 1px solid rgba(255,255,255,0.78); display: grid; place-items: center; color: rgba(255,255,255,0.92); font-weight: 700; letter-spacing: 0.1em; }
+      .stage-art::after { content: "预览占位 · 1920 × 1080"; position: absolute; bottom: 10px; left: 12px; color: rgba(255,255,255,0.74); font: 9px var(--font-mono); }
+      .stage-topline, .stage-bottomline { position: absolute; left: 13px; right: 13px; display: flex; justify-content: space-between; color: rgba(255,255,255,0.72); font-size: 10px; }
+      .stage-topline { top: 12px; }
+      .stage-bottomline { bottom: 12px; }
+      .source-select { width: 100%; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--ink); padding: 8px 9px; }
+      .timeline { margin-top: 14px; }
+      .timeline-head { display: flex; justify-content: space-between; color: var(--ink-faint); font-size: 10px; }
+      input[type="range"] { width: 100%; accent-color: var(--blue); margin: 11px 0 0; }
+      .frame-tools { display: flex; gap: 6px; margin-top: 10px; }
+      .frame-tools button { flex: 1; min-height: 30px; padding: 0 7px; font-size: 11px; }
+      .warning-box { display: flex; gap: 9px; padding: 10px; border-radius: 9px; background: var(--amber-soft); color: var(--amber); font-size: 11px; }
+      .warning-box strong { display: block; color: var(--ink); margin-bottom: 2px; }
+      .queue-panel { border-top: 1px solid var(--line); padding: 15px 20px 17px; background: var(--panel); }
+      .queue-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+      .queue-head h2 { font-size: 13px; }
+      .queue-head span { color: var(--ink-faint); font-size: 10px; }
+      .queue-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+      .queue-item { border: 1px solid var(--line); border-radius: 9px; padding: 10px; background: var(--panel-strong); }
+      .queue-item-top { display: flex; justify-content: space-between; gap: 8px; }
+      .queue-item strong { font-size: 11px; }
+      .queue-item p { margin-top: 3px; color: var(--ink-faint); font-size: 10px; }
+      .progress-line { height: 4px; background: var(--line); border-radius: 99px; overflow: hidden; margin-top: 10px; }
+      .progress-line span { display: block; width: 68%; height: 100%; background: var(--blue); border-radius: inherit; }
+      .progress-line.done span { width: 100%; background: var(--green); }
+      .progress-line.warn span { width: 44%; background: var(--amber); }
+      .queue-actions { gap: 6px; margin-top: 10px; }
+      .queue-actions button { min-height: 28px; padding: 0 8px; font-size: 10px; }
+
+      /* History and diagnostics */
+      .simple-screen { padding: 26px 28px 42px; }
+      .history-grid, .diagnostic-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 22px; }
+      .history-card, .diagnostic-card { border: 1px solid var(--line); border-radius: 12px; background: var(--panel-strong); padding: 16px; }
+      .history-card h2, .diagnostic-card h2 { font-size: 14px; }
+      .history-card p, .diagnostic-card p { margin-top: 6px; color: var(--ink-soft); font-size: 11px; }
+      .history-card .button-row, .diagnostic-card .button-row { margin-top: 18px; }
+      .diagnostic-list { display: grid; gap: 9px; margin-top: 17px; }
+      .diagnostic-row { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); padding-bottom: 9px; font-size: 11px; }
+      .diagnostic-row span { color: var(--ink-soft); }
+      .diagnostic-row strong { color: var(--green); }
+
+      /* Modal, toast and tweaks */
+      .modal-backdrop { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; padding: 20px; background: rgba(20, 23, 22, 0.42); z-index: 20; backdrop-filter: blur(4px); }
+      .modal-backdrop.open { display: flex; animation: fade-in 150ms ease-out both; }
+      @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+      .modal { width: min(520px, 100%); background: var(--panel-strong); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 20px; }
+      .modal-head { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; }
+      .modal h2 { font-size: 18px; letter-spacing: -0.03em; }
+      .modal-sub { margin-top: 4px; color: var(--ink-soft); font-size: 11px; }
+      .modal-body { margin-top: 18px; }
+      .duplicate-options { display: grid; gap: 8px; }
+      .duplicate-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 12px; cursor: pointer; text-align: left; }
+      .duplicate-option:hover, .duplicate-option.selected { border-color: color-mix(in srgb, var(--blue) 60%, var(--line)); background: var(--blue-soft); }
+      .duplicate-option strong { display: block; font-size: 12px; }
+      .duplicate-option span { display: block; color: var(--ink-soft); font-size: 10px; margin-top: 2px; }
+      .radio-dot { width: 16px; height: 16px; border: 1px solid var(--line-strong); border-radius: 50%; flex: none; }
+      .duplicate-option.selected .radio-dot { border: 5px solid var(--blue); }
+      .modal-footer { display: flex; justify-content: flex-end; gap: 7px; margin-top: 20px; }
+      .preview-modal .modal { width: min(720px, 100%); }
+      .preview-modal-art { height: 320px; margin-top: 16px; border-radius: 12px; overflow: hidden; background: #202522; position: relative; display: grid; place-items: center; }
+      .preview-modal-art .stage-art { width: 73%; height: 69%; }
+      .preview-modal-controls { display: grid; grid-template-columns: 1fr 92px; gap: 8px; margin-top: 12px; align-items: center; }
+      .preview-modal-controls input { border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--ink); padding: 8px 9px; }
+      .toast { position: fixed; right: 24px; bottom: 24px; display: none; max-width: 360px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-strong); color: var(--ink); box-shadow: var(--shadow); z-index: 30; }
+      .toast.show { display: block; animation: toast-in 220ms ease-out both; }
+      .toast strong { display: block; font-size: 12px; }
+      .toast span { display: block; color: var(--ink-soft); font-size: 11px; margin-top: 2px; }
+      @keyframes toast-in { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
+      .tweaks-toggle { position: fixed; right: 20px; bottom: 20px; border: 1px solid var(--line); background: var(--panel-strong); color: var(--ink-soft); border-radius: 99px; padding: 8px 12px; cursor: pointer; box-shadow: var(--shadow-soft); z-index: 12; }
+      .tweaks-panel { position: fixed; right: 20px; bottom: 64px; display: none; width: 280px; padding: 15px; border: 1px solid rgba(255,255,255,0.13); border-radius: 14px; color: #eef2ec; background: rgba(28, 32, 30, 0.96); box-shadow: 0 24px 70px rgba(0,0,0,0.24); z-index: 15; backdrop-filter: blur(16px); }
+      .tweaks-panel.open { display: block; animation: toast-in 160ms ease-out both; }
+      .tweaks-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 13px; }
+      .tweaks-head strong { font-size: 13px; }
+      .tweaks-head span { color: rgba(238,242,236,0.5); font-size: 10px; }
+      .tweak-group + .tweak-group { margin-top: 13px; }
+      .tweak-label { display: block; color: rgba(238,242,236,0.58); font-size: 10px; margin-bottom: 6px; }
+      .tweak-options { display: flex; gap: 5px; flex-wrap: wrap; }
+      .tweak-options button { border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.06); color: rgba(238,242,236,0.78); border-radius: 6px; padding: 6px 8px; cursor: pointer; font-size: 11px; }
+      .tweak-options button.active { border-color: #91a7ff; background: rgba(113,142,255,0.21); color: #fff; }
+      .tweak-check { display: flex; align-items: center; gap: 8px; color: rgba(238,242,236,0.78); font-size: 11px; }
+      .tweak-check input { accent-color: #91a7ff; }
+
+      [data-density="compact"] .app-shell { padding: 14px; }
+      [data-density="compact"] .workspace-grid { min-height: 620px; }
+      [data-density="compact"] .side-panel, [data-density="compact"] .inspector { padding: 14px 13px; }
+      [data-density="compact"] .content-panel { padding: 14px 16px 18px; }
+      [data-density="compact"] .package-card { grid-template-columns: 74px minmax(0, 1fr); padding: 8px; }
+      [data-density="compact"] .thumb { min-height: 74px; }
+      [data-density="compact"] .metric { padding: 8px 9px; }
+      [data-density="compact"] .metric-value { font-size: 18px; }
+      [data-density="preview"] .content-panel { padding-left: 26px; padding-right: 26px; }
+      [data-density="preview"] .package-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      [data-density="preview"] .package-card { display: block; padding: 9px; }
+      [data-density="preview"] .package-card .thumb { min-height: 132px; margin-bottom: 9px; }
+      [data-density="preview"] .aep-stage { min-height: 410px; }
+
+      @media (max-width: 1180px) {
+        .workspace-grid { grid-template-columns: 190px minmax(0, 1fr) 292px; }
+        .aep-grid { grid-template-columns: 205px minmax(0, 1fr) 292px; }
+        .topbar { padding-left: 16px; padding-right: 16px; }
+        .workspace-tabs { padding-left: 16px; padding-right: 16px; }
+      }
+      @media (max-width: 920px) {
+        .app-shell { padding: 0; }
+        .app-window { border-radius: 0; border-left: 0; border-right: 0; min-height: 100vh; }
+        .topbar { align-items: flex-start; flex-wrap: wrap; }
+        .app-context { order: 3; width: 100%; }
+        .workspace-grid, .aep-grid { grid-template-columns: 1fr; }
+        .side-panel { border-bottom: 1px solid var(--line); }
+        .inspector { border-top: 1px solid var(--line); }
+        .filter-list { display: flex; flex-wrap: wrap; }
+        .filter-button { flex: 1 0 132px; }
+        .batch-mini, .help-note { display: none; }
+        .queue-list { grid-template-columns: 1fr; }
+      }
+      @media (max-width: 620px) {
+        .screen-head { display: block; padding: 21px 18px 16px; }
+        .head-actions { justify-content: flex-start; margin-top: 15px; }
+        .content-panel { padding: 14px 14px 18px; }
+        .summary-strip { grid-template-columns: repeat(2, 1fr); }
+        .package-grid { grid-template-columns: 1fr; }
+        .content-toolbar { align-items: stretch; flex-direction: column; }
+        .view-toggle { align-self: flex-start; }
+        .drop-zone { display: block; }
+        .drop-actions { justify-content: flex-start; margin-top: 10px; }
+        .action-bar { align-items: stretch; flex-direction: column; }
+        .action-bar .button-row { justify-content: stretch; }
+        .action-bar button { flex: 1; }
+        .history-grid, .diagnostic-grid { grid-template-columns: 1fr; }
+        .rename-toolbar { grid-template-columns: 1fr; }
+        .rename-actions { align-items: stretch; flex-direction: column; }
+        .rename-actions .button-row { width: 100%; }
+        .rename-actions .button-row button { flex: 1; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+      }
+    </style>
+  </head>
+  <body data-theme="light" data-density="workbench">
+    <div class="app-shell">
+      <div class="app-window">
+        <header class="topbar">
+          <div class="brand-lockup">
+            <img class="brand-mark" src="../eagle-plugin/logo.png" alt="X.bot" />
+            <div>
+              <div class="brand-name">X.bot 包装工作台</div>
+              <div class="brand-sub">Asset operations preview · v0</div>
+            </div>
+          </div>
+          <div class="app-context">
+            <span class="context-divider" aria-hidden="true"></span>
+            <div class="context-title"><strong id="contextTitle">Eagle 入库</strong><br /><span id="contextSub">把收集结果变成可检索的正式素材</span></div>
+          </div>
+          <div class="top-actions">
+            <div class="status-inline"><span class="status-dot"></span>Eagle API 已连接</div>
+            <button class="icon-button" type="button" data-action="toast" data-title="帮助中心" data-message="这里预留帮助与快捷键说明。" aria-label="帮助">?</button>
+            <button class="icon-button" type="button" data-action="toast" data-title="设置" data-message="这里预留工作目录、主题和诊断设置。" aria-label="设置">⋯</button>
+          </div>
+        </header>
+
+        <nav class="workspace-tabs" aria-label="工作台模块">
+          <button class="tab active" type="button" data-screen="eagle">Eagle 入库 <span class="tab-count">3</span></button>
+          <button class="tab" type="button" data-screen="aep">AEP 收集 <span class="tab-count">2</span></button>
+          <button class="tab" type="button" data-screen="history">批次历史</button>
+          <button class="tab" type="button" data-screen="diagnostics">系统诊断</button>
+        </nav>
+
+        <main>
+          <section class="screen active" id="screen-eagle" data-screen-label="Eagle 入库">
+            <div class="screen-head">
+              <div>
+                <div class="eyebrow">Eagle workflow / 01</div>
+                <h1>批次审核工作台</h1>
+                <p class="screen-description">先看清每条素材，再确认它进入哪个正式目录。异常留在视野里，技术细节收进检查器。</p>
+              </div>
+              <div class="head-actions">
+                <button class="ghost-button" type="button" data-action="toast" data-title="当前库" data-message="包装.library · E:\\Eagle资源库">查看当前库</button>
+                <button class="ghost-button" type="button" data-action="show-rename"><span class="glyph">Aa</span><span class="button-label">批量命名</span></button>
+                <button class="primary-button" type="button" data-action="show-drop"><span class="glyph">＋</span><span class="button-label">导入待入库</span></button>
+              </div>
+            </div>
+
+            <div class="workspace-grid">
+              <aside class="panel side-panel">
+                <div class="panel-title">批次与筛选 <small>4 项</small></div>
+                <div class="side-label">当前批次</div>
+                <div class="batch-mini selected" data-action="toast" data-title="当前批次" data-message="batch-ABO-20260903 已锁定为演示批次。">
+                  <div class="batch-mini-title">阿宝包装 · 09/03</div>
+                  <div class="batch-mini-meta mono">batch-ABO-20260903</div>
+                  <div class="batch-progress"><span></span></div>
+                </div>
+                <div class="batch-mini" data-action="toast" data-title="历史批次" data-message="变速箱包装 · 08/29 · 已完成">
+                  <div class="batch-mini-title">变速箱包装 · 08/29</div>
+                  <div class="batch-mini-meta">3 对素材 · 已完成</div>
+                  <div class="batch-progress"><span style="width:100%; background:var(--green)"></span></div>
+                </div>
+                <div class="side-label">查看</div>
+                <div class="filter-list" id="eagleFilters">
+                  <button class="filter-button active" type="button" data-filter="all">全部素材 <span class="filter-count">6</span></button>
+                  <button class="filter-button" type="button" data-filter="ready">可入库 <span class="filter-count">3</span></button>
+                  <button class="filter-button" type="button" data-filter="review">待补充 <span class="filter-count">2</span></button>
+                  <button class="filter-button" type="button" data-filter="blocked">阻止 <span class="filter-count">1</span></button>
+                </div>
+                <div class="side-label">快捷操作</div>
+                <div class="filter-list">
+                  <button class="filter-button" type="button" data-action="toast" data-title="最近导入" data-message="已打开最近一次导入记录。">最近导入</button>
+                  <button class="filter-button" type="button" data-action="show-duplicate">重复批次处理</button>
+                </div>
+                <div class="help-note">建议先处理红色阻止项，再确认绿色可入库项。依赖文件默认只在“查看全部文件”中展开。</div>
+              </aside>
+
+              <section class="panel content-panel">
+                <div class="content-toolbar">
+                  <div class="search-box"><span class="search-mark">⌕</span><input id="eagleSearch" type="search" placeholder="搜索包装名称、类型或 AE 合成…" aria-label="搜索包装" /></div>
+                  <div class="view-toggle" aria-label="视图切换"><button class="active" type="button" data-action="toast" data-title="卡片视图" data-message="已保持卡片视图，适合快速审核预览。">▦</button><button type="button" data-action="toast" data-title="列表视图" data-message="列表视图预留给大批次核对。">≡</button></div>
+                </div>
+                <div class="summary-strip">
+                  <div class="metric"><span class="metric-label">识别包装</span><strong class="metric-value">06</strong><span class="metric-note">本批次</span></div>
+                  <div class="metric"><span class="metric-label">可入库</span><strong class="metric-value">03</strong><span class="metric-note">PNG + ZIP 齐全</span></div>
+                  <div class="metric"><span class="metric-label">待补充</span><strong class="metric-value">02</strong><span class="metric-note" style="color:var(--amber)">需要选择类型</span></div>
+                  <div class="metric"><span class="metric-label">阻止</span><strong class="metric-value">01</strong><span class="metric-note" style="color:var(--red)">缺少配对文件</span></div>
+                </div>
+                <div class="drop-zone hidden" id="dropZone">
+                  <div class="drop-copy"><div class="drop-mark">↥</div><div><strong>把项目包装文件夹拖到这里</strong><span>自动扫描 PNG、ZIP、manifest 与配对关系</span></div></div>
+                  <div class="drop-actions"><button class="quiet-button" type="button" data-action="toast" data-title="选择文件夹" data-message="预览模式下仅模拟选择文件夹。">选择文件夹</button><button class="primary-button" type="button" data-action="toast" data-title="扫描已开始" data-message="演示扫描将在右侧显示结果。">开始扫描</button></div>
+                </div>
+                <div class="section-kicker"><h2>包装记录</h2><span>点击卡片查看右侧检查器</span></div>
+                <div class="package-grid" id="packageGrid">
+                  <article class="package-card selected" data-package="video" data-status="ready">
+                    <div class="thumb blue"><span class="thumb-label">PNG PREVIEW</span><span class="thumb-size">1920 × 1080</span></div>
+                    <div class="card-main"><div class="card-topline"><div><div class="card-name">视频框</div><div class="card-meta">阿宝包装 · v01 · 包装展示画面</div></div><span class="status-badge status-ready">可入库</span></div><div class="card-bottom"><div class="file-pills"><span class="file-pill">PNG ✓</span><span class="file-pill">ZIP ✓</span><span class="file-pill">META ✓</span></div><span class="card-arrow">›</span></div></div>
+                  </article>
+                  <article class="package-card" data-package="title" data-status="review">
+                    <div class="thumb amber"><span class="thumb-label">PNG PREVIEW</span><span class="thumb-size">500 × 300</span></div>
+                    <div class="card-main"><div class="card-topline"><div><div class="card-name">信息条</div><div class="card-meta">阿宝包装 · v01 · 人名条</div></div><span class="status-badge status-review">待补充</span></div><div class="card-bottom"><div class="file-pills"><span class="file-pill">PNG ✓</span><span class="file-pill">ZIP ✓</span><span class="file-pill">类型 ?</span></div><span class="card-arrow">›</span></div></div>
+                  </article>
+                  <article class="package-card" data-package="background" data-status="ready">
+                    <div class="thumb green"><span class="thumb-label">PNG PREVIEW</span><span class="thumb-size">1920 × 1080</span></div>
+                    <div class="card-main"><div class="card-topline"><div><div class="card-name">背景</div><div class="card-meta">阿宝包装 · v01 · 背景合成</div></div><span class="status-badge status-ready">可入库</span></div><div class="card-bottom"><div class="file-pills"><span class="file-pill">PNG ✓</span><span class="file-pill">ZIP ✓</span><span class="file-pill">META ✓</span></div><span class="card-arrow">›</span></div></div>
+                  </article>
+                  <article class="package-card" data-package="portrait" data-status="review">
+                    <div class="thumb ink"><span class="thumb-label">PNG PREVIEW</span><span class="thumb-size">1080 × 1920</span></div>
+                    <div class="card-main"><div class="card-topline"><div><div class="card-name">竖屏框</div><div class="card-meta">阿宝包装 · v01 · 竖屏展示</div></div><span class="status-badge status-review">待补充</span></div><div class="card-bottom"><div class="file-pills"><span class="file-pill">PNG ✓</span><span class="file-pill">ZIP ✓</span><span class="file-pill">类型 ?</span></div><span class="card-arrow">›</span></div></div>
+                  </article>
+                  <article class="package-card" data-package="scene" data-status="ready">
+                    <div class="thumb amber"><span class="thumb-label">PNG PREVIEW</span><span class="thumb-size">1920 × 1080</span></div>
+                    <div class="card-main"><div class="card-topline"><div><div class="card-name">包装</div><div class="card-meta">阿宝包装 · v01 · 顶层合成</div></div><span class="status-badge status-ready">可入库</span></div><div class="card-bottom"><div class="file-pills"><span class="file-pill">PNG ✓</span><span class="file-pill">ZIP ✓</span><span class="file-pill">META ✓</span></div><span class="card-arrow">›</span></div></div>
+                  </article>
+                  <article class="package-card" data-package="missing" data-status="blocked">
+                    <div class="thumb ink"><span class="thumb-label">NO PREVIEW</span><span class="thumb-size">等待 PNG</span></div>
+                    <div class="card-main"><div class="card-topline"><div><div class="card-name">标注-方括号</div><div class="card-meta">阿宝包装 · v01 · 依赖未齐</div></div><span class="status-badge status-blocked">阻止</span></div><div class="card-bottom"><div class="file-pills"><span class="file-pill">PNG —</span><span class="file-pill">ZIP ✓</span><span class="file-pill">依赖 !</span></div><span class="card-arrow">›</span></div></div>
+                  </article>
+                </div>
+              </section>
+
+              <aside class="panel inspector" id="eagleInspector"></aside>
+            </div>
+            <div class="action-bar"><div class="selection-copy">已选择 <strong id="eagleSelection">1 条记录</strong> · 当前批次还有 5 个文件需要处理</div><div class="button-row"><button class="quiet-button" type="button" data-action="show-duplicate">处理重复批次</button><button class="ghost-button" type="button" data-action="toast" data-title="预检已刷新" data-message="已重新读取当前批次的文件关系。">重新扫描</button><button class="primary-button" type="button" data-action="toast" data-title="入库确认" data-message="演示中已打开正式入库确认状态。">确认 3 项入库</button></div></div>
+          </section>
+
+          <section class="screen" id="screen-aep" data-screen-label="AEP 收集">
+            <div class="screen-head">
+              <div>
+                <div class="eyebrow">AEP workflow / 02</div>
+                <h1>合成浏览器</h1>
+                <p class="screen-description">先浏览合成和预览来源，再把需要的对象加入收集队列。技术依赖留在右侧，任务始终不阻塞。</p>
+              </div>
+              <div class="head-actions"><button class="ghost-button" type="button" data-action="toast" data-title="最近工程" data-message="阿宝包装.aep · 最近打开">最近工程</button><button class="primary-button" type="button" data-action="toast" data-title="打开 AEP" data-message="预览模式下已模拟打开工程入口。"><span class="glyph">↥</span><span class="button-label">打开 AEP</span></button></div>
+            </div>
+            <div class="workspace-grid aep-grid">
+              <aside class="panel side-panel">
+                <div class="panel-title">工程合成 <small>11 项</small></div>
+                <div class="search-box"><span class="search-mark">⌕</span><input id="compSearch" type="search" placeholder="搜索合成…" aria-label="搜索合成" /></div>
+                <div class="side-label">视图</div>
+                <div class="filter-list">
+                  <button class="filter-button active" type="button" data-action="toast" data-title="全部合成" data-message="当前显示全部合成。">全部合成 <span class="filter-count">11</span></button>
+                  <button class="filter-button" type="button" data-action="toast" data-title="可能包装" data-message="已筛选可能具有交付价值的合成。">可能包装 <span class="filter-count">5</span></button>
+                  <button class="filter-button" type="button" data-action="toast" data-title="有警告" data-message="已筛选需要人工复核的合成。">有警告 <span class="filter-count">3</span></button>
+                </div>
+                <div class="side-label">角色</div>
+                <div class="comp-list" id="compList">
+                  <div class="comp-row selected" data-comp="包装"><span class="comp-mark">✓</span><div><div class="comp-name">包装</div><div class="comp-meta">顶层 · 1920 × 1080</div></div><span class="status-badge status-ready">完整</span></div>
+                  <div class="comp-row tree-indent" data-comp="视频框"><span class="comp-mark">□</span><div><div class="comp-name">视频框</div><div class="comp-meta">直属预合成 · 10s</div></div><span class="status-badge status-review">警告</span></div>
+                  <div class="comp-row tree-indent" data-comp="竖屏框"><span class="comp-mark">□</span><div><div class="comp-name">竖屏框</div><div class="comp-meta">直属预合成 · 10s</div></div><span class="status-badge status-review">警告</span></div>
+                  <div class="comp-row tree-indent" data-comp="信息条"><span class="comp-mark">□</span><div><div class="comp-name">信息条</div><div class="comp-meta">直属预合成 · 2.4s</div></div><span class="status-badge status-ready">完整</span></div>
+                  <div class="comp-row tree-indent" data-comp="背景"><span class="comp-mark">□</span><div><div class="comp-name">背景</div><div class="comp-meta">直属预合成 · 20s</div></div><span class="status-badge status-ready">完整</span></div>
+                </div>
+              </aside>
+              <section class="panel content-panel">
+                <div class="content-toolbar"><div><div class="section-kicker" style="margin:0"><h2>预览 / 调整代表帧</h2><span>当前：包装</span></div></div><div class="status-inline"><span class="status-dot"></span>快速预览已连接</div></div>
+                <div class="aep-stage"><div class="checkerboard"></div><div class="stage-art"></div><div class="stage-topline"><span>包装展示画面</span><span class="mono">快速预览</span></div><div class="stage-bottomline"><span>当前帧 50 · 2.000 s</span><span class="mono">PNG + Alpha</span></div></div>
+                <div class="timeline"><div class="timeline-head"><span>预览来源</span><span>包装展示画面 · 父级</span></div><select class="source-select" id="previewSource"><option>包装展示画面（推荐）</option><option>合成自身</option><option>视频框所在父级</option></select><div class="timeline-head" style="margin-top:14px"><span>时间轴</span><span id="timeValue">2.000 s · 第 50 帧</span></div><input id="frameRange" type="range" min="0" max="10" step="0.001" value="2" /><div class="frame-tools"><button class="quiet-button" type="button" data-action="frame-start">0 秒</button><button class="quiet-button" type="button" data-action="frame-suggest">建议帧</button><button class="quiet-button" type="button" data-action="frame-mid">中点</button><button class="quiet-button" type="button" data-action="frame-end">末帧</button><button class="primary-button" type="button" data-action="save-frame">保存代表帧</button></div></div>
+              </section>
+              <aside class="panel inspector">
+                <div class="inspector-header"><div class="inspector-heading"><h2 id="aepInspectorTitle">包装</h2><p id="aepInspectorMeta">顶层合成 · 1920 × 1080 · 20s · 25fps</p></div><span class="status-badge status-ready">可收集</span></div>
+                <div class="inspector-section"><h3>合成信息</h3><div class="detail-grid"><div class="detail-item"><span>直属预合成</span><strong>4 个</strong></div><div class="detail-item"><span>图层素材</span><strong>10 个</strong></div><div class="detail-item"><span>代表帧</span><strong>已设置</strong></div><div class="detail-item"><span>输出模式</span><strong>PNG + ZIP</strong></div></div></div>
+                <div class="inspector-section"><h3>依赖检查</h3><div class="check-list"><div class="check-row"><span>素材路径</span><strong class="check-ok">全部存在</strong></div><div class="check-row"><span>字体</span><strong class="check-warn">1 项警告</strong></div><div class="check-row"><span>第三方效果</span><strong class="check-ok">未发现</strong></div><div class="check-row"><span>跨合成表达式</span><strong class="check-warn">需复核</strong></div></div></div>
+                <div class="inspector-section"><h3>直属预合成</h3><div class="check-list"><div class="check-row"><span>视频框</span><strong>可单独导出</strong></div><div class="check-row"><span>竖屏框</span><strong>可单独导出</strong></div><div class="check-row"><span>信息条</span><strong>可单独导出</strong></div></div><div class="inspector-actions"><button class="ghost-button" type="button" data-action="toast" data-title="直属预合成" data-message="已展开 4 个直属预合成。">展开查看</button><button class="quiet-button" type="button" data-action="toast" data-title="预合成队列" data-message="已加入直属预合成导出队列。">加入队列</button></div></div>
+                <div class="inspector-section"><div class="warning-box"><span class="glyph">!</span><div><strong>有 2 项人工复核</strong><span>字体授权和跨合成表达式不会被自动修复。</span></div></div></div>
+              </aside>
+            </div>
+            <div class="queue-panel"><div class="queue-head"><h2>收集队列 <span class="tab-count">3</span></h2><div class="queue-actions"><button class="quiet-button" type="button" data-action="toast" data-title="队列已暂停" data-message="长任务可以暂停，不影响当前预览。">暂停</button><button class="quiet-button" type="button" data-action="toast" data-title="队列已清理" data-message="已移除已完成项目。">清理已完成</button></div></div><div class="queue-list"><div class="queue-item"><div class="queue-item-top"><strong>背景</strong><span class="status-badge status-ready">已完成</span></div><p>PNG · ZIP · manifest 已校验</p><div class="progress-line done"><span></span></div></div><div class="queue-item"><div class="queue-item-top"><strong>视频框</strong><span class="status-badge status-review">收集中</span></div><p>正在生成包装展示画面</p><div class="progress-line"><span></span></div></div><div class="queue-item"><div class="queue-item-top"><strong>竖屏框</strong><span class="status-badge status-review">待复核</span></div><p>有父级取景警告，仍可重试</p><div class="progress-line warn"><span></span></div></div></div></div>
+            <div class="action-bar"><div class="selection-copy">已选择 <strong>1 个合成</strong> · 2 项依赖警告已收进检查器</div><div class="button-row"><button class="quiet-button" type="button" data-action="show-rename"><span class="glyph">Aa</span><span class="button-label">规范命名</span></button><button class="quiet-button" type="button" data-action="toast" data-title="已加入队列" data-message="包装已加入收集队列。">加入收集队列</button><button class="primary-button" type="button" data-action="toast" data-title="开始收集" data-message="演示队列已开始运行，主界面仍可继续操作。">开始收集</button></div></div>
+          </section>
+
+          <section class="screen" id="screen-history" data-screen-label="批次历史">
+            <div class="simple-screen"><div class="eyebrow">History / 03</div><h1>批次历史</h1><p class="screen-description">把每次导入、正式归位和同步状态留在同一个可追溯的时间线上。</p><div class="history-grid"><article class="history-card"><span class="status-badge status-ready">已完成</span><h2 style="margin-top:12px">阿宝包装 · 09/03</h2><p>6 条记录 · 3 对可入库 · bot 索引同步完成</p><div class="button-row"><button class="ghost-button" type="button" data-action="toast" data-title="批次详情" data-message="已打开阿宝包装批次详情。">查看批次</button></div></article><article class="history-card"><span class="status-badge status-review">部分完成</span><h2 style="margin-top:12px">变速箱包装 · 08/29</h2><p>3 条记录 · 已正式归位 · 保留 1 个空批次文件夹</p><div class="button-row"><button class="ghost-button" type="button" data-action="toast" data-title="批次详情" data-message="已打开变速箱包装批次详情。">查看批次</button></div></article><article class="history-card"><span class="status-badge status-blocked">需处理</span><h2 style="margin-top:12px">阿宝包装 · 08/26</h2><p>1 条记录被阻止 · 缺少 PNG · 可重试预览生成</p><div class="button-row"><button class="ghost-button" type="button" data-action="toast" data-title="失败项" data-message="已筛选该批次的失败项。">查看失败项</button></div></article></div></div>
+          </section>
+
+          <section class="screen" id="screen-diagnostics" data-screen-label="系统诊断">
+            <div class="simple-screen"><div class="eyebrow">System / 04</div><h1>系统诊断</h1><p class="screen-description">把环境问题提前暴露，避免用户在正式入库或后台渲染时才发现失败。</p><div class="diagnostic-grid"><article class="diagnostic-card"><h2>连接状态</h2><p>Eagle、Worker 和预览桥接的当前状态。</p><div class="diagnostic-list"><div class="diagnostic-row"><span>Eagle Plugin API</span><strong>已连接</strong></div><div class="diagnostic-row"><span>AEP Worker</span><strong>就绪</strong></div><div class="diagnostic-row"><span>快速预览桥接</span><strong>已连接</strong></div></div></article><article class="diagnostic-card"><h2>输出环境</h2><p>检查输出目录权限、剩余空间和路径可用性。</p><div class="diagnostic-list"><div class="diagnostic-row"><span>输出目录</span><strong>可写</strong></div><div class="diagnostic-row"><span>剩余空间</span><strong>128 GB</strong></div><div class="diagnostic-row"><span>长路径支持</span><strong>已启用</strong></div></div></article><article class="diagnostic-card"><h2>依赖提醒</h2><p>只提示事实，不自动打包或替换用户授权内容。</p><div class="diagnostic-list"><div class="diagnostic-row"><span>缺失字体</span><strong style="color:var(--amber)">1 项</strong></div><div class="diagnostic-row"><span>第三方效果</span><strong>0 项</strong></div><div class="diagnostic-row"><span>需要人工复核</span><strong style="color:var(--amber)">2 项</strong></div></div></article></div></div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <button class="tweaks-toggle" type="button" id="tweaksToggle">调节预览</button>
+    <aside class="tweaks-panel" id="tweaksPanel" aria-label="Tweaks">
+      <div class="tweaks-head"><strong>Tweaks</strong><span>prototype controls</span></div>
+      <div class="tweak-group"><span class="tweak-label">展示模式</span><div class="tweak-options"><button class="active" type="button" data-density-choice="workbench">工作台</button><button type="button" data-density-choice="compact">高密度</button><button type="button" data-density-choice="preview">预览优先</button></div></div>
+      <div class="tweak-group"><span class="tweak-label">主题</span><div class="tweak-options"><button class="active" type="button" data-theme-choice="light">暖灰白</button><button type="button" data-theme-choice="dark">深色</button></div></div>
+      <div class="tweak-group"><label class="tweak-check"><input type="checkbox" id="motionToggle" checked /> 保留状态切换动效</label></div>
+    </aside>
+
+    <div class="modal-backdrop" id="duplicateModal" role="dialog" aria-modal="true" aria-labelledby="duplicateTitle">
+      <div class="modal"><div class="modal-head"><div><h2 id="duplicateTitle">检测到重复批次</h2><p class="modal-sub">请选择这次导入要如何处理，系统不会静默生成重复素材。</p></div><button class="icon-button" type="button" data-close-modal aria-label="关闭">×</button></div><div class="modal-body"><div class="duplicate-options"><button class="duplicate-option selected" type="button"><div><strong>复用现有批次</strong><span>不新增文件 · 匹配：batch_id + 源路径</span></div><span class="radio-dot"></span></button><button class="duplicate-option" type="button"><div><strong>更新现有批次</strong><span>补齐变化内容 · 保留原批次关系</span></div><span class="radio-dot"></span></button><button class="duplicate-option" type="button"><div><strong>新建独立批次</strong><span>保留为新版本 · 使用新的 batch_id</span></div><span class="radio-dot"></span></button></div></div><div class="modal-footer"><button class="quiet-button" type="button" data-close-modal>取消</button><button class="primary-button" type="button" data-action="confirm-duplicate">继续</button></div></div>
+    </div>
+
+    <div class="modal-backdrop preview-modal" id="previewModal" role="dialog" aria-modal="true" aria-labelledby="previewTitle">
+      <div class="modal"><div class="modal-head"><div><h2 id="previewTitle">预览代表帧 · 视频框</h2><p class="modal-sub">推荐取景：包装展示画面 · 当前选择不会改变收集目标。</p></div><button class="icon-button" type="button" data-close-modal aria-label="关闭">×</button></div><div class="preview-modal-art"><div class="checkerboard"></div><div class="stage-art"></div><div class="stage-topline"><span>包装展示画面</span><span class="mono">快速预览</span></div></div><div class="preview-modal-controls"><input type="range" min="0" max="10" step="0.001" value="2" aria-label="调整时间" /><input type="text" value="2.000 s" aria-label="时间" /></div><div class="modal-footer"><button class="quiet-button" type="button" data-close-modal>取消</button><button class="primary-button" type="button" data-action="save-preview">保存代表帧</button></div></div>
+    </div>
+
+    <div class="modal-backdrop rename-modal" id="renameModal" role="dialog" aria-modal="true" aria-labelledby="renameTitle">
+      <div class="modal">
+        <div class="modal-head"><div><h2 id="renameTitle">批量规范命名</h2><p class="modal-sub">先用规则生成，再逐条修改。命名只作用于本次收集产物，不改动原工程。</p></div><button class="icon-button" type="button" data-close-modal aria-label="关闭">×</button></div>
+        <div class="rename-toolbar">
+          <div class="rename-field"><label for="renameTemplate">基础命名模板</label><input id="renameTemplate" type="text" value="{项目}_{包装}_{版本}" /></div>
+          <div class="rename-field"><label for="renamePreviewSuffix">预览图后缀</label><input id="renamePreviewSuffix" type="text" value="预览" /></div>
+          <div class="rename-field"><label for="renameSourceSuffix">源文件后缀</label><input id="renameSourceSuffix" type="text" value="源文件" /></div>
+        </div>
+        <div class="token-bank"><span>插入字段</span><button class="token-chip" type="button" data-token="{项目}">{项目}</button><button class="token-chip" type="button" data-token="{包装}">{包装}</button><button class="token-chip" type="button" data-token="{类型}">{类型}</button><button class="token-chip" type="button" data-token="{版本}">{版本}</button><button class="token-chip" type="button" data-token="{合成}">{合成}</button></div>
+        <div class="rename-note"><span class="glyph">i</span><span><strong>文件名是展示层，稳定关联仍以 package_id 和 manifest 为准。</strong> 系统会同步更新 ZIP 内清单，并校验非法字符、重复名称和空名称。</span></div>
+        <div class="rename-table-wrap"><div class="rename-grid" id="renameRows"></div></div>
+        <div class="rename-footnote"><span id="renameSummary"><strong>4 组</strong> · 预览图与源文件将一起命名</span><span class="rename-error" id="renameError"></span></div>
+        <div class="rename-actions"><button class="quiet-button" type="button" data-action="reset-rename">恢复默认</button><div class="button-row"><button class="ghost-button" type="button" data-action="validate-rename">校验名称</button><button class="ghost-button" type="button" data-action="apply-rename">应用规则并预览</button><button class="primary-button" type="button" data-action="confirm-rename">确认命名并继续</button></div></div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" role="status"><strong id="toastTitle"></strong><span id="toastMessage"></span></div>
+
+    <script>
+      (function () {
+        const body = document.body;
+        const contextTitle = document.getElementById("contextTitle");
+        const contextSub = document.getElementById("contextSub");
+        const toast = document.getElementById("toast");
+        let toastTimer;
+        let selectedPackage = "video";
+        let activeFilter = "all";
+
+        const eagleDetails = {
+          video: { title: "视频框", meta: "阿宝包装 · v01 · 包装展示画面", status: "可入库", statusClass: "status-ready", color: "blue", size: "1920 × 1080", comp: "视频框", notes: [["项目", "支付宝阿宝"], ["版本", "v01"], ["AE 合成", "视频框"], ["来源", "包装展示画面"]], checks: [["PNG 预览", "已配对", "check-ok"], ["源文件 ZIP", "已配对", "check-ok"], ["manifest", "已读取", "check-ok"], ["依赖提醒", "2 项警告", "check-warn"]] },
+          title: { title: "信息条", meta: "阿宝包装 · v01 · 人名条", status: "待补充", statusClass: "status-review", color: "amber", size: "500 × 300", comp: "人名条", notes: [["项目", "支付宝阿宝"], ["版本", "v01"], ["AE 合成", "人名条"], ["类型", "请选择"]], checks: [["PNG 预览", "已配对", "check-ok"], ["源文件 ZIP", "已配对", "check-ok"], ["包装类型", "需要补充", "check-warn"], ["manifest", "已读取", "check-ok"]] },
+          background: { title: "背景", meta: "阿宝包装 · v01 · 背景合成", status: "可入库", statusClass: "status-ready", color: "green", size: "1920 × 1080", comp: "背景", notes: [["项目", "支付宝阿宝"], ["版本", "v01"], ["AE 合成", "背景"], ["来源", "合成自身"]], checks: [["PNG 预览", "已配对", "check-ok"], ["源文件 ZIP", "已配对", "check-ok"], ["manifest", "已读取", "check-ok"], ["依赖提醒", "无", "check-ok"]] },
+          portrait: { title: "竖屏框", meta: "阿宝包装 · v01 · 竖屏展示", status: "待补充", statusClass: "status-review", color: "ink", size: "1080 × 1920", comp: "竖屏框", notes: [["项目", "支付宝阿宝"], ["版本", "v01"], ["AE 合成", "竖屏框"], ["类型", "请选择"]], checks: [["PNG 预览", "已配对", "check-ok"], ["源文件 ZIP", "已配对", "check-ok"], ["包装类型", "需要补充", "check-warn"], ["父级取景", "需复核", "check-warn"]] },
+          scene: { title: "包装", meta: "阿宝包装 · v01 · 顶层合成", status: "可入库", statusClass: "status-ready", color: "amber", size: "1920 × 1080", comp: "包装", notes: [["项目", "支付宝阿宝"], ["版本", "v01"], ["AE 合成", "包装"], ["来源", "合成自身"]], checks: [["PNG 预览", "已配对", "check-ok"], ["源文件 ZIP", "已配对", "check-ok"], ["manifest", "已读取", "check-ok"], ["依赖提醒", "无", "check-ok"]] },
+          missing: { title: "标注-方括号", meta: "阿宝包装 · v01 · 依赖未齐", status: "阻止", statusClass: "status-blocked", color: "ink", size: "等待 PNG", comp: "标注-方括号", notes: [["项目", "支付宝阿宝"], ["版本", "v01"], ["AE 合成", "标注-方括号"], ["状态", "缺少预览"]], checks: [["PNG 预览", "缺失", "check-bad"], ["源文件 ZIP", "已配对", "check-ok"], ["manifest", "已读取", "check-ok"], ["入库状态", "阻止", "check-bad"]] }
+        };
+
+        const compDetails = {
+          包装: { meta: "顶层合成 · 1920 × 1080 · 20s · 25fps", badge: "可收集", badgeClass: "status-ready", precomps: "4 个", assets: "10 个", warnings: "2 项人工复核" },
+          视频框: { meta: "直属预合成 · 1920 × 1080 · 10s · 25fps", badge: "有警告", badgeClass: "status-review", precomps: "2 个", assets: "5 个", warnings: "父级取景需复核" },
+          竖屏框: { meta: "直属预合成 · 1080 × 1920 · 10s · 25fps", badge: "有警告", badgeClass: "status-review", precomps: "1 个", assets: "4 个", warnings: "父级取景需复核" },
+          信息条: { meta: "直属预合成 · 500 × 300 · 2.4s · 25fps", badge: "可收集", badgeClass: "status-ready", precomps: "0 个", assets: "2 个", warnings: "无" },
+          背景: { meta: "直属预合成 · 1920 × 1080 · 20s · 25fps", badge: "可收集", badgeClass: "status-ready", precomps: "0 个", assets: "9 个", warnings: "无" }
+        };
+
+        const renameItems = [
+          { id: "video", name: "视频框", project: "支付宝阿宝", type: "视频框", version: "v01", color: "blue", oldPreview: "视频框_20260903.png", oldSource: "视频框_collect.zip" },
+          { id: "title", name: "信息条", project: "支付宝阿宝", type: "信息条", version: "v01", color: "amber", oldPreview: "人名条.png", oldSource: "人名条_collect.zip" },
+          { id: "background", name: "背景", project: "支付宝阿宝", type: "背景", version: "v01", color: "green", oldPreview: "背景_preview.png", oldSource: "背景_collect.zip" },
+          { id: "portrait", name: "竖屏框", project: "支付宝阿宝", type: "竖屏框", version: "v01", color: "ink", oldPreview: "竖屏框.png", oldSource: "竖屏框_collect.zip" }
+        ];
+        const renameEdits = {};
+
+        function escapeHtml(value) {
+          return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
+        }
+
+        function namingValue(item, template) {
+          const values = { "项目": item.project, "包装": item.name, "类型": item.type, "版本": item.version, "合成": item.name };
+          return template.replace(/\{(项目|包装|类型|版本|合成)\}/g, (_, token) => values[token] || "");
+        }
+
+        function renderRenameRows() {
+          const template = document.getElementById("renameTemplate").value.trim() || "{项目}_{包装}_{版本}";
+          const previewSuffix = document.getElementById("renamePreviewSuffix").value.trim() || "预览";
+          const sourceSuffix = document.getElementById("renameSourceSuffix").value.trim() || "源文件";
+          const rows = [
+            '<div class="rename-head">包装</div><div class="rename-head">原始文件名</div><div class="rename-head">规范预览图</div><div class="rename-head">规范源文件</div><div class="rename-head">状态</div>'
+          ];
+          renameItems.forEach((item) => {
+            const base = namingValue(item, template);
+            const preview = renameEdits[item.id]?.preview || `${base}_${previewSuffix}.png`;
+            const source = renameEdits[item.id]?.source || `${base}_${sourceSuffix}.zip`;
+            const mode = renameEdits[item.id] ? "manual" : "auto";
+            rows.push(`<div class="rename-cell rename-package"><span class="rename-thumb thumb ${item.color}"></span><div><strong>${item.name}</strong><span>${item.type} · ${item.version}</span></div></div>`);
+            rows.push(`<div class="rename-cell old-name">${escapeHtml(item.oldPreview)}<br />${escapeHtml(item.oldSource)}</div>`);
+            rows.push(`<div class="rename-cell"><input class="rename-input ${mode}" data-rename-id="${item.id}" data-rename-kind="preview" value="${escapeHtml(preview)}" aria-label="${item.name} 预览图名称" /></div>`);
+            rows.push(`<div class="rename-cell"><input class="rename-input ${mode}" data-rename-id="${item.id}" data-rename-kind="source" value="${escapeHtml(source)}" aria-label="${item.name} 源文件名称" /></div>`);
+            rows.push(`<div class="rename-cell"><span class="rename-status ${mode}">${mode === "manual" ? "手动修改" : "自动生成"}</span></div>`);
+          });
+          document.getElementById("renameRows").innerHTML = rows.join("");
+          validateRename(false);
+        }
+
+        function validateRename(showFeedback = true) {
+          const inputs = [...document.querySelectorAll(".rename-input")];
+          const invalidPattern = /[<>:\"/\\|?*]/;
+          const seen = new Map();
+          let invalidCount = 0;
+          inputs.forEach((input) => {
+            const value = input.value.trim();
+            const key = value.toLowerCase();
+            const bad = !value || invalidPattern.test(value) || seen.has(key);
+            input.classList.toggle("invalid", bad);
+            if (bad) invalidCount += 1;
+            if (value) seen.set(key, input);
+            const statusCell = input.dataset.renameKind === "preview"
+              ? input.parentElement.nextElementSibling?.nextElementSibling
+              : input.parentElement.nextElementSibling;
+            const status = statusCell?.querySelector(".rename-status");
+            if (status && bad) { status.className = "rename-status invalid"; status.textContent = "需修正"; }
+          });
+          const error = document.getElementById("renameError");
+          const summary = document.getElementById("renameSummary");
+          if (invalidCount) {
+            error.textContent = `${invalidCount} 个名称需要修正：检查空名称、非法字符或重复名称`;
+            summary.innerHTML = "<strong>存在命名冲突</strong> · 应用前请完成校验";
+          } else {
+            error.textContent = "";
+            summary.innerHTML = "<strong>4 组</strong> · 预览图与源文件命名均可用";
+          }
+          if (showFeedback) showToast(invalidCount ? "命名校验未通过" : "命名校验通过", invalidCount ? "请处理标红的名称后再应用。" : "所有名称唯一，且符合 Windows 文件名规则。");
+          return invalidCount === 0;
+        }
+
+        function clearRenameEdits() {
+          Object.keys(renameEdits).forEach((key) => delete renameEdits[key]);
+        }
+
+        function applyRenameRule() {
+          clearRenameEdits();
+          renderRenameRows();
+          showToast("已按规则生成名称", "你仍可以直接修改任意一条预览图或源文件名称。 ");
+        }
+
+        function showToast(title, message) {
+          document.getElementById("toastTitle").textContent = title;
+          document.getElementById("toastMessage").textContent = message;
+          toast.classList.add("show");
+          window.clearTimeout(toastTimer);
+          toastTimer = window.setTimeout(() => toast.classList.remove("show"), 2800);
+        }
+
+        function openModal(id) { document.getElementById(id).classList.add("open"); }
+        function closeModals() { document.querySelectorAll(".modal-backdrop").forEach((modal) => modal.classList.remove("open")); }
+
+        function renderEagleInspector(id) {
+          const item = eagleDetails[id] || eagleDetails.video;
+          const inspector = document.getElementById("eagleInspector");
+          inspector.innerHTML = `
+            <div class="inspector-header"><div class="inspector-heading"><h2>${item.title}</h2><p>${item.meta}</p></div><span class="status-badge ${item.statusClass}">${item.status}</span></div>
+            <div class="inspect-preview"><div class="thumb ${item.color}"><span class="thumb-label">PNG PREVIEW</span><span class="thumb-size">${item.size}</span></div><div class="preview-overlay"><div><strong>预览帧 · ${item.comp}</strong><span>已从收集 manifest 配对</span></div><button class="preview-button" type="button" data-action="open-preview">放大预览</button></div></div>
+            <div class="inspector-section"><h3>素材信息</h3><div class="detail-grid">${item.notes.map(([label, value]) => `<div class="detail-item"><span>${label}</span><strong>${value}</strong></div>`).join("")}</div></div>
+            <div class="inspector-section"><h3>配对与检查</h3><div class="check-list">${item.checks.map(([label, value, cls]) => `<div class="check-row"><span>${label}</span><strong class="${cls}">${value}</strong></div>`).join("")}</div></div>
+            <div class="inspector-section"><h3>下一步</h3><div class="inspector-actions"><button class="ghost-button" type="button" data-action="toast" data-title="编辑字段" data-message="预览版会在这里打开可编辑检查器。">编辑字段</button><button class="primary-button" type="button" data-action="toast" data-title="已加入选择" data-message="${item.title} 已加入底部确认栏。">选择入库</button></div></div>
+          `;
+        }
+
+        function renderAepInspector(name) {
+          const item = compDetails[name] || compDetails.包装;
+          document.getElementById("aepInspectorTitle").textContent = name;
+          document.getElementById("aepInspectorMeta").textContent = item.meta;
+          const badge = document.querySelector("#screen-aep .inspector-header .status-badge");
+          badge.textContent = item.badge;
+          badge.className = `status-badge ${item.badgeClass}`;
+          const detailValues = document.querySelectorAll("#screen-aep .detail-item strong");
+          detailValues[0].textContent = item.precomps;
+          detailValues[1].textContent = item.assets;
+          detailValues[3].textContent = "PNG + ZIP";
+          const warning = document.querySelector("#screen-aep .warning-box");
+          warning.style.display = item.warnings === "无" ? "none" : "flex";
+          if (item.warnings !== "无") warning.querySelector("strong").textContent = item.warnings;
+        }
+
+        function setScreen(screen) {
+          document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.screen === screen));
+          document.querySelectorAll(".screen").forEach((section) => section.classList.toggle("active", section.id === `screen-${screen}`));
+          const context = {
+            eagle: ["Eagle 入库", "把收集结果变成可检索的正式素材"],
+            aep: ["AEP 收集", "浏览合成、选择取景、加入后台队列"],
+            history: ["批次历史", "让每一次入库都可以追溯"],
+            diagnostics: ["系统诊断", "在操作前确认环境和依赖状态"]
+          }[screen];
+          contextTitle.textContent = context[0];
+          contextSub.textContent = context[1];
+        }
+
+        function applyFilter(filter) {
+          activeFilter = filter;
+          document.querySelectorAll("#eagleFilters .filter-button").forEach((button) => button.classList.toggle("active", button.dataset.filter === filter));
+          const search = document.getElementById("eagleSearch").value.trim().toLowerCase();
+          document.querySelectorAll(".package-card").forEach((card) => {
+            const matchesFilter = filter === "all" || card.dataset.status === filter;
+            const matchesSearch = !search || card.textContent.toLowerCase().includes(search);
+            card.style.display = matchesFilter && matchesSearch ? "grid" : "none";
+          });
+        }
+
+        document.addEventListener("click", (event) => {
+          const tab = event.target.closest("[data-screen]");
+          if (tab) { setScreen(tab.dataset.screen); return; }
+          const packageCard = event.target.closest(".package-card");
+          if (packageCard) {
+            document.querySelectorAll(".package-card").forEach((card) => card.classList.remove("selected"));
+            packageCard.classList.add("selected");
+            selectedPackage = packageCard.dataset.package;
+            document.getElementById("eagleSelection").textContent = "1 条记录";
+            renderEagleInspector(selectedPackage);
+            return;
+          }
+          const compRow = event.target.closest(".comp-row");
+          if (compRow) {
+            document.querySelectorAll(".comp-row").forEach((row) => row.classList.remove("selected"));
+            compRow.classList.add("selected");
+            renderAepInspector(compRow.dataset.comp);
+            showToast("已切换合成", `${compRow.dataset.comp} 的预览和检查器已更新。`);
+            return;
+          }
+          const filter = event.target.closest("[data-filter]");
+          if (filter) { applyFilter(filter.dataset.filter); return; }
+          const duplicate = event.target.closest(".duplicate-option");
+          if (duplicate) { document.querySelectorAll(".duplicate-option").forEach((option) => option.classList.remove("selected")); duplicate.classList.add("selected"); return; }
+          const token = event.target.closest("[data-token]");
+          if (token) {
+            const input = document.getElementById("renameTemplate");
+            const start = input.selectionStart ?? input.value.length;
+            const end = input.selectionEnd ?? input.value.length;
+            input.value = `${input.value.slice(0, start)}${token.dataset.token}${input.value.slice(end)}`;
+            input.focus();
+            input.setSelectionRange(start + token.dataset.token.length, start + token.dataset.token.length);
+            clearRenameEdits();
+            renderRenameRows();
+            return;
+          }
+          const action = event.target.closest("[data-action]");
+          if (!action) return;
+          const type = action.dataset.action;
+          if (type === "show-drop") document.getElementById("dropZone").classList.toggle("hidden");
+          if (type === "show-duplicate") openModal("duplicateModal");
+          if (type === "show-rename") { renderRenameRows(); openModal("renameModal"); }
+          if (type === "reset-rename") { document.getElementById("renameTemplate").value = "{项目}_{包装}_{版本}"; document.getElementById("renamePreviewSuffix").value = "预览"; document.getElementById("renameSourceSuffix").value = "源文件"; clearRenameEdits(); renderRenameRows(); showToast("已恢复默认规则", "已重新生成本批次的规范名称。 "); }
+          if (type === "apply-rename") applyRenameRule();
+          if (type === "validate-rename") validateRename();
+          if (type === "confirm-rename") { if (validateRename()) { closeModals(); showToast("命名已确认", "后续将用新名称写入文件，并同步更新 manifest。 "); } }
+          if (type === "open-preview") openModal("previewModal");
+          if (type === "save-preview") { closeModals(); showToast("代表帧已保存", "这只是 UI 预览，实际将写回收集 manifest。 "); }
+          if (type === "confirm-duplicate") { closeModals(); showToast("批次策略已选择", "已保留三选一决策，不会静默生成重复素材。 "); }
+          if (type === "save-frame") showToast("代表帧已保存", "预览帧已进入收集对象的待确认状态。 ");
+          if (type === "frame-start" || type === "frame-suggest" || type === "frame-mid" || type === "frame-end") {
+            const values = { "frame-start": 0, "frame-suggest": 2, "frame-mid": 5, "frame-end": 9.8 };
+            const value = values[type];
+            document.getElementById("frameRange").value = value;
+            document.getElementById("timeValue").textContent = `${Number(value).toFixed(3)} s · 第 ${Math.round(Number(value) * 25 + 1)} 帧`;
+          }
+          if (type === "toast") showToast(action.dataset.title || "已完成", action.dataset.message || "演示操作已完成。 ");
+        });
+
+        document.querySelectorAll("[data-close-modal]").forEach((button) => button.addEventListener("click", closeModals));
+        document.querySelectorAll(".modal-backdrop").forEach((backdrop) => backdrop.addEventListener("click", (event) => { if (event.target === backdrop) closeModals(); }));
+        document.getElementById("eagleSearch").addEventListener("input", () => applyFilter(activeFilter));
+        ["renameTemplate", "renamePreviewSuffix", "renameSourceSuffix"].forEach((id) => document.getElementById(id).addEventListener("input", () => { clearRenameEdits(); renderRenameRows(); }));
+        document.getElementById("renameRows").addEventListener("input", (event) => {
+          const input = event.target.closest(".rename-input");
+          if (!input) return;
+          const id = input.dataset.renameId;
+          renameEdits[id] = renameEdits[id] || {};
+          renameEdits[id][input.dataset.renameKind] = input.value;
+          input.classList.add("manual");
+          const statusCell = input.dataset.renameKind === "preview" ? input.parentElement.nextElementSibling.nextElementSibling : input.parentElement.nextElementSibling;
+          const status = statusCell?.querySelector(".rename-status");
+          if (status) { status.className = "rename-status manual"; status.textContent = "手动修改"; }
+          validateRename(false);
+        });
+        document.getElementById("compSearch").addEventListener("input", (event) => {
+          const query = event.target.value.toLowerCase();
+          document.querySelectorAll(".comp-row").forEach((row) => { row.style.display = row.textContent.toLowerCase().includes(query) ? "grid" : "none"; });
+        });
+        document.getElementById("frameRange").addEventListener("input", (event) => {
+          const value = Number(event.target.value);
+          document.getElementById("timeValue").textContent = `${value.toFixed(3)} s · 第 ${Math.round(value * 25 + 1)} 帧`;
+        });
+
+        const tweaksPanel = document.getElementById("tweaksPanel");
+        document.getElementById("tweaksToggle").addEventListener("click", () => tweaksPanel.classList.toggle("open"));
+        document.querySelectorAll("[data-density-choice]").forEach((button) => button.addEventListener("click", () => {
+          const value = button.dataset.densityChoice;
+          body.dataset.density = value;
+          document.querySelectorAll("[data-density-choice]").forEach((item) => item.classList.toggle("active", item === button));
+          localStorage.setItem("xbot-preview-density", value);
+        }));
+        document.querySelectorAll("[data-theme-choice]").forEach((button) => button.addEventListener("click", () => {
+          const value = button.dataset.themeChoice;
+          body.dataset.theme = value;
+          document.querySelectorAll("[data-theme-choice]").forEach((item) => item.classList.toggle("active", item === button));
+          localStorage.setItem("xbot-preview-theme", value);
+        }));
+        document.getElementById("motionToggle").addEventListener("change", (event) => { body.classList.toggle("no-motion", !event.target.checked); });
+
+        const savedTheme = localStorage.getItem("xbot-preview-theme");
+        const savedDensity = localStorage.getItem("xbot-preview-density");
+        if (savedTheme) { body.dataset.theme = savedTheme; document.querySelectorAll("[data-theme-choice]").forEach((button) => button.classList.toggle("active", button.dataset.themeChoice === savedTheme)); }
+        if (savedDensity) { body.dataset.density = savedDensity; document.querySelectorAll("[data-density-choice]").forEach((button) => button.classList.toggle("active", button.dataset.densityChoice === savedDensity)); }
+        renderEagleInspector("video");
+      })();
+    </script>
+  </body>
+</html>

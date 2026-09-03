@@ -599,3 +599,64 @@ test("formal filing writes inferred metadata for manually imported items", async
   assert.ok(preview.tags.includes("01_预览图"));
   assert.ok(source.tags.includes("02_AE源文件"));
 });
+
+test("formal filing applies per-package preview and source name overrides", async () => {
+  const adapter = new FakeAdapter(makePair());
+  const result = await fileBatch(adapter, "batch-1", {
+    nameOverrides: {
+      "pkg-gearbox-bg": {
+        preview: "变速箱_背景_黑色纹理_v02.png",
+        source: "变速箱_黑色纹理_v02.zip",
+      },
+    },
+  });
+
+  assert.equal(result.filed.length, 1);
+  const preview = adapter.items.find((item) => item.id === "png-1");
+  const source = adapter.items.find((item) => item.id === "zip-1");
+  assert.equal(preview.name, "变速箱_背景_黑色纹理_v02");
+  assert.equal(source.name, "变速箱_黑色纹理_v02");
+  assert.equal(result.filed[0].previewName, "变速箱_背景_黑色纹理_v02.png");
+  assert.equal(result.filed[0].sourceName, "变速箱_黑色纹理_v02.zip");
+});
+
+test("rejects invalid or duplicate custom formal names before moving items", async () => {
+  const adapter = new FakeAdapter(makePair());
+  await assert.rejects(
+    () => fileBatch(adapter, "batch-1", {
+      nameOverrides: {
+        "pkg-gearbox-bg": { preview: "bad:name.png" },
+      },
+    }),
+    /不允许的文件名字符/
+  );
+  assert.deepEqual(adapter.items.map((item) => item.folders), [["batch-1"], ["batch-1"]]);
+
+  const duplicateAdapter = new FakeAdapter([
+    ...makePair({
+      pkg: { packageId: "pkg-1", packageName: "背景一" },
+      previewId: "png-1",
+      sourceId: "zip-1",
+    }),
+    ...makePair({
+      pkg: { packageId: "pkg-2", packageName: "背景二" },
+      previewId: "png-2",
+      sourceId: "zip-2",
+    }),
+  ]);
+  await assert.rejects(
+    () => fileBatch(duplicateAdapter, "batch-1", {
+      nameOverrides: {
+        "pkg-1": { preview: "同名.png" },
+        "pkg-2": { preview: "同名.png" },
+      },
+    }),
+    /出现重复名称/
+  );
+  assert.deepEqual(duplicateAdapter.items.map((item) => item.folders), [
+    ["batch-1"],
+    ["batch-1"],
+    ["batch-1"],
+    ["batch-1"],
+  ]);
+});

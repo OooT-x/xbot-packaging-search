@@ -1,247 +1,292 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>X.bot 包装素材入库助手</title>
     <style>
       :root {
-        --bg: #f6f7f9;
-        --panel: #ffffff;
-        --border: #e2e5ea;
-        --text: #1f2430;
-        --muted: #6b7280;
-        --accent: #2f6bff;
-        --danger: #d94b4b;
-        --warn: #b7791f;
-        --ok: #1f9d61;
+        --canvas: #ebe9e4;
+        --panel: #f8f7f3;
+        --panel-strong: #fffefa;
+        --panel-muted: #f1f0eb;
+        --ink: #1f2523;
+        --ink-soft: #515b56;
+        --ink-faint: #7d8580;
+        --line: #d9d8d0;
+        --line-strong: #c8c7bd;
+        --blue: #2854d9;
+        --blue-deep: #173aa6;
+        --blue-soft: #e3e9ff;
+        --green: #287457;
+        --green-soft: #dff1e7;
+        --amber: #aa6a1e;
+        --amber-soft: #f9ead0;
+        --red: #b84743;
+        --red-soft: #f9dfdd;
+        --shadow: 0 16px 42px rgba(35, 39, 34, 0.09), 0 2px 8px rgba(35, 39, 34, 0.05);
+        --shadow-soft: 0 4px 18px rgba(35, 39, 34, 0.06);
+        --radius-lg: 16px;
+        --radius-md: 10px;
+        --radius-sm: 7px;
+        --font-ui: "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+        --font-mono: "Cascadia Code", Consolas, monospace;
+      }
+      [data-theme="dark"] {
+        --canvas: #171a19; --panel: #202422; --panel-strong: #272b28; --panel-muted: #1b1f1d;
+        --ink: #f0f1ed; --ink-soft: #c3c8c3; --ink-faint: #8e9891; --line: #363b37; --line-strong: #4a514c;
+        --blue: #7694ff; --blue-deep: #9badff; --blue-soft: #29396f; --green: #6ed0a4; --green-soft: #203b2e;
+        --amber: #f1b660; --amber-soft: #49351c; --red: #ff8a83; --red-soft: #4c2523;
+        --shadow: 0 18px 48px rgba(0,0,0,.25), 0 2px 8px rgba(0,0,0,.18); --shadow-soft: 0 4px 18px rgba(0,0,0,.18);
       }
       * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        background: var(--bg);
-        color: var(--text);
-        font: 14px/1.55 "Microsoft YaHei", system-ui, sans-serif;
-      }
-      header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 14px 20px;
-        background: var(--panel);
-        border-bottom: 1px solid var(--border);
-      }
-      header h1 { font-size: 16px; margin: 0; }
-      .version { margin-left: 6px; color: var(--muted); font-size: 11px; font-weight: 500; }
-      .toolbar {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        align-items: center;
-        padding: 14px 20px;
-        background: var(--panel);
-        border-bottom: 1px solid var(--border);
-      }
-      button {
-        border: 1px solid var(--border);
-        background: #fff;
-        border-radius: 6px;
-        padding: 7px 14px;
-        cursor: pointer;
-        font-size: 13px;
-      }
-      button.primary {
-        background: var(--accent);
-        border-color: var(--accent);
-        color: #fff;
-      }
-      button:disabled { opacity: 0.45; cursor: not-allowed; }
-      input[type="text"] {
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        padding: 7px 10px;
-        width: 220px;
-        font-size: 13px;
-      }
-      select {
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        padding: 7px 10px;
-        width: 260px;
-        font-size: 13px;
-        background: #fff;
-      }
-      label.hint { white-space: nowrap; }
-      main { padding: 16px 20px; }
-      .cards {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 10px;
-        margin-bottom: 16px;
-      }
-      .card {
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 10px 12px;
-      }
-      .card b { font-size: 20px; display: block; }
-      .card span { color: var(--muted); font-size: 12px; }
-      .section {
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        margin-bottom: 16px;
-        overflow: hidden;
-      }
-      .section h2 {
-        margin: 0;
-        padding: 10px 14px;
-        font-size: 13px;
-        border-bottom: 1px solid var(--border);
-        background: #fafbfc;
-      }
-      table { width: 100%; border-collapse: collapse; font-size: 12px; }
-      th, td {
-        text-align: left;
-        padding: 8px 10px;
-        border-bottom: 1px solid var(--border);
-        vertical-align: top;
-      }
-      th { color: var(--muted); font-weight: 500; white-space: nowrap; }
-      .badge {
-        display: inline-block;
-        padding: 2px 8px;
-        border-radius: 999px;
-        font-size: 11px;
-        white-space: nowrap;
-      }
-      .badge.ready { background: #e6f6ee; color: var(--ok); }
-      .badge.blocked { background: #fdeaea; color: var(--danger); }
-      .badge.review { background: #fff4d8; color: var(--warn); }
-      .badge.validate { background: #eef2ff; color: #4f5fa8; }
-      .badge.ignore { background: #f0f1f3; color: var(--muted); }
-      .badge.conflict { background: #fdf3e0; color: var(--warn); }
-      #log {
-        background: #0f172a;
-        color: #cbd5e1;
-        border-radius: 8px;
-        padding: 12px 14px;
-        font: 12px/1.5 Consolas, monospace;
-        min-height: 72px;
-        white-space: pre-wrap;
-        margin-bottom: 16px;
-      }
-      .hint { color: var(--muted); font-size: 12px; }
-      .phase-label {
-        flex: 0 0 auto;
-        font-size: 13px;
-        color: var(--text);
-      }
+      html, body { min-height: 100%; }
+      body { margin: 0; background: var(--canvas); color: var(--ink); font: 13px/1.5 var(--font-ui); text-wrap: pretty; }
+      button, input, select { font: inherit; }
+      button { color: inherit; }
+      button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid color-mix(in srgb, var(--blue) 30%, transparent); outline-offset: 2px; }
+      .app { min-height: 100vh; display: flex; flex-direction: column; }
+      .topbar { min-height: 66px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 18px; background: color-mix(in srgb, var(--panel-strong) 88%, transparent); border-bottom: 1px solid var(--line); backdrop-filter: blur(16px); }
+      .brand { display: flex; align-items: center; gap: 10px; min-width: 235px; }
+      .brand img { width: 34px; height: 34px; border-radius: 9px; background: #202735; object-fit: cover; }
+      .brand strong { display: block; font-size: 14px; letter-spacing: -.02em; }
+      .brand span { display: block; color: var(--ink-faint); font-size: 10px; margin-top: 1px; }
+      .top-context { flex: 1; color: var(--ink-soft); font-size: 11px; min-width: 0; }
+      .top-context strong { color: var(--ink); font-weight: 700; }
+      .top-actions { display: flex; align-items: center; gap: 8px; }
+      .api-state { display: flex; align-items: center; gap: 7px; color: var(--ink-soft); font-size: 10px; white-space: nowrap; }
+      .api-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); }
+      .api-dot.ok { background: var(--green); box-shadow: 0 0 0 4px color-mix(in srgb, var(--green) 15%, transparent); }
+      .icon-btn, .quiet-btn, .primary-btn, .danger-btn { border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel-strong); min-height: 32px; padding: 0 11px; cursor: pointer; transition: background 160ms ease, border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease; }
+      .icon-btn { width: 32px; padding: 0; display: grid; place-items: center; color: var(--ink-soft); }
+      .quiet-btn:hover, .icon-btn:hover { background: var(--panel-muted); border-color: var(--line-strong); }
+      .primary-btn { background: var(--blue); border-color: var(--blue); color: #fff; font-weight: 700; box-shadow: 0 5px 12px color-mix(in srgb, var(--blue) 20%, transparent); }
+      .primary-btn:hover { background: var(--blue-deep); border-color: var(--blue-deep); transform: translateY(-1px); }
+      .danger-btn { color: var(--red); background: color-mix(in srgb, var(--red-soft) 45%, var(--panel-strong)); }
+      button:disabled { cursor: not-allowed; opacity: .48; transform: none !important; box-shadow: none; }
+      .workspace-tabs { display: flex; align-items: center; gap: 2px; padding: 8px 18px 0; background: var(--panel); border-bottom: 1px solid var(--line); }
+      .workspace-tab { border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--ink-faint); padding: 10px 13px 11px; cursor: pointer; font-weight: 700; }
+      .workspace-tab:hover { color: var(--ink-soft); }
+      .workspace-tab.active { color: var(--ink); border-color: var(--blue); }
+      .count-pill { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; margin-left: 4px; padding: 0 5px; border-radius: 99px; background: var(--panel-muted); color: var(--ink-faint); font: 10px var(--font-mono); }
+      .workspace-tab.active .count-pill { color: var(--blue); background: var(--blue-soft); }
+      .workspace-view { display: none; flex: 1; }
+      .workspace-view.active { display: block; animation: view-in 180ms ease-out both; }
+      @keyframes view-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+      .screen-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; padding: 22px 20px 15px; }
+      .eyebrow { color: var(--blue); font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+      h1, h2, h3, p { margin: 0; }
+      h1 { margin-top: 4px; font-size: 23px; line-height: 1.15; letter-spacing: -.045em; }
+      .screen-head p { margin-top: 6px; color: var(--ink-soft); max-width: 650px; font-size: 11px; }
+      .head-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
+      .import-shell { display: grid; gap: 1px; background: var(--line); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+      .import-main { background: var(--panel-strong); padding: 17px 20px 18px; }
+      .drop-card { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 14px 15px; border: 1px dashed color-mix(in srgb, var(--blue) 56%, var(--line)); border-radius: 11px; background: color-mix(in srgb, var(--blue-soft) 34%, var(--panel-strong)); }
+      .drop-copy { display: flex; align-items: center; gap: 10px; min-width: 0; }
+      .drop-mark { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; background: var(--blue-soft); color: var(--blue); font-size: 19px; }
+      .drop-copy strong { display: block; font-size: 12px; }
+      .drop-copy span { display: block; margin-top: 1px; color: var(--ink-soft); font-size: 10px; }
+      .drop-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
+      .folder-input { position: relative; overflow: hidden; display: inline-flex; align-items: center; min-height: 32px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel-strong); padding: 0 11px; cursor: pointer; color: var(--ink-soft); font-size: 11px; }
+      .folder-input input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+      .input-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; margin-top: 13px; }
+      .field-label { display: block; margin-bottom: 5px; color: var(--ink-faint); font-size: 10px; }
+      .text-input, .select-input { width: 100%; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--ink); padding: 8px 9px; }
+      .text-input:focus, .select-input:focus { border-color: color-mix(in srgb, var(--blue) 55%, var(--line)); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 11%, transparent); }
+      .hidden-control { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+      .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 15px; }
+      .metric { border: 1px solid var(--line); border-radius: 9px; background: var(--panel); padding: 9px 10px; }
+      .metric span { display: block; color: var(--ink-faint); font-size: 10px; }
+      .metric strong { display: block; margin-top: 3px; font-size: 20px; letter-spacing: -.04em; }
+      .section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 18px 0 10px; }
+      .section-head h2 { font-size: 13px; }
+      .section-head span { color: var(--ink-faint); font-size: 10px; }
+      .package-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+      .package-card { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 9px; min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 8px; cursor: pointer; transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease; }
+      .package-card:hover { transform: translateY(-1px); border-color: var(--line-strong); box-shadow: var(--shadow-soft); }
+      .package-card.selected { border-color: color-mix(in srgb, var(--blue) 64%, var(--line)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 12%, transparent); }
+      .package-thumb { min-height: 70px; border-radius: 7px; position: relative; overflow: hidden; background: #d8d5cf; }
+      .package-thumb::before { content: ""; position: absolute; inset: 15px 10px; border: 1px solid rgba(31,37,35,.26); transform: rotate(11deg); }
+      .package-thumb::after { content: ""; position: absolute; left: -8px; right: -8px; bottom: 12px; height: 16px; background: rgba(255,255,255,.4); transform: rotate(-7deg); }
+      .thumb-blue { background: linear-gradient(145deg, #a9b8e9, #eef0ec 58%, #c3c8d9); }
+      .thumb-amber { background: linear-gradient(145deg, #d9b77d, #f0e6d1 56%, #b26f49); }
+      .thumb-green { background: linear-gradient(145deg, #9cc3af, #edf1e9 55%, #84a5a0); }
+      .thumb-ink { background: linear-gradient(145deg, #273334, #899da0 58%, #d9d5c7); }
+      .thumb-tag { position: absolute; left: 5px; top: 5px; z-index: 1; border-radius: 4px; padding: 1px 4px; background: rgba(255,255,255,.72); color: #27302e; font: 8px var(--font-mono); }
+      .card-copy { min-width: 0; display: flex; flex-direction: column; }
+      .card-title-row { display: flex; align-items: start; justify-content: space-between; gap: 6px; }
+      .card-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 750; }
+      .card-meta { margin-top: 3px; color: var(--ink-faint); font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .card-files { display: flex; gap: 4px; flex-wrap: wrap; margin-top: auto; padding-top: 9px; }
+      .file-pill { padding: 2px 4px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink-soft); font: 8px var(--font-mono); }
+      .status-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px; border-radius: 99px; font-size: 9px; white-space: nowrap; }
+      .status-badge::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+      .status-ready { color: var(--green); background: var(--green-soft); }
+      .status-review { color: var(--amber); background: var(--amber-soft); }
+      .status-blocked { color: var(--red); background: var(--red-soft); }
+      .status-muted { color: var(--ink-faint); background: var(--panel-muted); }
+      .details-drawer { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+      .details-drawer summary { cursor: pointer; color: var(--ink-soft); font-size: 11px; }
+      .file-detail-list { display: grid; gap: 5px; margin-top: 10px; max-height: 132px; overflow: auto; }
+      .file-detail-row { display: grid; grid-template-columns: minmax(0, 1.6fr) 100px 78px minmax(0, 1fr); gap: 8px; align-items: center; border-bottom: 1px solid var(--line); padding: 5px 0; color: var(--ink-soft); font-size: 10px; }
+      .file-detail-row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .formal-shell { display: grid; grid-template-columns: 190px minmax(0, 1fr) 300px; gap: 1px; min-height: 632px; background: var(--line); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+      .formal-side, .formal-content, .formal-inspector { background: var(--panel); min-width: 0; }
+      .formal-side { padding: 17px 13px; background: var(--panel-muted); }
+      .formal-content { padding: 17px 18px; background: var(--panel-strong); }
+      .formal-inspector { padding: 17px 15px; overflow: auto; }
+      .side-title, .inspector-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 750; }
+      .side-title small, .inspector-title small { color: var(--ink-faint); font-size: 9px; font-weight: 500; }
+      .side-label { margin: 17px 0 7px; color: var(--ink-faint); font-size: 9px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+      .filter-list { display: grid; gap: 3px; }
+      .filter-button { display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 0; border-radius: 7px; background: transparent; padding: 8px; color: var(--ink-soft); text-align: left; cursor: pointer; font-size: 11px; }
+      .filter-button:hover { background: var(--panel); color: var(--ink); }
+      .filter-button.active { background: var(--blue-soft); color: var(--blue); font-weight: 700; }
+      .filter-count { color: var(--ink-faint); font: 9px var(--font-mono); }
+      .filter-button.active .filter-count { color: var(--blue); }
+      .batch-select-wrap { margin-top: 7px; }
+      .batch-select-wrap select { min-height: 36px; }
+      .side-note { margin-top: 18px; padding: 9px; border: 1px dashed var(--line-strong); border-radius: 8px; color: var(--ink-soft); font-size: 10px; }
+      .formal-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+      .formal-toolbar h2 { font-size: 15px; letter-spacing: -.03em; }
+      .formal-toolbar p { margin-top: 3px; color: var(--ink-faint); font-size: 10px; }
+      .plan-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin-bottom: 14px; }
+      .plan-stat { border: 1px solid var(--line); border-radius: 8px; padding: 8px; background: var(--panel); }
+      .plan-stat span { display: block; color: var(--ink-faint); font-size: 9px; }
+      .plan-stat strong { display: block; margin-top: 2px; font-size: 18px; letter-spacing: -.04em; }
+      .plan-list { display: grid; gap: 7px; max-height: 448px; overflow: auto; padding-right: 2px; }
+      .plan-card { display: grid; grid-template-columns: 58px minmax(0, 1fr) auto; align-items: center; gap: 9px; border: 1px solid var(--line); border-radius: 9px; padding: 8px; background: var(--panel); cursor: pointer; }
+      .plan-card:hover { border-color: var(--line-strong); }
+      .plan-card.selected { border-color: color-mix(in srgb, var(--blue) 64%, var(--line)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 11%, transparent); }
+      .plan-thumb { width: 58px; height: 44px; border-radius: 6px; }
+      .plan-name { font-size: 11px; font-weight: 750; }
+      .plan-meta { margin-top: 2px; color: var(--ink-faint); font-size: 9px; }
+      .plan-file-names { margin-top: 4px; color: var(--ink-soft); font: 8px/1.35 var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .plan-reason { color: var(--amber); font-size: 9px; max-width: 132px; text-align: right; }
+      .inspector-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+      .inspector-heading h2 { font-size: 16px; letter-spacing: -.03em; }
+      .inspector-heading p { margin-top: 3px; color: var(--ink-faint); font-size: 10px; }
+      .inspector-preview { height: 150px; margin: 15px 0; border-radius: 10px; overflow: hidden; position: relative; }
+      .inspector-preview .package-thumb { height: 100%; border-radius: 0; }
+      .preview-caption { position: absolute; left: 9px; right: 9px; bottom: 8px; display: flex; justify-content: space-between; align-items: end; color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,.45); }
+      .preview-caption strong { display: block; font-size: 10px; }
+      .preview-caption span { display: block; margin-top: 1px; font: 8px var(--font-mono); opacity: .82; }
+      .preview-button { border: 1px solid rgba(255,255,255,.5); border-radius: 5px; padding: 5px 7px; background: rgba(20,23,22,.42); color: #fff; cursor: pointer; backdrop-filter: blur(6px); }
+      .inspector-section { border-top: 1px solid var(--line); padding: 12px 0; }
+      .inspector-section:first-of-type { border-top: 0; padding-top: 0; }
+      .inspector-section h3 { margin-bottom: 9px; color: var(--ink-faint); font-size: 9px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+      .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+      .detail-item span { display: block; color: var(--ink-faint); font-size: 9px; }
+      .detail-item strong { display: block; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+      .check-list { display: grid; gap: 7px; }
+      .check-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--ink-soft); font-size: 10px; }
+      .check-row strong { color: var(--ink); font-weight: 650; }
+      .check-ok { color: var(--green) !important; }
+      .check-warn { color: var(--amber) !important; }
+      .check-bad { color: var(--red) !important; }
+      .inspector-actions { display: flex; gap: 6px; }
+      .inspector-actions button { flex: 1; min-height: 30px; padding: 0 7px; font-size: 10px; }
+      .bottom-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 58px; padding: 11px 18px; background: var(--panel); }
+      .bottom-copy { color: var(--ink-soft); font-size: 10px; }
+      .bottom-copy strong { color: var(--ink); }
+      .bottom-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
+      .log-drawer { margin: 0 18px 14px; border-top: 1px solid var(--line); padding-top: 9px; }
+      .log-drawer summary { cursor: pointer; color: var(--ink-faint); font-size: 10px; }
+      #log { max-height: 104px; overflow: auto; margin-top: 8px; padding: 9px 10px; border-radius: 8px; background: #111918; color: #bdc9c3; white-space: pre-wrap; font: 9px/1.55 var(--font-mono); }
+
+      /* Naming modal */
+      .modal-backdrop { position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center; padding: 18px; background: rgba(20,23,22,.44); backdrop-filter: blur(4px); }
+      .modal-backdrop.open { display: flex; animation: fade-in 140ms ease-out both; }
+      @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+      .modal { width: min(1030px, 100%); max-height: calc(100vh - 36px); overflow: auto; border: 1px solid var(--line); border-radius: 15px; background: var(--panel-strong); box-shadow: var(--shadow); padding: 18px; }
+      .modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+      .modal-head h2 { font-size: 18px; letter-spacing: -.04em; }
+      .modal-sub { margin-top: 3px; color: var(--ink-soft); font-size: 10px; }
+      .rename-fields { display: grid; grid-template-columns: 1.2fr 1.2fr; gap: 8px; margin-top: 15px; }
+      .token-bank { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-top: 9px; }
+      .token-bank > span { color: var(--ink-faint); font-size: 9px; margin-right: 2px; }
+      .token-chip { border: 1px solid var(--line); border-radius: 99px; background: var(--panel); color: var(--ink-soft); padding: 4px 7px; cursor: pointer; font: 9px var(--font-mono); }
+      .token-chip:hover { border-color: color-mix(in srgb, var(--blue) 50%, var(--line)); color: var(--blue); background: var(--blue-soft); }
+      .rename-note { display: flex; gap: 7px; align-items: flex-start; margin-top: 10px; padding: 8px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-muted); color: var(--ink-soft); font-size: 9px; }
+      .rename-note strong { color: var(--ink); }
+      .rename-table { display: grid; grid-template-columns: 145px minmax(170px, .8fr) minmax(235px, 1.1fr) minmax(235px, 1.1fr) 82px; min-width: 890px; margin-top: 14px; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+      .rename-table > div { padding: 8px 9px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+      .rename-table > div:nth-child(5n) { border-right: 0; }
+      .rename-table > div:nth-last-child(-n + 5) { border-bottom: 0; }
+      .rename-head { background: var(--panel-muted); color: var(--ink-faint); font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+      .rename-cell { min-width: 0; background: var(--panel-strong); }
+      .rename-package { display: flex; align-items: center; gap: 7px; }
+      .rename-package .package-thumb { width: 28px; min-height: 28px; height: 28px; flex: none; }
+      .rename-package strong { display: block; font-size: 10px; }
+      .rename-package span { display: block; margin-top: 1px; color: var(--ink-faint); font-size: 8px; }
+      .old-name { color: var(--ink-soft); font: 8px/1.4 var(--font-mono); word-break: break-all; }
+      .rename-input { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--ink); padding: 6px 7px; font: 9px var(--font-mono); }
+      .rename-input.manual { border-color: color-mix(in srgb, var(--blue) 58%, var(--line)); background: color-mix(in srgb, var(--blue-soft) 34%, var(--panel)); }
+      .rename-input.invalid { border-color: var(--red); background: var(--red-soft); }
+      .rename-status { display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px; border-radius: 99px; font-size: 9px; white-space: nowrap; }
+      .rename-status.auto { color: var(--green); background: var(--green-soft); }
+      .rename-status.manual { color: var(--blue); background: var(--blue-soft); }
+      .rename-status.invalid { color: var(--red); background: var(--red-soft); }
+      .rename-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; color: var(--ink-faint); font-size: 9px; }
+      .rename-error { color: var(--red); }
+      .rename-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 16px; }
+      .rename-actions .button-row { display: flex; gap: 7px; }
+      .duplicate-options { display: grid; gap: 7px; margin-top: 15px; }
+      .duplicate-choice { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); padding: 11px; text-align: left; cursor: pointer; }
+      .duplicate-choice:hover { border-color: color-mix(in srgb, var(--blue) 56%, var(--line)); background: var(--blue-soft); }
+      .duplicate-choice strong { display: block; font-size: 11px; }
+      .duplicate-choice span { display: block; margin-top: 2px; color: var(--ink-soft); font-size: 9px; }
+      @media (max-width: 950px) { .formal-shell { grid-template-columns: 176px minmax(0, 1fr); } .formal-inspector { grid-column: 1 / -1; border-top: 1px solid var(--line); } .package-grid { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+      @media (max-width: 680px) { .topbar { flex-wrap: wrap; } .top-context { order: 3; flex-basis: 100%; } .screen-head { display: block; } .head-actions { justify-content: flex-start; margin-top: 13px; } .drop-card { display: block; } .drop-actions { justify-content: flex-start; margin-top: 10px; } .input-row { grid-template-columns: 1fr; } .metrics, .plan-stats { grid-template-columns: repeat(2, 1fr); } .package-grid { grid-template-columns: 1fr; } .formal-shell { grid-template-columns: 1fr; } .formal-side { border-bottom: 1px solid var(--line); } .bottom-bar, .rename-actions { align-items: stretch; flex-direction: column; } .bottom-actions, .rename-actions .button-row { width: 100%; } .bottom-actions button, .rename-actions .button-row button { flex: 1; } .rename-fields { grid-template-columns: 1fr; } }
+      @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
     </style>
   </head>
-  <body>
-    <header>
-      <h1>X.bot 包装素材入库助手 <span class="version">v1.2.0</span></h1>
-      <span class="hint" id="apiState">检测 Eagle 插件环境…</span>
-    </header>
+  <body data-theme="light">
+    <div class="app">
+      <header class="topbar">
+        <div class="brand"><img src="logo.png" alt="X.bot" /><div><strong>X.bot 包装素材入库助手</strong><span>批次审核工作台 · v1.3.0</span></div></div>
+        <div class="top-context"><strong id="contextTitle">正式入库</strong><br /><span id="contextSub">检查配对、补全元数据，再归位到正式目录</span></div>
+        <div class="top-actions"><div class="api-state"><span class="api-dot" id="apiDot"></span><span id="apiState">正在检测 Eagle API…</span></div><button class="icon-btn" type="button" data-action="toast" data-title="帮助" data-message="选择批次后，可在右侧查看预览和事实字段。">?</button><button class="icon-btn" type="button" data-action="toggle-theme" aria-label="切换主题">◐</button></div>
+      </header>
+      <nav class="workspace-tabs" aria-label="工作区">
+        <button class="workspace-tab" type="button" data-view="import">导入待入库</button>
+        <button class="workspace-tab active" type="button" data-view="formal">正式入库 <span class="count-pill" id="formalCount">0</span></button>
+        <button class="workspace-tab" type="button" data-view="history">批次记录</button>
+        <button class="workspace-tab" type="button" data-view="diagnostics">系统诊断</button>
+      </nav>
 
-    <div class="toolbar">
-      <strong class="phase-label">导入（可选）</strong>
-      <input type="file" id="folderPicker" webkitdirectory directory />
-      <input type="text" id="projectName" placeholder="项目名称（可修改）" />
-      <button id="scanBtn">扫描预检</button>
-      <label class="hint" for="importMode">重复批次</label>
-      <select id="importMode" aria-label="重复批次处理方式">
-        <option value="prompt">检测到重复时停下</option>
-        <option value="reuse">复用现有批次</option>
-        <option value="update">更新现有批次</option>
-        <option value="new">新建独立批次</option>
-      </select>
-      <button id="importBtn" class="primary" disabled>确认导入 Eagle</button>
-      <span class="hint" id="batchInfo"></span>
+      <section class="workspace-view" id="view-import">
+        <div class="screen-head"><div><div class="eyebrow">Import / 01</div><h1>把本地项目整理进待入库批次</h1><p>拖入一个项目包装文件夹，插件会自动读取 PNG、ZIP、manifest 和配对关系。素材先停留在待入库区，等待正式审核。</p></div><div class="head-actions"><button class="quiet-btn" type="button" data-action="toast" data-title="导入说明" data-message="导入只负责搬运到 00_待入库，不会直接进入正式目录。">查看说明</button></div></div>
+        <div class="import-shell"><div class="import-main">
+          <div class="drop-card"><div class="drop-copy"><div class="drop-mark">↥</div><div><strong>拖入项目包装文件夹</strong><span>支持收集器输出的 PNG、ZIP、manifest，以及 Eagle 已导入的项目目录</span></div></div><div class="drop-actions"><label class="folder-input">选择文件夹<input type="file" id="folderPicker" webkitdirectory directory /></label><button class="primary-btn" id="scanBtn" type="button" disabled>开始扫描</button></div></div>
+          <div class="input-row"><div><label class="field-label" for="projectName">项目名称</label><input class="text-input" id="projectName" type="text" placeholder="扫描后自动识别，可在这里修改" /></div><div><label class="field-label" for="importMode">重复批次</label><select class="select-input" id="importMode"><option value="prompt">检测到重复时停下</option><option value="reuse">复用现有批次</option><option value="update">更新现有批次</option><option value="new">新建独立批次</option></select></div></div>
+          <div class="metrics"><div class="metric"><span>将导入</span><strong id="statToImport">0</strong></div><div class="metric"><span>仅校验</span><strong id="statValidate">0</strong></div><div class="metric"><span>忽略</span><strong id="statIgnore">0</strong></div><div class="metric"><span>冲突</span><strong id="statConflict">0</strong></div></div>
+          <div class="section-head"><h2>包装预检</h2><span id="batchInfo">等待选择文件夹…</span></div><div class="package-grid" id="packageRows"><div class="empty-card" style="grid-column:1/-1;border:1px dashed var(--line-strong);border-radius:9px;padding:24px;text-align:center;color:var(--ink-faint);">选择一个项目包装文件夹后，这里会显示可识别的包装卡片。</div></div>
+          <details class="details-drawer"><summary>查看全部扫描文件</summary><div class="file-detail-list" id="fileRows"></div></details>
+        </div><div class="bottom-bar"><div class="bottom-copy">导入只写入 <strong>00_待入库</strong>，不会绕过正式审核。</div><div class="bottom-actions"><button class="quiet-btn" type="button" data-view="formal">去正式入库</button><button class="primary-btn" id="importBtn" type="button" disabled>确认导入 Eagle</button></div></div></div>
+        </div><details class="log-drawer"><summary>运行记录</summary><div id="log">等待选择文件夹…</div></details>
+      </section>
+
+      <section class="workspace-view active" id="view-formal">
+        <div class="screen-head"><div><div class="eyebrow">Formal ingest / 02</div><h1>批次审核工作台</h1><p>先看清每条素材，再确认它进入哪个正式目录。红色问题必须处理，绿色记录可以批量归位。</p></div><div class="head-actions"><button class="quiet-btn" id="reloadBatchBtn" type="button">刷新批次</button><button class="primary-btn" id="fileBtn" type="button" disabled>刷新预检</button></div></div>
+        <div class="formal-shell">
+          <aside class="formal-side"><div class="side-title">批次与筛选 <small id="batchCount">0 项</small></div><div class="side-label">当前批次</div><div class="batch-select-wrap"><select class="select-input" id="batchSelect" disabled><option>正在加载…</option></select></div><div class="side-label">查看</div><div class="filter-list" id="planFilters"><button class="filter-button active" type="button" data-plan-filter="all">全部记录 <span class="filter-count" id="filterAllCount">0</span></button><button class="filter-button" type="button" data-plan-filter="ready">可入库 <span class="filter-count" id="filterReadyCount">0</span></button><button class="filter-button" type="button" data-plan-filter="review">待补充 <span class="filter-count" id="filterReviewCount">0</span></button><button class="filter-button" type="button" data-plan-filter="blocked">阻止 <span class="filter-count" id="filterBlockedCount">0</span></button></div><div class="side-label">辅助</div><div class="filter-list"><button class="filter-button" type="button" data-action="show-rename">批量规范命名</button><button class="filter-button" type="button" data-action="toast" data-title="审查原则" data-message="文件名只用于人工识别，稳定关联以 package_id、batch_id 和 manifest 为准。">查看命名原则</button></div><div class="side-note">批次目录是正式入库的事实来源。素材可以来自插件导入，也可以来自 Eagle 自带文件夹导入。</div></aside>
+          <section class="formal-content"><div class="formal-toolbar"><div><h2>入库预检</h2><p id="fileInfo">请选择一个待入库批次</p></div><span class="status-badge status-muted" id="formalState">等待批次</span></div><div class="plan-stats"><div class="plan-stat"><span>可入库</span><strong id="statFileReady">0</strong></div><div class="plan-stat"><span>待补充/阻止</span><strong id="statFileBlocked">0</strong></div><div class="plan-stat"><span>已入库</span><strong id="statFileAlready">0</strong></div><div class="plan-stat"><span>批次剩余</span><strong id="statFileRemaining">0</strong></div></div><div class="plan-list" id="filePlanRows"><div class="empty-card" style="border:1px dashed var(--line-strong);border-radius:9px;padding:24px;text-align:center;color:var(--ink-faint);">选择待入库批次后，这里会显示正式入库计划。</div></div></section>
+          <aside class="formal-inspector" id="packageInspector"><div class="empty-card" style="border:1px dashed var(--line-strong);border-radius:9px;padding:24px;text-align:center;color:var(--ink-faint);">点击一条包装记录查看预览、配对关系和事实字段。</div></aside>
+        </div>
+        <div class="bottom-bar"><div class="bottom-copy" id="formalBottomCopy">当前没有可入库记录。</div><div class="bottom-actions"><button class="quiet-btn" id="renameBtn" type="button" disabled><span aria-hidden="true">Aa</span> 批量规范命名</button><button class="primary-btn" id="confirmFileBtn" type="button" hidden>确认入库</button></div></div>
+        <details class="log-drawer"><summary>运行记录</summary><div id="logFormal">等待加载待入库批次…</div></details>
+      </section>
+
+      <section class="workspace-view" id="view-history"><div class="screen-head"><div><div class="eyebrow">History / 03</div><h1>批次记录</h1><p>每一次导入、正式归位和 Bot 同步都保留在可追溯的批次摘要中。</p></div></div><div class="import-main" style="margin:0 20px 20px;border:1px solid var(--line);border-radius:12px;"><div class="package-grid"><div class="package-card"><div class="package-thumb thumb-green"></div><div class="card-copy"><div class="card-title-row"><span class="card-title">阿宝包装 · 最近批次</span><span class="status-badge status-ready">已完成</span></div><div class="card-meta">6 条记录 · bot 索引同步完成</div></div></div><div class="package-card"><div class="package-thumb thumb-blue"></div><div class="card-copy"><div class="card-title-row"><span class="card-title">变速箱包装 · 已归位</span><span class="status-badge status-ready">已完成</span></div><div class="card-meta">3 对素材 · 保留空批次目录</div></div></div></div></div></section>
+      <section class="workspace-view" id="view-diagnostics"><div class="screen-head"><div><div class="eyebrow">System / 04</div><h1>系统诊断</h1><p>在正式操作前确认 Eagle、目录和批量命名所需的基础环境。</p></div></div><div class="import-main" style="margin:0 20px 20px;border:1px solid var(--line);border-radius:12px;"><div class="check-list"><div class="check-row"><span>Eagle Plugin API</span><strong class="check-ok" id="diagApi">检测中</strong></div><div class="check-row"><span>当前活动库</span><strong>由 Eagle 提供</strong></div><div class="check-row"><span>正式目录结构</span><strong class="check-ok">按需创建</strong></div><div class="check-row"><span>命名校验</span><strong class="check-ok">已启用</strong></div><div class="check-row"><span>Bot 同步事件</span><strong class="check-warn">依赖运行根目录</strong></div></div></div></section>
     </div>
 
-    <div class="toolbar">
-      <strong class="phase-label">入库（独立）</strong>
-      <label class="hint" for="batchSelect">待入库批次</label>
-      <select id="batchSelect" disabled></select>
-      <button id="reloadBatchBtn">刷新批次</button>
-      <button id="fileBtn" class="primary" disabled>重新扫描待入库</button>
-      <button id="confirmFileBtn" class="primary" hidden>确认入库</button>
-      <span class="hint" id="fileInfo"></span>
-    </div>
+    <div class="modal-backdrop" id="duplicateModal" role="dialog" aria-modal="true" aria-labelledby="duplicateTitle"><div class="modal" style="max-width:520px;"><div class="modal-head"><div><h2 id="duplicateTitle">检测到重复批次</h2><p class="modal-sub" id="duplicateSub">请选择处理方式，系统不会静默生成重复素材。</p></div><button class="icon-btn" type="button" data-close-modal aria-label="关闭">×</button></div><div class="duplicate-options"><button class="duplicate-choice" type="button" data-duplicate-mode="reuse"><div><strong>复用现有批次</strong><span>不新增重复文件，沿用已有批次关系</span></div><span class="status-badge status-ready">安全</span></button><button class="duplicate-choice" type="button" data-duplicate-mode="update"><div><strong>更新现有批次</strong><span>补齐变化内容，保留原批次 ID</span></div><span class="status-badge status-review">更新</span></button><button class="duplicate-choice" type="button" data-duplicate-mode="new"><div><strong>新建独立批次</strong><span>保留为新版本，生成独立 batch_id</span></div><span class="status-badge status-muted">新建</span></button></div></div></div>
 
-    <main>
-      <div class="cards">
-        <div class="card"><span>将导入</span><b id="statToImport">0</b></div>
-        <div class="card"><span>仅校验</span><b id="statValidate">0</b></div>
-        <div class="card"><span>忽略</span><b id="statIgnore">0</b></div>
-        <div class="card"><span>冲突</span><b id="statConflict">0</b></div>
-      </div>
+    <div class="modal-backdrop" id="renameModal" role="dialog" aria-modal="true" aria-labelledby="renameTitle"><div class="modal"><div class="modal-head"><div><h2 id="renameTitle">批量规范命名</h2><p class="modal-sub">先用规则生成，再逐条修改。只改本批次素材名称，不改原工程、不改变稳定配对。</p></div><button class="icon-btn" type="button" data-close-modal aria-label="关闭">×</button></div><div class="rename-fields"><div><label class="field-label" for="previewTemplate">预览图命名模板</label><input class="text-input" id="previewTemplate" type="text" value="{项目}_{类型}_{包装}_{版本}" /></div><div><label class="field-label" for="sourceTemplate">源文件命名模板</label><input class="text-input" id="sourceTemplate" type="text" value="{项目}_{包装}_{版本}" /></div></div><div class="token-bank"><span>插入字段</span><button class="token-chip" type="button" data-token="{项目}">{项目}</button><button class="token-chip" type="button" data-token="{包装}">{包装}</button><button class="token-chip" type="button" data-token="{类型}">{类型}</button><button class="token-chip" type="button" data-token="{版本}">{版本}</button><button class="token-chip" type="button" data-token="{合成}">{合成}</button></div><div class="rename-note"><span aria-hidden="true">i</span><span><strong>默认规则与项目文档一致：</strong>预览图包含项目、类型、包装名称和版本；源文件包含项目、包装名称和版本。扩展名由文件类型保留。</span></div><div class="rename-table-wrap" style="overflow:auto;"><div class="rename-table" id="renameRows"></div></div><div class="rename-footer"><span id="renameSummary">等待生成名称</span><span class="rename-error" id="renameError"></span></div><div class="rename-actions"><button class="quiet-btn" type="button" data-action="reset-rename">恢复默认规则</button><div class="button-row"><button class="quiet-btn" type="button" data-action="validate-rename">校验名称</button><button class="quiet-btn" type="button" data-action="apply-rename">应用规则并预览</button><button class="primary-btn" type="button" data-action="confirm-rename">确认命名并继续</button></div></div></div></div>
 
-      <div class="section">
-        <h2>导入预检：本地项目 → 待入库批次</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>包装名称</th>
-              <th>类型</th>
-              <th>版本</th>
-              <th>AE 合成</th>
-              <th>预览</th>
-              <th>源文件</th>
-              <th>状态</th>
-              <th>提示</th>
-            </tr>
-          </thead>
-          <tbody id="packageRows"></tbody>
-        </table>
-      </div>
-
-      <div class="section">
-        <h2>文件预检（四状态）</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>相对路径</th>
-              <th>类别</th>
-              <th>状态</th>
-              <th>说明</th>
-            </tr>
-          </thead>
-          <tbody id="fileRows"></tbody>
-        </table>
-      </div>
-
-      <div class="cards">
-        <div class="card"><span>将入库</span><b id="statFileReady">0</b></div>
-        <div class="card"><span>待补充/阻止</span><b id="statFileBlocked">0</b></div>
-        <div class="card"><span>已入库</span><b id="statFileAlready">0</b></div>
-        <div class="card"><span>批次剩余</span><b id="statFileRemaining">0</b></div>
-      </div>
-
-      <div class="section">
-        <h2>入库预检：待入库批次 → 正式目录</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>包装</th>
-              <th>类型</th>
-              <th>版本</th>
-              <th>batch_id</th>
-              <th>预览</th>
-              <th>源文件</th>
-              <th>状态</th>
-              <th>说明</th>
-            </tr>
-          </thead>
-          <tbody id="filePlanRows"></tbody>
-        </table>
-      </div>
-
-      <div id="log">等待选择文件夹…</div>
-    </main>
-
+    <div id="toast" style="position:fixed;right:18px;bottom:18px;z-index:30;display:none;max-width:320px;padding:11px 13px;border:1px solid var(--line);border-radius:9px;background:var(--panel-strong);box-shadow:var(--shadow);"><strong id="toastTitle" style="display:block;font-size:11px;"></strong><span id="toastMessage" style="display:block;margin-top:2px;color:var(--ink-soft);font-size:10px;"></span></div>
     <script src="js/plugin.js"></script>
   </body>
 </html>

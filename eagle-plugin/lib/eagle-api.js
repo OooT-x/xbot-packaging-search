@@ -878,10 +878,61 @@ function canonicalSourceName(metadata) {
     .join("_");
 }
 
+const INVALID_ITEM_NAME_CHARACTERS = /[<>:"\/\\|?*\u0000-\u001F]/u;
+
+function stripKnownExtension(value, kind) {
+  const extension = kind === "preview" ? ".png" : ".zip";
+  const text = String(value || "").trim();
+  return text.toLowerCase().endsWith(extension)
+    ? text.slice(0, -extension.length)
+    : text;
+}
+
+function resolveFormalItemName(metadata, kind, options = {}) {
+  const fallback = kind === "preview"
+    ? canonicalPreviewName(metadata)
+    : canonicalSourceName(metadata);
+  const overrides = options.nameOverrides || {};
+  const override = overrides[metadata.packageId]?.[kind];
+  if (override === undefined || override === null || String(override).trim() === "") {
+    return fallback;
+  }
+
+  const name = stripKnownExtension(override, kind);
+  if (!name) throw new Error(`${kind === "preview" ? "预览图" : "源文件"}名称不能为空`);
+  if (INVALID_ITEM_NAME_CHARACTERS.test(name)) {
+    throw new Error(`名称“${override}”包含 Windows 不允许的文件名字符`);
+  }
+  if (/[. ]$/u.test(name)) {
+    throw new Error(`名称“${override}”不能以空格或句点结尾`);
+  }
+  return name;
+}
+
+function validateFormalItemNames(pairs, options = {}) {
+  const seen = new Map();
+  for (const pair of pairs || []) {
+    const metadata = pair.metadata || pair;
+    for (const kind of ["preview", "source"]) {
+      const name = resolveFormalItemName(metadata, kind, options);
+      const key = `${metadata.packageType || ""}\u0000${kind}\u0000${name.toLocaleLowerCase()}`;
+      const previous = seen.get(key);
+      if (previous && previous !== metadata.packageId) {
+        throw new Error(
+          `批量命名后出现重复名称“${name}”，请为 ${metadata.packageName || metadata.packageId} 修改名称`
+        );
+      }
+      seen.set(key, metadata.packageId);
+    }
+  }
+}
+
 async function fileBatch(adapter, batchFolderId, options = {}) {
   const inspection = await inspectBatch(adapter, batchFolderId, options);
   const { folderIds, plan } = inspection;
   const folderMeta = parseAnnotation(inspection.batchFolder?.description);
+
+  validateFormalItemNames(plan.readyPairs, options);
 
   const filed = [];
   const failed = [];
@@ -902,8 +953,8 @@ async function fileBatch(adapter, batchFolderId, options = {}) {
         previewItemId: previewItem.id,
         sourceItemId: sourceItem.id,
       });
-      previewItem.name = canonicalPreviewName(metadata);
-      sourceItem.name = canonicalSourceName(metadata);
+      previewItem.name = resolveFormalItemName(metadata, "preview", options);
+      sourceItem.name = resolveFormalItemName(metadata, "source", options);
       previewItem.annotation = annotation;
       sourceItem.annotation = annotation;
       previewItem.folders = [folderId(previewFolder)];
@@ -931,6 +982,8 @@ async function fileBatch(adapter, batchFolderId, options = {}) {
         dependencyStatus: metadata.dependencyStatus,
         previewItemId: previewItem.id,
         sourceItemId: sourceItem.id,
+        previewName: itemFileName(previewItem),
+        sourceName: itemFileName(sourceItem),
         previewPath: previewItem.filePath || previewItem.filepath || "",
         sourcePath: sourceItem.filePath || sourceItem.filepath || "",
         previewFolderId: folderId(previewFolder),
@@ -1068,4 +1121,8 @@ module.exports = {
   parseAnnotation,
   planFormalFile,
   replaceIngestTag,
+  canonicalPreviewName,
+  canonicalSourceName,
+  resolveFormalItemName,
+  validateFormalItemNames,
 };
