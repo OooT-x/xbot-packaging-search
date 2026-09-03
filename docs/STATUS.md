@@ -6,10 +6,10 @@
 
 | 项目 | 当前值 |
 | --- | --- |
-| 项目阶段 | M1 文字检索闭环已完成；M5 已完成外部收集、逐合成 ZIP、可调代表帧 PNG、真实 AE 主程序验收、Eagle 安全配对、插件→SQLite→bot 索引联调和 CI，剩余 Report 解析与真实现场验证 |
-| 核心文档版本 | v1.26 |
+| 项目阶段 | M1 文字检索闭环已完成；M5 已完成外部收集、逐合成 ZIP、可调代表帧 PNG、真实 AE 主程序验收、Eagle 安全配对、单机插件→SQLite→bot 索引联调和 CI；共享 NAS 架构已确定，剩余 Report 解析、中央索引服务与真实现场验证 |
+| 核心文档版本 | v1.27 |
 | 软件版本 | `0.0.0` 开发版，尚未发布标签 |
-| 当前分支 | `codex/aep-precomp-ci` |
+| 当前分支 | `codex/project-consolidation` |
 | 远程仓库 | GitHub：`OooT-x/xbot-packaging-search`（私有），`codex/feishu-bot-m1` 与 `codex/eagle-ingest-plugin` 均已推送 |
 | Eagle 库 | `E:\Eagle资源库\包装.library` |
 | 当前包装索引 | 4 个项目、19 组包装：乾崑奕境 5 组、支付宝阿宝 6 组、华为途灵 5 组、变速箱 3 组，配对错误 0 |
@@ -20,6 +20,7 @@
 ## 已完成
 
 - [x] 新增 GitHub Actions 持续集成：push、pull request 和手动触发时，在 `windows-latest` 上使用 Node.js 24 与 Python 3.14 安装收集器依赖，并自动执行 `npm test` 和 `npm run check`；当前本地验证为 96 项 JS + 23 项 Python 测试通过。
+- [x] 明确多终端共享 NAS 部署边界：Eagle 集成插件直接通过官方 Plugin API 写入共享 Library，中央索引服务单点写入数据库；本地 outbox 只用于幂等事件重试，终端不直接打开共享 SQLite。
 - [x] 飞书消息类型兼容：compact `post` 中的文字、`@` 和图片占位会规范化后进入现有 AI 对话、包装查询和候选确认链路；纯图片在私聊、有效 `@X.bot` 或群聊回复 X.bot 时回应，但不下载图片、不调用外部视觉模型、不伪装识图。新增富文本规范化、图片门控和富文本确认回归测试；85 项 JS + 18 项 Python 测试全部通过。
 - [x] 整理项目本地产物：删除 `aep-collector/` 下可重建的 `.build-venv`、`build`、`__pycache__` 及 `dist/AE-Preview-Bridge` 源码冗余副本，保留交付物 `dist/XbotAepCollector.exe` 与活跃的运行数据/日志；`aep-collector` 由约 130MB 精简至约 28MB，git 工作区干净（变更见 `CHANGELOG.md`）。
 - [x] AI 对话能力增强 + 活人感提升：系统提示精简重写（20+ 规则→12 核心原则）、回复风格变化追踪（`analyzeRecentStyle` 检测重复模式并注入变化提醒）、情绪感知扩展（烦躁/疲惫模式）、消息意图分类器、包装查询主动建议。81 项 JS + 18 项 Python 测试全部通过。
@@ -128,6 +129,8 @@
 - [x] 外部 AEP 收集器支持选中合成一键查看直属预合成，并将直属预合成逐个独立收集、生成 PNG/manifest/ZIP；每个子包继续递归收集自己的下层预合成和素材，不把上层包装合成混入导出结果。新增核心查询/导出接口、GUI 操作和 CLI 入口，20 项 Python 收集器测试通过。
 - [x] 修复视频框父级预览取帧：找到视频框合成在父级中的图层 `in_point`，默认渲染图层出现后的第 2 秒；若超出图层可见范围则取最后一个可见父级帧，并在 manifest 记录父级图层时间和实际取样偏移。新增 3 项 Python 回归测试。
 - [ ] 解析 AE Collect Files Report 的正文内容；当前第一版保留 Report 文件名，并直接从工程扫描字体、效果和缺失素材。
+- [ ] 实现多终端中央索引服务及插件入库事件 API；服务端数据库与现有单机 SQLite 的迁移边界尚未落地。
+- [ ] 完成共享 Eagle Library 的并发、断线恢复、重复事件、Eagle 重启和索引对账现场验收；在验收前不承诺正式多人写入。
 - [x] 重复导入三选项与批次记录模型：按 `batch_id`、稳定 `batch_key`、源路径或 manifest 标识检测重复；默认先停下，用户可选择复用、更新或新建独立批次，不静默生成重复素材。新增 `batches`/`batch_details` 迁移、6 项导入模式回归测试和 3 项数据库测试；当时验证为 93 项 JS + 18 项 Python 测试全部通过。
 - [x] 插件正式入库结果同步：插件把 `batch_id`、`package_id`、PNG/ZIP Eagle ID 和批次元数据追加到共享 JSONL 队列；bot 作为 SQLite 唯一写入方，按 `event_id` 幂等记录批次并强制刷新 Eagle 索引，失败事件可重试。离线链路覆盖重复消费、刷新失败重试和结果落库；真实 Eagle UI 与常驻 bot 的现场联调仍需单独执行。
 
@@ -165,5 +168,6 @@
 - 快速预览桥接需要用户在 AE 中打开同一个 AEP 并保持 `XbotPreviewBridge.jsx` 面板运行；它只加速交互选帧，不改变离线收集能力。未安装或未连接时继续使用原有后台渲染。
 - 字体、第三方效果和示例素材不会因打包而自动获得授权或兼容性，入库前需要展示依赖警告。
 - 核心文档存在版本库主版本和外部工作副本，修改后必须同步验证。
+- 多个 Eagle 客户端同时操作 NAS 共享 Library 的行为受 Eagle 版本、NAS 协议和网络状态影响；中央索引服务不可用时，素材可能已写入 Eagle 但暂时无法被 bot 检索，必须依靠 outbox 和幂等重试补齐。
 
 - 实测完整包装查询闭环（候选富文本、确认后 ZIP/云盘，含且不含语音）均稳定通过，`replyPost` 与 ZIP 发送链路正常；事件消费者非零退出已由监听器自动退避重试，其他未捕获异常仍交由任务计划重启；`bot/lib/packaging-service.js` 的 `startQueryFromResult` 保留 `packaging dbg:` 逐步日志，便于继续定位异常。
