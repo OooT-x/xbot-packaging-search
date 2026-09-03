@@ -1,0 +1,664 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>X.bot AEP 合成结构浏览器 · UI 预览</title>
+    <style>
+      :root {
+        --canvas: #ebe9e4;
+        --panel: #f8f7f3;
+        --panel-strong: #fffefa;
+        --panel-muted: #f1f0eb;
+        --ink: #1f2523;
+        --ink-soft: #515b56;
+        --ink-faint: #7d8580;
+        --line: #d9d8d0;
+        --line-strong: #c8c7bd;
+        --blue: #2854d9;
+        --blue-deep: #173aa6;
+        --blue-soft: #e3e9ff;
+        --green: #287457;
+        --green-soft: #dff1e7;
+        --amber: #aa6a1e;
+        --amber-soft: #f9ead0;
+        --red: #b84743;
+        --red-soft: #f9dfdd;
+        --purple: #6f56a5;
+        --purple-soft: #eee8fb;
+        --shadow: 0 18px 50px rgba(35, 39, 34, 0.10), 0 3px 10px rgba(35, 39, 34, 0.06);
+        --shadow-soft: 0 5px 18px rgba(35, 39, 34, 0.06);
+        --radius-lg: 16px;
+        --radius-md: 10px;
+        --radius-sm: 7px;
+        --font-ui: "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+        --font-mono: "Cascadia Code", Consolas, monospace;
+        --row-height: 43px;
+      }
+
+      [data-theme="dark"] {
+        --canvas: #171a19;
+        --panel: #202422;
+        --panel-strong: #272b28;
+        --panel-muted: #1b1f1d;
+        --ink: #f0f1ed;
+        --ink-soft: #c3c8c3;
+        --ink-faint: #8e9891;
+        --line: #363b37;
+        --line-strong: #4a514c;
+        --blue: #7694ff;
+        --blue-deep: #9badff;
+        --blue-soft: #29396f;
+        --green: #6ed0a4;
+        --green-soft: #203b2e;
+        --amber: #f1b660;
+        --amber-soft: #49351c;
+        --red: #ff8a83;
+        --red-soft: #4c2523;
+        --purple: #c1aaf5;
+        --purple-soft: #352d4c;
+        --shadow: 0 18px 48px rgba(0, 0, 0, .28), 0 2px 8px rgba(0, 0, 0, .18);
+        --shadow-soft: 0 4px 18px rgba(0, 0, 0, .20);
+      }
+
+      * { box-sizing: border-box; }
+      html, body { min-height: 100%; }
+      body {
+        margin: 0;
+        background: var(--canvas);
+        color: var(--ink);
+        font: 13px/1.5 var(--font-ui);
+        text-wrap: pretty;
+        transition: background 180ms ease, color 180ms ease;
+      }
+      button, input, select { font: inherit; }
+      button { color: inherit; }
+      button:focus-visible, input:focus-visible, select:focus-visible {
+        outline: 3px solid color-mix(in srgb, var(--blue) 30%, transparent);
+        outline-offset: 2px;
+      }
+      button:disabled { cursor: not-allowed; opacity: .48; }
+      .app { min-height: 100vh; display: flex; flex-direction: column; }
+
+      .topbar {
+        min-height: 68px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 12px 20px;
+        background: color-mix(in srgb, var(--panel-strong) 90%, transparent);
+        border-bottom: 1px solid var(--line);
+        backdrop-filter: blur(16px);
+      }
+      .brand { display: flex; align-items: center; gap: 10px; min-width: 248px; }
+      .brand img { width: 34px; height: 34px; border-radius: 9px; object-fit: cover; background: #202735; }
+      .brand strong { display: block; font-size: 14px; letter-spacing: -.025em; }
+      .brand span { display: block; margin-top: 1px; color: var(--ink-faint); font-size: 10px; }
+      .project-context { min-width: 0; flex: 1; display: flex; align-items: center; gap: 10px; }
+      .file-mark { width: 30px; height: 36px; display: grid; place-items: center; flex: none; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--panel-muted); color: var(--blue); font: 10px var(--font-mono); }
+      .project-context strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+      .project-context span { display: block; margin-top: 1px; color: var(--ink-faint); font-size: 10px; }
+      .top-actions { display: flex; align-items: center; gap: 7px; }
+      .parse-state { display: flex; align-items: center; gap: 7px; color: var(--green); font-size: 10px; white-space: nowrap; }
+      .parse-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px color-mix(in srgb, var(--green) 15%, transparent); }
+      .icon-btn, .quiet-btn, .primary-btn {
+        min-height: 32px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        background: var(--panel-strong);
+        padding: 0 11px;
+        cursor: pointer;
+        transition: background 160ms ease, border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+      }
+      .icon-btn { width: 32px; padding: 0; display: grid; place-items: center; color: var(--ink-soft); }
+      .quiet-btn:hover, .icon-btn:hover { background: var(--panel-muted); border-color: var(--line-strong); }
+      .primary-btn { border-color: var(--blue); background: var(--blue); color: #fff; font-weight: 700; box-shadow: 0 5px 12px color-mix(in srgb, var(--blue) 20%, transparent); }
+      .primary-btn:hover { border-color: var(--blue-deep); background: var(--blue-deep); transform: translateY(-1px); }
+      .primary-btn:active, .quiet-btn:active, .icon-btn:active { transform: translateY(1px); }
+
+      .workspace-tabs { display: flex; align-items: center; gap: 2px; padding: 8px 20px 0; background: var(--panel); border-bottom: 1px solid var(--line); }
+      .workspace-tab { border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--ink-faint); padding: 10px 13px 11px; cursor: pointer; font-weight: 700; }
+      .workspace-tab:hover { color: var(--ink-soft); }
+      .workspace-tab.active { border-color: var(--blue); color: var(--ink); }
+      .count-pill { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; margin-left: 4px; padding: 0 5px; border-radius: 99px; background: var(--panel-muted); color: var(--ink-faint); font: 10px var(--font-mono); }
+      .workspace-tab.active .count-pill { background: var(--blue-soft); color: var(--blue); }
+
+      .screen-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; padding: 23px 22px 15px; }
+      .eyebrow { color: var(--blue); font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+      h1, h2, h3, p { margin: 0; }
+      h1 { margin-top: 4px; font-size: 24px; line-height: 1.15; letter-spacing: -.05em; }
+      h2 { font-size: 13px; letter-spacing: -.015em; }
+      .screen-head p { max-width: 730px; margin-top: 6px; color: var(--ink-soft); font-size: 11px; }
+      .head-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
+      .head-actions .quiet-btn { display: inline-flex; align-items: center; gap: 7px; }
+      .kbd { min-width: 19px; padding: 1px 4px; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 4px; background: var(--panel-muted); color: var(--ink-faint); font: 9px var(--font-mono); text-align: center; }
+
+      .explorer-shell {
+        display: grid;
+        grid-template-columns: 218px minmax(470px, 1fr) 330px;
+        min-height: 650px;
+        margin: 0 20px 18px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        background: var(--panel-strong);
+        box-shadow: var(--shadow-soft);
+      }
+      .side-panel, .inspector { background: var(--panel); }
+      .side-panel { border-right: 1px solid var(--line); padding: 15px 12px; }
+      .inspector { border-left: 1px solid var(--line); padding: 15px; }
+      .panel-kicker { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 0 7px; color: var(--ink-faint); font-size: 9px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+      .panel-kicker small { color: var(--ink-faint); font: 9px var(--font-mono); letter-spacing: 0; }
+      .side-section { margin-top: 20px; }
+      .side-section:first-of-type { margin-top: 15px; }
+      .side-label { margin: 0 7px 6px; color: var(--ink-faint); font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+      .filter-list { display: grid; gap: 3px; }
+      .filter-btn { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--ink-soft); padding: 8px 8px; cursor: pointer; text-align: left; font-size: 11px; }
+      .filter-btn:hover { background: var(--panel-muted); color: var(--ink); }
+      .filter-btn.active { border-color: color-mix(in srgb, var(--blue) 24%, var(--line)); background: var(--blue-soft); color: var(--blue-deep); font-weight: 700; }
+      .filter-count { color: var(--ink-faint); font: 10px var(--font-mono); }
+      .filter-btn.active .filter-count { color: var(--blue); }
+      .legend { display: grid; gap: 7px; padding: 0 7px; }
+      .legend-row { display: flex; align-items: center; gap: 8px; color: var(--ink-soft); font-size: 10px; }
+      .legend-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+      .legend-dot.warn { background: var(--amber); }
+      .legend-dot.blocked { background: var(--red); }
+      .legend-dot.shared { background: var(--purple); }
+      .side-note { margin: 24px 7px 0; padding-top: 13px; border-top: 1px solid var(--line); color: var(--ink-faint); font-size: 10px; line-height: 1.55; }
+
+      .structure-panel { min-width: 0; display: flex; flex-direction: column; background: var(--panel-strong); }
+      .structure-toolbar { display: flex; align-items: center; gap: 8px; padding: 13px 15px; border-bottom: 1px solid var(--line); }
+      .search-wrap { position: relative; flex: 1; min-width: 160px; }
+      .search-wrap::before { content: "⌕"; position: absolute; left: 10px; top: 5px; color: var(--ink-faint); font-size: 17px; }
+      .search-input { width: 100%; min-height: 34px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--ink); padding: 0 11px 0 30px; }
+      .search-input:focus { outline: none; border-color: color-mix(in srgb, var(--blue) 55%, var(--line)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 11%, transparent); }
+      .view-toggle { display: flex; padding: 2px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); }
+      .view-toggle button { min-height: 28px; border: 0; border-radius: 5px; background: transparent; color: var(--ink-faint); padding: 0 8px; cursor: pointer; font-size: 10px; }
+      .view-toggle button.active { background: var(--panel-strong); color: var(--ink); box-shadow: var(--shadow-soft); font-weight: 700; }
+      .structure-summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 15px; background: var(--panel-muted); border-bottom: 1px solid var(--line); color: var(--ink-soft); font-size: 10px; }
+      .structure-summary strong { color: var(--ink); }
+      .structure-summary .summary-right { color: var(--ink-faint); font: 10px var(--font-mono); white-space: nowrap; }
+      .tree-scroll { min-height: 0; flex: 1; overflow: auto; padding: 9px 10px 26px; }
+      .tree-header { display: grid; grid-template-columns: minmax(0, 1fr) 100px 100px 96px; gap: 8px; padding: 2px 11px 7px 44px; border-bottom: 1px solid var(--line); color: var(--ink-faint); font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+      .tree-node { --depth: 0; position: relative; }
+      .tree-node.is-hidden { display: none; }
+      .tree-row { min-height: var(--row-height); display: grid; grid-template-columns: 25px 19px minmax(0, 1fr) 100px 100px 96px; gap: 0; align-items: center; padding: 0 10px 0 calc(10px + var(--depth) * 22px); border: 1px solid transparent; border-radius: 8px; cursor: pointer; transition: background 140ms ease, border-color 140ms ease; }
+      .tree-row:hover { background: var(--panel-muted); }
+      .tree-row.active { border-color: color-mix(in srgb, var(--blue) 34%, var(--line)); background: color-mix(in srgb, var(--blue-soft) 58%, var(--panel-strong)); }
+      .tree-row.checked { background: color-mix(in srgb, var(--blue-soft) 32%, var(--panel-strong)); }
+      .tree-row.reference { opacity: .83; }
+      .tree-row.reference .node-name { color: var(--purple); }
+      .tree-row .node-expander { width: 22px; height: 24px; display: grid; place-items: center; border: 0; background: transparent; color: var(--ink-faint); cursor: pointer; font-size: 14px; }
+      .tree-row .node-expander.empty { visibility: hidden; }
+      .tree-row .node-expander.open { transform: rotate(90deg); color: var(--ink-soft); }
+      .check-wrap { display: grid; place-items: center; }
+      .node-check { width: 15px; height: 15px; margin: 0; accent-color: var(--blue); cursor: pointer; }
+      .node-main { min-width: 0; display: flex; align-items: center; gap: 8px; }
+      .comp-icon { width: 22px; height: 22px; display: grid; place-items: center; flex: none; border: 1px solid color-mix(in srgb, var(--blue) 38%, var(--line)); border-radius: 5px; background: var(--blue-soft); color: var(--blue); font: 9px var(--font-mono); }
+      .comp-icon.root { background: var(--green-soft); border-color: color-mix(in srgb, var(--green) 30%, var(--line)); color: var(--green); }
+      .comp-icon.temp { background: var(--amber-soft); border-color: color-mix(in srgb, var(--amber) 34%, var(--line)); color: var(--amber); }
+      .node-copy { min-width: 0; }
+      .node-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 700; }
+      .node-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-faint); font-size: 9px; }
+      .node-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-soft); font: 10px var(--font-mono); }
+      .node-status { display: inline-flex; align-items: center; justify-self: start; gap: 4px; padding: 3px 6px; border-radius: 99px; background: var(--green-soft); color: var(--green); font-size: 9px; white-space: nowrap; }
+      .node-status.warn { background: var(--amber-soft); color: var(--amber); }
+      .node-status.blocked { background: var(--red-soft); color: var(--red); }
+      .node-status.shared { background: var(--purple-soft); color: var(--purple); }
+      .node-role { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-faint); font-size: 9px; }
+      .tree-empty { padding: 46px 22px; color: var(--ink-faint); text-align: center; }
+      .tree-empty strong { display: block; margin-bottom: 5px; color: var(--ink-soft); }
+      .tree-tip { display: flex; align-items: flex-start; gap: 8px; margin: 10px 5px 0; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-muted); color: var(--ink-soft); font-size: 10px; }
+      .tip-mark { width: 16px; height: 16px; display: grid; place-items: center; flex: none; border-radius: 50%; background: var(--blue-soft); color: var(--blue); font-size: 10px; }
+
+      .inspector-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 9px; }
+      .inspector-head h2 { font-size: 17px; letter-spacing: -.04em; }
+      .inspector-head p { margin-top: 3px; color: var(--ink-faint); font-size: 10px; }
+      .status-badge { display: inline-flex; align-items: center; gap: 4px; padding: 4px 7px; border-radius: 99px; background: var(--green-soft); color: var(--green); font-size: 9px; font-weight: 700; white-space: nowrap; }
+      .status-badge.warn { background: var(--amber-soft); color: var(--amber); }
+      .status-badge.blocked { background: var(--red-soft); color: var(--red); }
+      .preview-stage { position: relative; aspect-ratio: 16 / 9; overflow: hidden; margin-top: 15px; border: 1px solid var(--line-strong); border-radius: 10px; background: #d8d5cf; }
+      .preview-stage::before { content: ""; position: absolute; inset: 12% 8%; border: 1px solid rgba(31, 37, 35, .22); transform: rotate(-3deg); }
+      .preview-stage::after { content: ""; position: absolute; inset: 24% 23%; border: 1px solid rgba(31, 37, 35, .18); transform: rotate(8deg); }
+      .stage-grid { position: absolute; inset: 0; background-image: linear-gradient(rgba(255,255,255,.24) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.24) 1px, transparent 1px); background-size: 25% 25%; opacity: .6; }
+      .stage-glow { position: absolute; width: 66%; height: 50%; left: 18%; top: 25%; border-radius: 48% 32% 42% 28%; background: rgba(40, 116, 87, .18); filter: blur(18px); transform: rotate(-12deg); }
+      .stage-label { position: absolute; left: 11px; top: 10px; color: rgba(31,37,35,.66); font: 9px var(--font-mono); letter-spacing: .08em; }
+      .stage-frame { position: absolute; right: 11px; bottom: 9px; color: rgba(31,37,35,.67); font: 9px var(--font-mono); }
+      .preview-caption { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-top: 7px; color: var(--ink-faint); font-size: 9px; }
+      .preview-caption strong { display: block; color: var(--ink-soft); font-weight: 700; }
+      .preview-caption span { display: block; margin-top: 2px; }
+      .text-link { border: 0; background: transparent; color: var(--blue); padding: 0; cursor: pointer; font-size: 9px; }
+      .inspector-section { margin-top: 17px; padding-top: 13px; border-top: 1px solid var(--line); }
+      .inspector-section h3 { margin-bottom: 9px; color: var(--ink-faint); font-size: 9px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+      .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px 12px; }
+      .detail-item span { display: block; color: var(--ink-faint); font-size: 9px; }
+      .detail-item strong { display: block; overflow: hidden; margin-top: 2px; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+      .usage-list, .child-list { display: grid; gap: 6px; }
+      .usage-item, .child-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--ink-soft); font-size: 10px; }
+      .usage-item span:first-child, .child-item span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .usage-item span:last-child, .child-item span:last-child { color: var(--ink-faint); font: 9px var(--font-mono); white-space: nowrap; }
+      .warning-box { display: flex; align-items: flex-start; gap: 8px; padding: 9px; border-radius: 8px; background: var(--amber-soft); color: var(--amber); font-size: 10px; }
+      .warning-box strong { display: block; color: var(--ink); font-size: 10px; }
+      .warning-box span { display: block; margin-top: 2px; }
+      .inspector-actions { display: flex; gap: 7px; }
+      .inspector-actions button { flex: 1; min-height: 31px; padding: 0 7px; font-size: 10px; }
+
+      .selection-bar { position: sticky; bottom: 0; z-index: 3; display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--panel-strong) 94%, transparent); box-shadow: 0 -9px 25px rgba(35, 39, 34, .06); backdrop-filter: blur(16px); }
+      .selection-summary { min-width: 175px; }
+      .selection-summary strong { display: block; font-size: 11px; }
+      .selection-summary span { display: block; margin-top: 2px; color: var(--ink-faint); font-size: 10px; }
+      .selection-list { min-width: 0; flex: 1; display: flex; gap: 6px; overflow: auto; }
+      .selection-chip { display: inline-flex; align-items: center; gap: 6px; flex: none; min-height: 28px; border: 1px solid color-mix(in srgb, var(--blue) 30%, var(--line)); border-radius: 6px; background: var(--blue-soft); color: var(--blue-deep); padding: 0 8px; font-size: 10px; }
+      .selection-chip button { border: 0; background: transparent; color: currentColor; padding: 0; cursor: pointer; font-size: 14px; line-height: 1; opacity: .72; }
+      .selection-actions { display: flex; align-items: center; gap: 7px; flex: none; }
+      .selection-actions .quiet-btn, .selection-actions .primary-btn { font-size: 10px; }
+
+      .tweaks-trigger { position: fixed; right: 18px; bottom: 18px; z-index: 12; min-height: 30px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--ink); color: var(--panel-strong); padding: 0 10px; cursor: pointer; box-shadow: var(--shadow-soft); font: 10px var(--font-mono); }
+      .tweaks-panel { position: fixed; right: 18px; bottom: 57px; z-index: 11; width: 210px; display: none; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-strong); box-shadow: var(--shadow); }
+      .tweaks-panel.open { display: block; animation: pop-in 150ms ease-out both; }
+      @keyframes pop-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+      .tweaks-panel h3 { font-size: 12px; }
+      .tweak-field { display: grid; gap: 5px; margin-top: 12px; }
+      .tweak-field label { color: var(--ink-faint); font-size: 9px; }
+      .tweak-field select { width: 100%; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); padding: 6px 7px; font-size: 10px; }
+
+      .toast { position: fixed; right: 18px; top: 84px; z-index: 20; max-width: 310px; display: none; padding: 11px 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-strong); box-shadow: var(--shadow); }
+      .toast.open { display: block; animation: toast-in 180ms ease-out both; }
+      @keyframes toast-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+      .toast strong { display: block; font-size: 11px; }
+      .toast span { display: block; margin-top: 3px; color: var(--ink-soft); font-size: 10px; }
+
+      .project-list { display: none; min-height: 0; flex: 1; padding: 10px; overflow: auto; }
+      .project-list.active { display: block; }
+      .folder-card { margin-bottom: 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); overflow: hidden; }
+      .folder-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--panel-muted); font-size: 11px; font-weight: 700; }
+      .folder-icon { color: var(--amber); font: 12px var(--font-mono); }
+      .folder-head span:last-child { margin-left: auto; color: var(--ink-faint); font: 9px var(--font-mono); }
+      .folder-row { display: flex; align-items: center; gap: 9px; padding: 9px 12px; border-top: 1px solid var(--line); cursor: pointer; }
+      .folder-row:hover { background: var(--panel-muted); }
+      .folder-row .folder-meta { margin-left: auto; color: var(--ink-faint); font: 9px var(--font-mono); }
+
+      .compact { --row-height: 34px; }
+      .compact .tree-row { font-size: 10px; }
+      .compact .tree-tip { display: none; }
+      .focus-mode .inspector { display: none; }
+      .focus-mode .explorer-shell { grid-template-columns: 218px minmax(500px, 1fr); }
+
+      @media (max-width: 1100px) {
+        .explorer-shell { grid-template-columns: 190px minmax(430px, 1fr) 290px; margin-left: 12px; margin-right: 12px; }
+        .screen-head { padding-left: 14px; padding-right: 14px; }
+        .topbar { padding-left: 14px; padding-right: 14px; }
+        .workspace-tabs { padding-left: 14px; }
+        .tree-header { grid-template-columns: minmax(0, 1fr) 90px 90px 80px; }
+        .tree-row { grid-template-columns: 25px 19px minmax(0, 1fr) 90px 90px 80px; }
+      }
+      @media (max-width: 820px) {
+        .topbar { flex-wrap: wrap; }
+        .project-context { order: 3; flex-basis: 100%; }
+        .explorer-shell { grid-template-columns: 1fr; min-height: 0; }
+        .side-panel { border-right: 0; border-bottom: 1px solid var(--line); }
+        .side-section { margin-top: 12px; }
+        .filter-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .legend, .side-note { display: none; }
+        .inspector { border-left: 0; border-top: 1px solid var(--line); }
+        .selection-bar { align-items: stretch; flex-direction: column; gap: 9px; }
+        .selection-actions { justify-content: flex-end; }
+        .tree-scroll { min-height: 440px; }
+      }
+      @media (max-width: 600px) {
+        .screen-head { display: block; }
+        .head-actions { justify-content: flex-start; margin-top: 13px; }
+        .tree-header { display: none; }
+        .tree-row { grid-template-columns: 25px 19px minmax(0, 1fr) 74px; }
+        .tree-row > .node-meta:nth-of-type(1), .tree-row > .node-meta:nth-of-type(2) { display: none; }
+        .tree-row > .node-status { grid-column: 4; }
+        .structure-toolbar { flex-wrap: wrap; }
+        .search-wrap { flex-basis: 100%; }
+        .top-actions .parse-state { display: none; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+      }
+    </style>
+  </head>
+  <body data-theme="light">
+    <div class="app" id="app">
+      <header class="topbar">
+        <div class="brand">
+          <img src="../eagle-plugin/logo.png" alt="X.bot" />
+          <div><strong>X.bot AEP 收集器</strong><span>合成结构浏览器 · UI 预览 v0</span></div>
+        </div>
+        <div class="project-context">
+          <div class="file-mark">AEP</div>
+          <div><strong>阿宝包装.aep</strong><span>完整项目快照 · 42 个项目项 · 11 个合成 · 解析于刚刚</span></div>
+        </div>
+        <div class="top-actions">
+          <div class="parse-state"><span class="parse-dot"></span>结构已解析</div>
+          <button class="quiet-btn" type="button" data-action="open">打开其他 AEP</button>
+          <button class="icon-btn" type="button" data-action="toggle-theme" aria-label="切换主题">◐</button>
+        </div>
+      </header>
+
+      <nav class="workspace-tabs" aria-label="AEP 工作区">
+        <button class="workspace-tab active" type="button" data-tab="explorer">合成结构 <span class="count-pill">11</span></button>
+        <button class="workspace-tab" type="button" data-tab="queue">提取队列 <span class="count-pill" id="queueCount">3</span></button>
+        <button class="workspace-tab" type="button" data-tab="history">最近工程</button>
+      </nav>
+
+      <main>
+        <section class="screen-head">
+          <div>
+            <div class="eyebrow">Composition Explorer / 01</div>
+            <h1>先看懂工程，再决定提取什么</h1>
+            <p>按合成嵌套关系浏览复杂 AEP。复选框只代表独立交付对象，子合成会作为依赖被收集，不会被意外拆成多个 ZIP。</p>
+          </div>
+          <div class="head-actions">
+            <button class="quiet-btn" type="button" data-action="expand-all"><span class="kbd">⌘</span> 展开全部</button>
+            <button class="quiet-btn" type="button" data-action="collapse-all">收起全部</button>
+            <button class="primary-btn" type="button" data-action="focus-candidates">查看推荐交付</button>
+          </div>
+        </section>
+
+        <section class="explorer-shell" id="explorerShell">
+          <aside class="side-panel">
+            <div class="panel-kicker">浏览方式 <small>VIEW</small></div>
+            <div class="side-section">
+              <div class="filter-list" id="filters">
+                <button class="filter-btn active" type="button" data-filter="all">全部合成 <span class="filter-count">11</span></button>
+                <button class="filter-btn" type="button" data-filter="candidate">推荐交付 <span class="filter-count">5</span></button>
+                <button class="filter-btn" type="button" data-filter="root">顶层合成 <span class="filter-count">3</span></button>
+                <button class="filter-btn" type="button" data-filter="child">直属预合成 <span class="filter-count">6</span></button>
+                <button class="filter-btn" type="button" data-filter="warning">有警告 <span class="filter-count">3</span></button>
+              </div>
+            </div>
+            <div class="side-section">
+              <div class="side-label">状态图例</div>
+              <div class="legend">
+                <div class="legend-row"><span class="legend-dot"></span>可收集</div>
+                <div class="legend-row"><span class="legend-dot warn"></span>需要复核</div>
+                <div class="legend-row"><span class="legend-dot blocked"></span>阻止收集</div>
+                <div class="legend-row"><span class="legend-dot shared"></span>多处复用</div>
+              </div>
+            </div>
+            <div class="side-section">
+              <div class="side-label">键盘操作</div>
+              <div class="legend">
+                <div class="legend-row"><span class="kbd">Space</span>勾选当前合成</div>
+                <div class="legend-row"><span class="kbd">Enter</span>查看详情</div>
+                <div class="legend-row"><span class="kbd">← →</span>收起 / 展开</div>
+              </div>
+            </div>
+            <div class="side-note">合成可能被多个父级复用。这里的树是帮助浏览的虚拟结构，所有勾选状态仍按合成 ID 全局保持。</div>
+          </aside>
+
+          <section class="structure-panel">
+            <div class="structure-toolbar">
+              <div class="search-wrap"><input class="search-input" id="searchInput" type="search" placeholder="搜索合成名称、类型或尺寸…" aria-label="搜索合成" /></div>
+              <div class="view-toggle" role="group" aria-label="结构视图切换">
+                <button class="active" type="button" data-mode="structure">合成结构</button>
+                <button type="button" data-mode="project">工程目录</button>
+              </div>
+            </div>
+            <div class="structure-summary"><span>当前显示 <strong id="visibleCount">11</strong> 个合成 · 点击名称查看详情，勾选框加入提取队列</span><span class="summary-right" id="selectionCount">已选 0</span></div>
+
+            <div class="tree-scroll" id="treeScroll">
+              <div class="tree-header"><span>合成 / 嵌套关系</span><span>尺寸</span><span>时长</span><span>状态</span></div>
+              <div id="treeRoot"></div>
+              <div class="tree-tip"><span class="tip-mark">i</span><span>“包装”在多个位置出现时，紫色共享标记表示同一个合成，不是重复文件。选中任一位置都会同步。</span></div>
+            </div>
+
+            <div class="project-list" id="projectList"></div>
+          </section>
+
+          <aside class="inspector" id="inspector"></aside>
+        </section>
+      </main>
+
+      <div class="selection-bar">
+        <div class="selection-summary"><strong id="selectionTitle">还没有选择交付对象</strong><span id="selectionSubtitle">从左侧结构树勾选需要独立提取的合成</span></div>
+        <div class="selection-list" id="selectionList"></div>
+        <div class="selection-actions">
+          <button class="quiet-btn" type="button" data-action="clear-selection" id="clearSelection" disabled>清空选择</button>
+          <button class="primary-btn" type="button" data-action="collect" id="collectButton" disabled>开始收集 <span id="collectCount">0</span> 项</button>
+        </div>
+      </div>
+    </div>
+
+    <button class="tweaks-trigger" type="button" id="tweaksTrigger">Tweaks</button>
+    <div class="tweaks-panel" id="tweaksPanel">
+      <h3>预览调整</h3>
+      <div class="tweak-field"><label for="densitySelect">信息密度</label><select id="densitySelect"><option value="comfortable">舒适</option><option value="compact">紧凑</option></select></div>
+      <div class="tweak-field"><label for="focusSelect">工作区模式</label><select id="focusSelect"><option value="normal">三栏工作台</option><option value="focus">结构专注</option></select></div>
+      <div class="tweak-field"><label for="themeSelect">主题</label><select id="themeSelect"><option value="light">浅色</option><option value="dark">深色</option></select></div>
+    </div>
+
+    <div class="toast" id="toast"><strong id="toastTitle"></strong><span id="toastMessage"></span></div>
+
+    <script>
+      const comps = {
+        promo: { id: "promo", name: "主宣传片", role: "顶层合成", size: "1920×1080", duration: "45s", status: "ready", statusLabel: "可收集", kind: "root", candidate: false, parents: [], children: ["packaging", "shot01", "endcard"], summary: "项目主时间线 · 45 秒", usage: "1 个工程根节点", warning: "跨合成表达式 1 项需复核", warningDetail: "主宣传片引用了包装展示画面，收集时会保留为依赖。", previewLabel: "主宣传片画面", previewFrame: "第 1125 帧 · 45.000s" },
+        packaging: { id: "packaging", name: "包装", role: "包装展示合成", size: "1920×1080", duration: "20s", status: "ready", statusLabel: "可收集", kind: "root", candidate: true, parents: ["promo", "shot02"], children: ["video", "portrait", "info", "background"], summary: "包装展示画面 · 4 个直属预合成", usage: "被 2 个合成使用", warning: "字体 1 项 · 表达式 1 项", warningDetail: "字体授权和跨合成表达式不会被自动修复，请在 AE 中人工复核。", previewLabel: "包装展示画面", previewFrame: "第 50 帧 · 2.000s" },
+        video: { id: "video", name: "视频框", role: "直属预合成", size: "1920×1080", duration: "10s", status: "ready", statusLabel: "可收集", kind: "child", candidate: true, parents: ["packaging"], children: [], summary: "横屏视频框 · 建议使用包装展示画面取景", usage: "被 1 个合成使用", warning: "预览来源为上层合成", warningDetail: "收集对象仍然是视频框本身，代表帧默认来自包装展示画面。", previewLabel: "包装展示画面（父级）", previewFrame: "第 50 帧 · 2.000s" },
+        portrait: { id: "portrait", name: "竖屏框", role: "直属预合成", size: "1080×1920", duration: "10s", status: "warn", statusLabel: "需要复核", kind: "child", candidate: true, parents: ["packaging"], children: [], summary: "竖屏视频框 · 直属预合成", usage: "被 1 个合成使用", warning: "有父级取景建议", warningDetail: "检测到包装展示合成可作为代表帧来源，收集前建议先确认取景。", previewLabel: "包装展示画面（父级）", previewFrame: "第 50 帧 · 2.000s" },
+        info: { id: "info", name: "信息条", role: "直属预合成", size: "500×300", duration: "2.4s", status: "ready", statusLabel: "可收集", kind: "child", candidate: true, parents: ["packaging"], children: [], summary: "信息条 / 人名条 · 2.4 秒", usage: "被 1 个合成使用", warning: "字体 1 项警告", warningDetail: "收集结果会保留字体警告，不影响生成 ZIP。", previewLabel: "合成自身", previewFrame: "第 60 帧 · 2.400s" },
+        background: { id: "background", name: "背景", role: "直属预合成", size: "1920×1080", duration: "20s", status: "ready", statusLabel: "可收集", kind: "child", candidate: true, parents: ["packaging"], children: [], summary: "背景合成 · 20 秒", usage: "被 1 个合成使用", warning: "无阻止项", warningDetail: "素材路径完整，未发现阻止性问题。", previewLabel: "合成自身", previewFrame: "第 50 帧 · 2.000s" },
+        shot01: { id: "shot01", name: "镜头 01 · 产品出现", role: "项目镜头", size: "1920×1080", duration: "4s", status: "warn", statusLabel: "需要复核", kind: "root", candidate: false, parents: ["promo"], children: ["particle"], summary: "宣传片镜头 · 非独立包装候选", usage: "被 1 个合成使用", warning: "含业务视频素材", warningDetail: "此合成更像项目镜头，不建议作为独立包装交付。", previewLabel: "合成自身", previewFrame: "第 50 帧 · 2.000s" },
+        particle: { id: "particle", name: "粒子转场", role: "内部预合成", size: "1920×1080", duration: "4s", status: "ready", statusLabel: "可收集", kind: "child", candidate: false, parents: ["shot01"], children: [], summary: "镜头内部效果合成", usage: "被 1 个合成使用", warning: "无阻止项", warningDetail: "不建议单独提取。", previewLabel: "合成自身", previewFrame: "第 50 帧 · 2.000s" },
+        shot02: { id: "shot02", name: "镜头 02 · 包装展示", role: "项目镜头", size: "1920×1080", duration: "5s", status: "ready", statusLabel: "可收集", kind: "root", candidate: false, parents: [], children: ["packaging"], summary: "项目镜头 · 复用包装合成", usage: "未被其他合成使用", warning: "共享合成 1 项", warningDetail: "这里的包装是共享引用，与主宣传片中的包装为同一个合成。", previewLabel: "合成自身", previewFrame: "第 50 帧 · 2.000s" },
+        endcard: { id: "endcard", name: "片尾", role: "项目镜头", size: "1920×1080", duration: "3s", status: "ready", statusLabel: "可收集", kind: "child", candidate: false, parents: ["promo"], children: [], summary: "片尾合成", usage: "被 1 个合成使用", warning: "无阻止项", warningDetail: "不建议作为独立包装交付。", previewLabel: "合成自身", previewFrame: "第 50 帧 · 2.000s" },
+        temp: { id: "temp", name: "测试与临时", role: "临时合成", size: "1280×720", duration: "8s", status: "blocked", statusLabel: "阻止收集", kind: "root", candidate: false, parents: [], children: ["bracket", "test"], summary: "测试合成集合 · 含阻止项", usage: "未被其他合成使用", warning: "缺失素材 2 项", warningDetail: "该合成包含缺失素材，不适合作为交付对象。", previewLabel: "合成自身", previewFrame: "无法生成" },
+        bracket: { id: "bracket", name: "标注-方括号", role: "临时预合成", size: "500×300", duration: "2s", status: "blocked", statusLabel: "阻止收集", kind: "child", candidate: false, parents: ["temp"], children: [], summary: "测试标注 · 缺失素材", usage: "被 1 个合成使用", warning: "缺失素材 2 项", warningDetail: "请先在 AE 中补齐依赖素材。", previewLabel: "合成自身", previewFrame: "无法生成" },
+        test: { id: "test", name: "临时_测试", role: "临时预合成", size: "1280×720", duration: "8s", status: "warn", statusLabel: "需要复核", kind: "child", candidate: false, parents: ["temp"], children: [], summary: "测试用合成", usage: "被 1 个合成使用", warning: "第三方效果 1 项", warningDetail: "检测到疑似第三方效果，收集后需要人工验证。", previewLabel: "合成自身", previewFrame: "第 50 帧 · 2.000s" }
+      };
+
+      const structureRoots = ["promo", "shot02", "temp"];
+      const projectFolders = [
+        { name: "01_交付候选", ids: ["packaging", "video", "portrait", "info", "background"] },
+        { name: "02_项目镜头", ids: ["promo", "shot01", "shot02", "endcard"] },
+        { name: "99_测试与临时", ids: ["temp", "bracket", "test", "particle"] }
+      ];
+
+      const state = {
+        activeId: "packaging",
+        selected: new Set(),
+        expanded: new Set(["promo", "packaging", "temp"]),
+        filter: "all",
+        query: "",
+        mode: "structure"
+      };
+
+      const $ = (selector) => document.querySelector(selector);
+      const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
+
+      function statusClass(comp) {
+        return comp.status === "warn" ? "warn" : comp.status === "blocked" ? "blocked" : "";
+      }
+
+      function statusBadge(comp) {
+        return `<span class="status-badge ${statusClass(comp)}">${escapeHtml(comp.statusLabel)}</span>`;
+      }
+
+      function nodeIcon(comp) {
+        const extra = comp.kind === "root" ? "root" : comp.status === "blocked" ? "temp" : "";
+        return `<span class="comp-icon ${extra}">C</span>`;
+      }
+
+      function matchesFilter(comp) {
+        if (state.filter === "candidate" && !comp.candidate) return false;
+        if (state.filter === "root" && comp.kind !== "root") return false;
+        if (state.filter === "child" && comp.kind !== "child") return false;
+        if (state.filter === "warning" && comp.status === "ready") return false;
+        if (!state.query) return true;
+        const haystack = `${comp.name} ${comp.role} ${comp.size} ${comp.duration} ${comp.summary}`.toLowerCase();
+        return haystack.includes(state.query.toLowerCase());
+      }
+
+      function hasVisibleDescendant(id) {
+        const comp = comps[id];
+        return comp.children.some((childId) => matchesFilter(comps[childId]) || hasVisibleDescendant(childId));
+      }
+
+      function renderNode(id, depth = 0, reference = false, path = []) {
+        const comp = comps[id];
+        const visible = matchesFilter(comp) || hasVisibleDescendant(id);
+        if (!visible) return "";
+        const hasChildren = comp.children.length > 0;
+        const open = state.expanded.has(id);
+        const checked = state.selected.has(id);
+        const active = state.activeId === id;
+        const safePath = [...path, id].join("/");
+        const children = open ? comp.children.map((childId) => renderNode(childId, depth + 1, path.includes(childId) || childId === "packaging" && path.includes("shot02"), [...path, id])).join("") : "";
+        const rowClass = ["tree-row", active ? "active" : "", checked ? "checked" : "", reference ? "reference" : ""].filter(Boolean).join(" ");
+        const status = reference ? `<span class="node-status shared">共享引用</span>` : `<span class="node-status ${statusClass(comp)}">${escapeHtml(comp.statusLabel)}</span>`;
+        return `<div class="tree-node" data-id="${escapeHtml(id)}" data-path="${escapeHtml(safePath)}">
+          <div class="${rowClass}" style="--depth:${depth}" data-node-id="${escapeHtml(id)}" tabindex="0" role="treeitem" aria-selected="${active}">
+            <button class="node-expander ${hasChildren ? (open ? "open" : "") : "empty"}" type="button" data-action="toggle-node" data-id="${escapeHtml(id)}" aria-label="${open ? "收起" : "展开"}">›</button>
+            <span class="check-wrap"><input class="node-check" type="checkbox" data-action="toggle-check" data-id="${escapeHtml(id)}" ${checked ? "checked" : ""} aria-label="选择 ${escapeHtml(comp.name)}" /></span>
+            <span class="node-main">${nodeIcon(comp)}<span class="node-copy"><span class="node-name">${escapeHtml(comp.name)}${reference ? " · 同一合成" : ""}</span><span class="node-sub">${escapeHtml(comp.role)} · ${escapeHtml(comp.summary)}</span></span></span>
+            <span class="node-meta">${escapeHtml(comp.size)}</span>
+            <span class="node-meta">${escapeHtml(comp.duration)}</span>
+            ${status}
+          </div>
+          ${children}
+        </div>`;
+      }
+
+      function renderTree() {
+        if (state.mode !== "structure") return;
+        const html = structureRoots.map((id) => renderNode(id)).join("");
+        $("#treeRoot").innerHTML = html || `<div class="tree-empty"><strong>没有匹配的合成</strong><span>换一个名称、类型或尺寸关键词试试。</span></div>`;
+        const visible = Object.values(comps).filter(matchesFilter).length;
+        $("#visibleCount").textContent = String(visible);
+        $("#selectionCount").textContent = `已选 ${state.selected.size}`;
+      }
+
+      function renderProjectList() {
+        const html = projectFolders.map((folder) => {
+          const rows = folder.ids.filter((id) => matchesFilter(comps[id])).map((id) => {
+            const comp = comps[id];
+            return `<div class="folder-row" data-node-id="${escapeHtml(id)}"><input class="node-check" type="checkbox" data-action="toggle-check" data-id="${escapeHtml(id)}" ${state.selected.has(id) ? "checked" : ""} aria-label="选择 ${escapeHtml(comp.name)}" />${nodeIcon(comp)}<span class="node-name">${escapeHtml(comp.name)}</span><span class="folder-meta">${escapeHtml(comp.size)} · ${escapeHtml(comp.duration)}</span></div>`;
+          }).join("");
+          if (!rows) return "";
+          return `<div class="folder-card"><div class="folder-head"><span class="folder-icon">▰</span>${escapeHtml(folder.name)}<span>${folder.ids.filter((id) => matchesFilter(comps[id])).length} 项</span></div>${rows}</div>`;
+        }).join("");
+        $("#projectList").innerHTML = html || `<div class="tree-empty"><strong>没有匹配的项目项</strong><span>换一个搜索条件试试。</span></div>`;
+      }
+
+      function renderSelection() {
+        const selected = [...state.selected].map((id) => comps[id]).filter(Boolean);
+        $("#selectionTitle").textContent = selected.length ? `已选择 ${selected.length} 个交付对象` : "还没有选择交付对象";
+        $("#selectionSubtitle").textContent = selected.length ? "子合成会随父级递归收集，不会自动生成独立 ZIP" : "从左侧结构树勾选需要独立提取的合成";
+        $("#selectionList").innerHTML = selected.map((comp) => `<span class="selection-chip">${escapeHtml(comp.name)}<button type="button" data-action="remove-selection" data-id="${escapeHtml(comp.id)}" aria-label="移除 ${escapeHtml(comp.name)}">×</button></span>`).join("");
+        $("#clearSelection").disabled = selected.length === 0;
+        $("#collectButton").disabled = selected.length === 0;
+        $("#collectCount").textContent = String(selected.length);
+        $("#queueCount").textContent = String(Math.max(3, selected.length));
+      }
+
+      function renderInspector() {
+        const comp = comps[state.activeId] || comps.packaging;
+        const parents = comp.parents.length ? comp.parents.map((id) => `<div class="usage-item"><span>${escapeHtml(comps[id].name)}</span><span>父级使用</span></div>`).join("") : `<div class="usage-item"><span>未被其他合成使用</span><span>顶层</span></div>`;
+        const children = comp.children.length ? comp.children.map((id) => `<div class="child-item"><span>${escapeHtml(comps[id].name)}</span><span>${escapeHtml(comps[id].size)}</span></div>`).join("") : `<div class="child-item"><span>没有直属预合成</span><span>—</span></div>`;
+        const warning = comp.status === "ready" && comp.id === "background" ? `<div class="warning-box" style="background:var(--green-soft);color:var(--green)"><span>✓</span><div><strong>依赖完整</strong><span>${escapeHtml(comp.warningDetail)}</span></div></div>` : `<div class="warning-box"><span>!</span><div><strong>${escapeHtml(comp.warning)}</strong><span>${escapeHtml(comp.warningDetail)}</span></div></div>`;
+        $("#inspector").innerHTML = `<div class="inspector-head"><div><h2>${escapeHtml(comp.name)}</h2><p>${escapeHtml(comp.role)} · ${escapeHtml(comp.id)}</p></div>${statusBadge(comp)}</div>
+          <div class="preview-stage"><div class="stage-grid"></div><div class="stage-glow"></div><span class="stage-label">PREVIEW PLACEHOLDER · ${escapeHtml(comp.size)}</span><span class="stage-frame">${escapeHtml(comp.previewFrame)}</span></div>
+          <div class="preview-caption"><div><strong>代表帧预览</strong><span>来源：${escapeHtml(comp.previewLabel)}</span></div><button class="text-link" type="button" data-action="preview">预览 / 调整帧</button></div>
+          <div class="inspector-section"><h3>合成信息</h3><div class="detail-grid"><div class="detail-item"><span>尺寸</span><strong>${escapeHtml(comp.size)}</strong></div><div class="detail-item"><span>时长</span><strong>${escapeHtml(comp.duration)}</strong></div><div class="detail-item"><span>帧率</span><strong>25 fps</strong></div><div class="detail-item"><span>交付建议</span><strong>${comp.candidate ? "推荐单独提取" : "作为依赖保留"}</strong></div></div></div>
+          <div class="inspector-section"><h3>父级使用位置</h3><div class="usage-list">${parents}</div></div>
+          <div class="inspector-section"><h3>直属预合成 · ${comp.children.length} 个</h3><div class="child-list">${children}</div></div>
+          <div class="inspector-section">${warning}</div>
+          <div class="inspector-section"><div class="inspector-actions"><button class="quiet-btn" type="button" data-action="toggle-check" data-id="${escapeHtml(comp.id)}">${state.selected.has(comp.id) ? "移出队列" : "加入提取队列"}</button><button class="primary-btn" type="button" data-action="preview">预览当前合成</button></div></div>`;
+      }
+
+      function renderAll() {
+        renderTree();
+        renderProjectList();
+        renderSelection();
+        renderInspector();
+      }
+
+      function setMode(mode) {
+        state.mode = mode;
+        document.querySelectorAll("[data-mode]").forEach((button) => button.classList.toggle("active", button.dataset.mode === mode));
+        $("#treeScroll").style.display = mode === "structure" ? "block" : "none";
+        $("#projectList").classList.toggle("active", mode === "project");
+        renderAll();
+      }
+
+      function toggleSelection(id) {
+        if (state.selected.has(id)) state.selected.delete(id); else state.selected.add(id);
+        renderAll();
+      }
+
+      let toastTimer;
+      function showToast(title, message) {
+        $("#toastTitle").textContent = title;
+        $("#toastMessage").textContent = message;
+        $("#toast").classList.add("open");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => $("#toast").classList.remove("open"), 3200);
+      }
+
+      function setFilter(filter) {
+        state.filter = filter;
+        document.querySelectorAll("[data-filter]").forEach((button) => button.classList.toggle("active", button.dataset.filter === filter));
+        renderAll();
+      }
+
+      document.addEventListener("click", (event) => {
+        const actionTarget = event.target.closest("[data-action]");
+        const modeTarget = event.target.closest("[data-mode]");
+        const filterTarget = event.target.closest("[data-filter]");
+        const nodeTarget = event.target.closest("[data-node-id]");
+        const tabTarget = event.target.closest("[data-tab]");
+
+        if (modeTarget) { setMode(modeTarget.dataset.mode); return; }
+        if (filterTarget) { setFilter(filterTarget.dataset.filter); return; }
+        if (tabTarget) {
+          document.querySelectorAll("[data-tab]").forEach((button) => button.classList.toggle("active", button === tabTarget));
+          if (tabTarget.dataset.tab === "queue") showToast("提取队列", `${state.selected.size || 3} 个对象已准备好进入收集流程。`);
+          if (tabTarget.dataset.tab === "history") showToast("最近工程", "这里将保留最近打开的 AEP 和上次选择状态。");
+          return;
+        }
+        if (actionTarget) {
+          const action = actionTarget.dataset.action;
+          const id = actionTarget.dataset.id;
+          if (action === "toggle-node") { state.expanded.has(id) ? state.expanded.delete(id) : state.expanded.add(id); renderAll(); return; }
+          if (action === "toggle-check") { event.stopPropagation(); toggleSelection(id || state.activeId); return; }
+          if (action === "remove-selection") { state.selected.delete(id); renderAll(); return; }
+          if (action === "clear-selection") { state.selected.clear(); renderAll(); return; }
+          if (action === "expand-all") { Object.keys(comps).forEach((compId) => state.expanded.add(compId)); renderAll(); return; }
+          if (action === "collapse-all") { state.expanded.clear(); renderAll(); return; }
+          if (action === "focus-candidates") { setFilter("candidate"); showToast("推荐交付", "已筛出 5 个可能值得独立提取的合成。推荐仅作辅助，不会替你自动选择。"); return; }
+          if (action === "preview") { showToast("预览调整", `即将打开“${comps[state.activeId].name}”的代表帧调整窗口。`); return; }
+          if (action === "collect") { showToast("开始收集", `将分别收集 ${state.selected.size} 个合成，原 AEP 不会被修改。`); return; }
+          if (action === "open") { showToast("打开其他 AEP", "预览模式下模拟打开文件选择器。生产版将保留最近工程和输出目录。"); return; }
+          if (action === "toggle-theme") { const next = document.body.dataset.theme === "dark" ? "light" : "dark"; document.body.dataset.theme = next; $("#themeSelect").value = next; return; }
+        }
+        if (nodeTarget && !event.target.closest("button, input")) {
+          state.activeId = nodeTarget.dataset.nodeId;
+          renderInspector();
+          renderTree();
+        }
+      });
+
+      $("#searchInput").addEventListener("input", (event) => { state.query = event.target.value.trim(); renderAll(); });
+      $("#tweaksTrigger").addEventListener("click", () => $("#tweaksPanel").classList.toggle("open"));
+      $("#densitySelect").addEventListener("change", (event) => $("#app").classList.toggle("compact", event.target.value === "compact"));
+      $("#focusSelect").addEventListener("change", (event) => $("#app").classList.toggle("focus-mode", event.target.value === "focus"));
+      $("#themeSelect").addEventListener("change", (event) => { document.body.dataset.theme = event.target.value; });
+
+      document.addEventListener("keydown", (event) => {
+        const row = event.target.closest("[data-node-id]");
+        if (!row || event.target.matches("input, button")) return;
+        const id = row.dataset.nodeId;
+        if (event.key === "Enter") { state.activeId = id; renderInspector(); renderTree(); }
+        if (event.key === " ") { event.preventDefault(); toggleSelection(id); }
+        if (event.key === "ArrowRight" && comps[id].children.length) { state.expanded.add(id); renderAll(); }
+        if (event.key === "ArrowLeft") { state.expanded.delete(id); renderAll(); }
+      });
+
+      renderAll();
+    </script>
+  </body>
+</html>
