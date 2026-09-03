@@ -1,6 +1,6 @@
 # X.bot AEP 收集工具
 
-这是替代原 AE ScriptUI 面板方向的 Windows 外部收集工具原型。它参考 BHY Collect Pro 的离线工作方式，但不修改、不复制也不重新分发 BHY 的闭源 EXE；AEP 读取与写入使用 MIT 许可的公开项目 `py-aep`。
+这是替代原 AE ScriptUI 面板方向的 Windows AEP 收集工具。Eagle 插件通过无界面的 `XbotAepWorker.exe` 调用本目录的收集核心；带 Tkinter 界面的 `XbotAepCollector.exe` 仍作为兼容和离线验收入口保留。它参考 BHY Collect Pro 的离线工作方式，但不修改、不复制也不重新分发 BHY 的闭源 EXE；AEP 读取与写入使用 MIT 许可的公开项目 `py-aep`。
 
 ## 当前能力
 
@@ -32,6 +32,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\aep-collector\run.ps1
 
 首次运行会在 `aep-collector/.venv` 安装固定版本依赖。
 
+## Eagle 插件集成
+
+在 Eagle 中打开 `eagle-plugin` 后，从顶部进入“AEP 收集”。选择 AEP、读取结构并勾选合成，插件会调用本机 Worker 生成 PNG、ZIP 和 manifest，随后自动进入现有配对预检与正式入库流程。原始工程始终只读。
+
+构建脚本会把 Worker 同时放入 `aep-collector/dist/XbotAepWorker.exe` 和未纳入 Git 的 `eagle-plugin/workers/XbotAepWorker.exe`；分发插件时需保留后者。若使用便携目录，可设置 `XBOT_AEP_WORKER` 指向 Worker 的绝对路径。
+
 ## 命令行验证
 
 ```powershell
@@ -52,7 +58,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\aep-collector\run.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\aep-collector\build.ps1
 ```
 
-产物位于 `aep-collector/dist/XbotAepCollector.exe`。构建产物不提交 Git。
+产物位于 `aep-collector/dist/XbotAepCollector.exe` 和 `aep-collector/dist/XbotAepWorker.exe`。构建产物不提交 Git。
 
 构建目录还会生成 `dist/AE-Preview-Bridge/`。快速桥接是可选组件，不影响离线查看与收集。
 

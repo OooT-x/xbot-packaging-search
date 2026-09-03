@@ -16,6 +16,8 @@ const FORMAL_PREVIEW_ROOT_NAME = "01_预览图";
 const FORMAL_SOURCE_ROOT_NAME = "02_AE源文件";
 const KNOWN_PACKAGE_TYPES = ["信息条", "视频框", "背景", "分镜排版"];
 const IMPORT_MODES = ["prompt", "reuse", "update", "new"];
+const PROJECT_TAG_GROUP_NAME = "项目";
+const PROJECT_TAG_GROUP_COLOR = "yellow";
 
 function folderId(folder) {
   if (!folder) return null;
@@ -632,6 +634,18 @@ async function ensureFolder(adapter, name, parentId) {
   });
 }
 
+async function ensureProjectTagGroups(adapter, projectNames) {
+  if (typeof adapter.ensureProjectTagGroup !== "function") return;
+  const names = [...new Set(
+    (projectNames || [])
+      .map((name) => String(name || "").trim())
+      .filter(Boolean)
+  )];
+  for (const name of names) {
+    await adapter.ensureProjectTagGroup(name);
+  }
+}
+
 async function importBatch(adapter, scanResult, options = {}) {
   const ready = scanResult.packages.filter((pkg) => pkg.state === "ready");
   if (ready.length === 0) {
@@ -666,6 +680,11 @@ async function importBatch(adapter, scanResult, options = {}) {
       updated: [],
     };
   }
+
+  await ensureProjectTagGroups(
+    adapter,
+    ready.map((pkg) => pkg.projectName || scanResult.projectName)
+  );
 
   const matched = duplicateMatches[0] || null;
   let actualMode = matched && ["reuse", "update"].includes(mode) ? mode : "new";
@@ -933,6 +952,10 @@ async function fileBatch(adapter, batchFolderId, options = {}) {
   const folderMeta = parseAnnotation(inspection.batchFolder?.description);
 
   validateFormalItemNames(plan.readyPairs, options);
+  await ensureProjectTagGroups(
+    adapter,
+    plan.readyPairs.map((pair) => (pair.metadata || pair).projectName)
+  );
 
   const filed = [];
   const failed = [];
@@ -1019,6 +1042,260 @@ async function fileBatch(adapter, batchFolderId, options = {}) {
   };
 }
 
+async function getFormalLibraryItems(adapter) {
+  const folders = await adapter.getFolders();
+  const formalRoots = folders.filter((folder) =>
+    [FORMAL_PREVIEW_ROOT_NAME, FORMAL_SOURCE_ROOT_NAME].includes(folder.name)
+  );
+  const formalFolderIds = [
+    ...new Set(
+      formalRoots.flatMap((root) => collectDescendantFolderIds(folders, folderId(root)))
+    ),
+  ];
+  if (!formalFolderIds.length || typeof adapter.getItemsByFolder !== "function") {
+    return { folders, formalFolderIds, items: [] };
+  }
+
+  const itemResults = await Promise.all(
+    formalFolderIds.map((id) =>
+      adapter.getItemsByFolder(id, { folderIds: formalFolderIds })
+    )
+  );
+  const items = uniqueItems(itemResults.flatMap((result) => result || []));
+  const formalFolderIdSet = new Set(formalFolderIds);
+  return {
+    folders,
+    formalFolderIds,
+    items: (items || []).filter((item) =>
+      itemFolderIds(item).some((id) => formalFolderIdSet.has(id))
+    ),
+  };
+}
+
+function directFormalDuplicateSummary(duplicates) {
+  const batches = [
+    ...new Map(
+      duplicates.map(({ existing }) => {
+        const metadata = existing?.meta || {};
+        const batchId = metadata.batch_id || "formal-library";
+        return [batchId, {
+          batchFolderId: "",
+          batchId,
+          projectName: metadata.project_name || "",
+          matchedBy: ["package_id"],
+        }];
+      })
+    ).values(),
+  ];
+  return batches;
+}
+
+async function writeFormalPair(adapter, metadata, existing = null, options = {}) {
+  const previewRoot = await ensureFolder(adapter, FORMAL_PREVIEW_ROOT_NAME, null);
+  const sourceRoot = await ensureFolder(adapter, FORMAL_SOURCE_ROOT_NAME, null);
+  const previewFolder = await ensureFolder(
+    adapter,
+    metadata.packageType,
+    folderId(previewRoot)
+  );
+  const sourceFolder = await ensureFolder(
+    adapter,
+    metadata.packageType,
+    folderId(sourceRoot)
+  );
+
+  let previewItem = existing?.preview
+    ? await adapter.getItem(existing.preview.id)
+    : null;
+  let sourceItem = existing?.source
+    ? await adapter.getItem(existing.source.id)
+    : null;
+
+  if (!previewItem) {
+    const previewId = await adapter.addFromPath(metadata.previewPath, {
+      name: resolveFormalItemName(metadata, "preview", options),
+      tags: mergeFormalTags([], metadata, FORMAL_PREVIEW_ROOT_NAME),
+      folders: [folderId(previewFolder)],
+      annotation: buildAnnotation(metadata),
+    });
+    previewItem = await adapter.getItem(previewId);
+  }
+  if (!sourceItem) {
+    const sourceId = await adapter.addFromPath(metadata.sourcePath, {
+      name: resolveFormalItemName(metadata, "source", options),
+      tags: mergeFormalTags([], metadata, FORMAL_SOURCE_ROOT_NAME),
+      folders: [folderId(sourceFolder)],
+      annotation: buildAnnotation(metadata),
+    });
+    sourceItem = await adapter.getItem(sourceId);
+  }
+  if (!previewItem || !sourceItem) {
+    throw new Error("素材写入 Eagle 后无法读取记录");
+  }
+
+  const annotation = buildAnnotation(metadata, {
+    previewItemId: previewItem.id,
+    sourceItemId: sourceItem.id,
+  });
+  previewItem.name = resolveFormalItemName(metadata, "preview", options);
+  sourceItem.name = resolveFormalItemName(metadata, "source", options);
+  previewItem.annotation = annotation;
+  sourceItem.annotation = annotation;
+  previewItem.folders = [folderId(previewFolder)];
+  sourceItem.folders = [folderId(sourceFolder)];
+  previewItem.tags = mergeFormalTags(
+    previewItem.tags,
+    metadata,
+    FORMAL_PREVIEW_ROOT_NAME
+  );
+  sourceItem.tags = mergeFormalTags(
+    sourceItem.tags,
+    metadata,
+    FORMAL_SOURCE_ROOT_NAME
+  );
+  await adapter.saveItem(previewItem);
+  await adapter.saveItem(sourceItem);
+
+  return {
+    packageId: metadata.packageId,
+    projectName: metadata.projectName,
+    packageName: metadata.packageName,
+    packageType: metadata.packageType,
+    version: metadata.version,
+    aeCompName: metadata.aeCompName,
+    batchId: metadata.batchId,
+    dependencyStatus: metadata.dependencyStatus,
+    previewItemId: previewItem.id,
+    sourceItemId: sourceItem.id,
+    previewName: itemFileName(previewItem),
+    sourceName: itemFileName(sourceItem),
+    previewPath: previewItem.filePath || previewItem.filepath || metadata.previewPath,
+    sourcePath: sourceItem.filePath || sourceItem.filepath || metadata.sourcePath,
+    previewFolderId: folderId(previewFolder),
+    sourceFolderId: folderId(sourceFolder),
+  };
+}
+
+async function importFormalBatch(adapter, scanResult, options = {}) {
+  const readyPackages = (scanResult?.packages || []).filter(
+    (pkg) => pkg.state === "ready"
+  );
+  if (!readyPackages.length) throw new Error("没有可直接入库的完整 PNG / ZIP 配对");
+
+  const projectName = String(scanResult.projectName || "").trim();
+  if (!projectName) throw new Error("项目名称不能为空");
+  const missingTypes = readyPackages.filter(
+    (pkg) => !KNOWN_PACKAGE_TYPES.includes(String(pkg.packageType || ""))
+  );
+  if (missingTypes.length) {
+    throw new Error(
+      `请先补充包装类型：${missingTypes
+        .map((pkg) => pkg.packageName || pkg.packageId)
+        .join("、")}`
+    );
+  }
+
+  const mode = options.mode || "prompt";
+  if (!IMPORT_MODES.includes(mode)) throw new Error(`不支持的导入模式：${mode}`);
+  const identity = batchIdentity(scanResult);
+  const formalLibrary = await getFormalLibraryItems(adapter);
+  const existingPackages = packageDetailFromItems(formalLibrary.items);
+  const duplicates = readyPackages
+    .map((pkg) => ({
+      pkg,
+      existing: existingPackages.get(String(pkg.packageId)),
+    }))
+    .filter(({ existing }) => existing);
+
+  if (duplicates.length && mode === "prompt") {
+    return {
+      state: "duplicate",
+      duplicate: true,
+      mode,
+      batchId: identity.batchId,
+      batchFolderId: "",
+      rootFolderId: "",
+      imported: [],
+      reused: [],
+      updated: [],
+      filed: [],
+      failed: [],
+      blocked: [],
+      reviewPairs: [],
+      ignored: [],
+      alreadyFiled: [],
+      remaining: [],
+      batchEmpty: true,
+      matches: directFormalDuplicateSummary(duplicates),
+      choices: ["reuse", "update", "new"],
+    };
+  }
+
+  const actualMode = mode === "prompt" ? "new" : mode;
+  const firstExisting = duplicates[0]?.existing;
+  const existingBatchId = firstExisting?.meta?.batch_id;
+  const batchId =
+    actualMode === "new"
+      ? (duplicates.length ? createBatchId() : identity.batchId)
+      : existingBatchId || identity.batchId;
+  const metadataPairs = readyPackages.map((pkg) => ({
+    ...pkg,
+    projectName,
+    batchId,
+    previewPath: pkg.previewPath || pkg.preview?.path,
+    sourcePath: pkg.sourcePath || pkg.source?.path,
+  }));
+  validateFormalItemNames(metadataPairs, options);
+  await ensureProjectTagGroups(adapter, [projectName]);
+
+  const filed = [];
+  const reused = [];
+  for (const metadata of metadataPairs) {
+    const existing = actualMode === "new"
+      ? null
+      : existingPackages.get(String(metadata.packageId));
+    if (actualMode === "reuse" && existing?.preview && existing?.source) {
+      reused.push({
+        packageId: metadata.packageId,
+        projectName,
+        packageName: metadata.packageName,
+        packageType: metadata.packageType,
+        batchId: existing.meta?.batch_id || batchId,
+        previewItemId: existing.preview.id,
+        sourceItemId: existing.source.id,
+      });
+      continue;
+    }
+    filed.push(await writeFormalPair(adapter, metadata, existing, options));
+  }
+
+  return {
+    state: "filed",
+    duplicate: duplicates.length > 0,
+    mode: actualMode,
+    batchId,
+    batchFolderId: "",
+    rootFolderId: "",
+    projectName,
+    sourcePath: identity.sourcePath,
+    batchKey: identity.batchKey,
+    manifestKey: identity.manifestKey,
+    importMode: actualMode,
+    imported: filed,
+    reused,
+    updated: actualMode === "update" ? filed : [],
+    filed,
+    failed: [],
+    blocked: [],
+    reviewPairs: [],
+    ignored: [],
+    alreadyFiled: [],
+    remaining: [],
+    batchEmpty: true,
+    matches: directFormalDuplicateSummary(duplicates),
+  };
+}
+
 class EaglePluginAdapter {
   constructor(eagleGlobal) {
     this.eagle = eagleGlobal;
@@ -1040,6 +1317,43 @@ class EaglePluginAdapter {
 
   async saveFolder(folder) {
     return folder.save();
+  }
+
+  async ensureProjectTagGroup(projectName) {
+    const tag = String(projectName || "").trim();
+    if (!tag) return null;
+    const tagGroupApi = this.eagle.tagGroup;
+    if (!tagGroupApi || typeof tagGroupApi.get !== "function") {
+      throw new Error("Eagle 标签组 API 不可用，请升级 Eagle 后重试");
+    }
+    const groups = await tagGroupApi.get();
+    const group = (Array.isArray(groups) ? groups : []).find(
+      (entry) => String(entry?.name || "").trim() === PROJECT_TAG_GROUP_NAME
+    );
+    if (!group) {
+      if (typeof tagGroupApi.create !== "function") {
+        throw new Error("Eagle 不支持创建标签组，请升级 Eagle 后重试");
+      }
+      return tagGroupApi.create({
+        name: PROJECT_TAG_GROUP_NAME,
+        color: PROJECT_TAG_GROUP_COLOR,
+        tags: [tag],
+      });
+    }
+
+    const existingTags = Array.isArray(group.tags)
+      ? group.tags.map((entry) => String(entry || "").trim()).filter(Boolean)
+      : [];
+    if (existingTags.includes(tag)) return group;
+    if (typeof group.addTags === "function") {
+      return group.addTags({ tags: [tag] });
+    }
+    if (typeof group.save !== "function") {
+      throw new Error("Eagle 标签组不支持保存，请升级 Eagle 后重试");
+    }
+    group.tags = [...new Set([...existingTags, tag])];
+    await group.save();
+    return group;
   }
 
   async addFromPath(filePath, options) {
@@ -1098,6 +1412,8 @@ module.exports = {
   FORMAL_PREVIEW_ROOT_NAME,
   FORMAL_SOURCE_ROOT_NAME,
   INGEST_ROOT_NAME,
+  PROJECT_TAG_GROUP_COLOR,
+  PROJECT_TAG_GROUP_NAME,
   IMPORT_MODES,
   KNOWN_PACKAGE_TYPES,
   EaglePluginAdapter,
@@ -1106,10 +1422,12 @@ module.exports = {
   collectBatchItems,
   collectDescendantFolderIds,
   ensureFolder,
+  ensureProjectTagGroups,
   fileBatch,
   flattenFolderTree,
   folderId,
   findDuplicateBatches,
+  importFormalBatch,
   importBatch,
   inferProjectNameFromBatch,
   inspectBatch,

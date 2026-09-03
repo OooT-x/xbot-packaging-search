@@ -1,3 +1,4 @@
+import ast
 import importlib.util
 import json
 import os
@@ -374,6 +375,29 @@ class CompositionInfoTests(unittest.TestCase):
 
         self.assertEqual(recommendation.source_id, video_frame.id)
         self.assertIn("多个", recommendation.reason)
+
+
+class GuiLayoutTests(unittest.TestCase):
+    def test_tk_frame_constructor_padding_is_scalar(self):
+        gui_path = PACKAGE_ROOT / "xbot_aep_collector" / "gui.py"
+        tree = ast.parse(gui_path.read_text(encoding="utf-8"))
+        invalid = []
+        for node in ast.walk(tree):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "tk"
+                and node.func.attr == "Frame"
+            ):
+                continue
+            for keyword in node.keywords:
+                if keyword.arg in {"padx", "pady"} and not isinstance(
+                    keyword.value, ast.Constant
+                ):
+                    invalid.append((node.lineno, keyword.arg))
+
+        self.assertEqual(invalid, [])
 
 
 class PrecompositionCollectionTests(unittest.TestCase):

@@ -165,6 +165,23 @@ test("files a batch into preview and source folders with updated tags", async ()
   assert.ok(!source.tags.includes("00_待入库"));
 });
 
+test("synchronizes the formal filing project with its project tag group", async () => {
+  const adapter = new (class extends FakeAdapter {
+    constructor(items) {
+      super(items);
+      this.projectTags = [];
+    }
+
+    async ensureProjectTagGroup(projectName) {
+      this.projectTags.push(projectName);
+    }
+  })(makePair());
+
+  await fileBatch(adapter, "batch-1");
+
+  assert.deepEqual(adapter.projectTags, ["变速箱"]);
+});
+
 test("parses annotation facts and replaces the ingest tag", () => {
   const meta = parseAnnotation(
     "项目：变速箱\npackage_id：pkg-1\n包装类型：信息条\n版本：v02\nbatch_id：batch-X\n"

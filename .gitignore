@@ -13,6 +13,7 @@ __pycache__/
 *.py[cod]
 dist/
 build/
+eagle-plugin/workers/
 coverage/
 .cache/
 

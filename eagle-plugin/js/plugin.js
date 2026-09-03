@@ -1,11 +1,18 @@
 /* global eagle */
+const fs = require("fs");
 const path = require("path");
+const {
+  collectAep,
+  inspectAep,
+  previewAep,
+  resolveWorkerPath,
+} = require("../lib/aep-worker.js");
 const { scanDirectory } = require("../lib/scan.js");
 const {
   EaglePluginAdapter,
   fileBatch,
   folderId,
-  importBatch,
+  importFormalBatch,
   IMPORT_MODES,
   inspectBatch,
   parseAnnotation,
@@ -16,7 +23,8 @@ const {
 const { publishIngestEvent } = require("../lib/ingest-bridge.js");
 
 const state = {
-  activeView: "formal",
+  activeView: "import",
+  importStage: 1,
   sourceDir: null,
   scan: null,
   batchFolders: [],
@@ -27,12 +35,34 @@ const state = {
   selectedPair: null,
   planFilter: "all",
   pendingImport: null,
+  pendingPackageEdit: null,
+  editingPackageId: null,
+  editingPackageKind: null,
+  selectedPackageId: null,
+  scanFileBaseline: null,
+  scanPackageBaseline: null,
+  dragDepth: 0,
+  aep: {
+    aepPath: null,
+    project: null,
+    checkedIds: new Set(),
+    expandedIds: new Set(),
+    activeCompId: null,
+    filter: "all",
+    search: "",
+    previewFiles: {},
+    previewTimes: {},
+    previewBusy: false,
+    collecting: false,
+  },
 };
 
 const elements = {
   apiState: document.getElementById("apiState"),
   apiDot: document.getElementById("apiDot"),
   diagApi: document.getElementById("diagApi"),
+  dropZone: document.getElementById("dropZone"),
+  dropLabel: document.getElementById("dropLabel"),
   folderPicker: document.getElementById("folderPicker"),
   projectName: document.getElementById("projectName"),
   scanBtn: document.getElementById("scanBtn"),
@@ -67,9 +97,11 @@ const elements = {
   filterBlockedCount: document.getElementById("filterBlockedCount"),
   log: document.getElementById("log"),
   logFormal: document.getElementById("logFormal"),
-  contextTitle: document.getElementById("contextTitle"),
-  contextSub: document.getElementById("contextSub"),
   duplicateModal: document.getElementById("duplicateModal"),
+  assetModal: document.getElementById("assetModal"),
+  assetTitle: document.getElementById("assetTitle"),
+  assetSub: document.getElementById("assetSub"),
+  assetBody: document.getElementById("assetBody"),
   duplicateSub: document.getElementById("duplicateSub"),
   renameModal: document.getElementById("renameModal"),
   previewTemplate: document.getElementById("previewTemplate"),
@@ -80,6 +112,29 @@ const elements = {
   toast: document.getElementById("toast"),
   toastTitle: document.getElementById("toastTitle"),
   toastMessage: document.getElementById("toastMessage"),
+  aepPicker: document.getElementById("aepPicker"),
+  aepFileLabel: document.getElementById("aepFileLabel"),
+  aepOutput: document.getElementById("aepOutput"),
+  aepInspectBtn: document.getElementById("aepInspectBtn"),
+  aepDefaultOutputBtn: document.getElementById("aepDefaultOutputBtn"),
+  aepSearch: document.getElementById("aepSearch"),
+  aepFilters: document.getElementById("aepFilters"),
+  aepTree: document.getElementById("aepTree"),
+  aepTreeSummary: document.getElementById("aepTreeSummary"),
+  aepStatCompositions: document.getElementById("aepStatCompositions"),
+  aepStatCandidates: document.getElementById("aepStatCandidates"),
+  aepStatSelected: document.getElementById("aepStatSelected"),
+  aepStatWarnings: document.getElementById("aepStatWarnings"),
+  aepInspector: document.getElementById("aepInspector"),
+  aepWorkerState: document.getElementById("aepWorkerState"),
+  aepExpandBtn: document.getElementById("aepExpandBtn"),
+  aepCollapseBtn: document.getElementById("aepCollapseBtn"),
+  aepSelectVisibleBtn: document.getElementById("aepSelectVisibleBtn"),
+  aepSelectionSummary: document.getElementById("aepSelectionSummary"),
+  aepCollectionSummary: document.getElementById("aepCollectionSummary"),
+  aepClearBtn: document.getElementById("aepClearBtn"),
+  aepCollectBtn: document.getElementById("aepCollectBtn"),
+  aepLog: document.getElementById("aepLog"),
 };
 
 let toastTimer = null;
@@ -101,7 +156,9 @@ function fileUrl(filePath) {
 }
 
 function log(message) {
-  const target = state.activeView === "import" ? elements.log : elements.logFormal;
+  const target = state.activeView === "aep"
+    ? elements.aepLog
+    : state.activeView === "import" ? elements.log : elements.logFormal;
   if (!target) return;
   const time = new Date().toLocaleTimeString();
   target.textContent = `${target.textContent}\n[${time}] ${message}`.trim();
@@ -152,22 +209,290 @@ function packageTone(pkg) {
   return "thumb-ink";
 }
 
+function pairCardTone(pkg) {
+  return packageTone(pkg).replace("thumb-", "pair-tone-");
+}
+
+function scanFileAt(scan, filePath) {
+  if (!scan || !filePath) return null;
+  const target = path.resolve(filePath);
+  return (scan.files || []).find((file) => file.path && path.resolve(file.path) === target) || null;
+}
+
+function packagePath(pkg, kind) {
+  return kind === "preview" ? pkg.preview?.path || "" : pkg.source?.path || "";
+}
+
+function displayPackagePath(pkg, kind) {
+  const pending = state.pendingPackageEdit;
+  if (
+    pending &&
+    String(pending.packageId) === String(pkg.packageId) &&
+    pending.kind === kind
+  ) {
+    return pending.path || "";
+  }
+  return packagePath(pkg, kind);
+}
+
+function hasPendingPackageEdit(pkg) {
+  return Boolean(
+    state.pendingPackageEdit &&
+    String(state.pendingPackageEdit.packageId) === String(pkg.packageId)
+  );
+}
+
+function packageFileName(file) {
+  if (!file) return "未选择";
+  return file.relative || file.name || path.basename(file.path || "");
+}
+
+function assetLabel(kind) {
+  return kind === "preview" ? "预览图 PNG" : "打包文件 ZIP";
+}
+
+function fileStat(filePath) {
+  if (!filePath) return null;
+  try {
+    return fs.statSync(filePath);
+  } catch {
+    return null;
+  }
+}
+
+function formatBytes(value) {
+  const size = Number(value);
+  if (!Number.isFinite(size) || size < 0) return "无法读取";
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  if (size < 1024 * 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`;
+  return `${(size / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+function formatDate(value) {
+  if (!value) return "无法读取";
+  try {
+    return new Intl.DateTimeFormat("zh-CN", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function assetDetailRow(label, value, mono = false) {
+  return `<div class="asset-detail-row"><span>${escapeHtml(label)}</span><strong class="${mono ? "mono" : ""}" title="${escapeHtml(value || "")}">${escapeHtml(value || "-" )}</strong></div>`;
+}
+
+function relativeScanPath(filePath) {
+  if (!filePath) return "未记录";
+  if (!state.scan?.sourceDir) return filePath;
+  return path.relative(state.scan.sourceDir, filePath) || path.basename(filePath);
+}
+
+function openAssetModal(kind, packageId) {
+  const pkg = packageById(packageId);
+  if (!pkg || !state.scan || !elements.assetModal) return;
+  const assetPath = displayPackagePath(pkg, kind);
+  const file = scanFileAt(state.scan, assetPath) || pkg[kind];
+  const stat = fileStat(assetPath);
+  const label = assetLabel(kind);
+  const fileName = packageFileName(file);
+  const status = file?.status || pkg.state;
+  const details = [
+    assetDetailRow("文件名", fileName, true),
+    assetDetailRow("相对路径", file?.relative || relativeScanPath(assetPath), true),
+    assetDetailRow("文件大小", stat ? formatBytes(stat.size) : "无法读取"),
+    assetDetailRow("修改时间", stat ? formatDate(stat.mtime) : "无法读取"),
+    assetDetailRow("导入状态", statusLabel(status)),
+    assetDetailRow("package_id", pkg.packageId, true),
+    assetDetailRow("包装类型", pkg.packageType || "待补充"),
+    assetDetailRow("版本", pkg.version || "v01"),
+  ];
+  if (kind === "source") {
+    details.push(assetDetailRow("依赖状态", pkg.dependencyStatus === "warning" ? "依赖存在警告" : "依赖完整"));
+    details.push(assetDetailRow("manifest", relativeScanPath(pkg.manifestPath), true));
+  }
+  elements.assetTitle.textContent = kind === "preview" ? "预览图原图" : "打包文件信息";
+  elements.assetSub.textContent = `${pkg.projectName || "未命名项目"} · ${pkg.packageName || "未命名包装"} · ${label}`;
+  const assetVisual = kind === "preview"
+    ? assetPath
+      ? `<div class="asset-preview-stage"><img src="${escapeHtml(fileUrl(assetPath))}" alt="${escapeHtml(pkg.packageName || "包装预览")}" /></div>`
+      : `<div class="asset-preview-stage asset-empty-state"><span>尚未配对 PNG</span></div>`
+    : `<div class="asset-file-stage"><div class="zip-mark">ZIP</div><strong>ZIP 打包文件</strong><span>插件只读取文件信息，不会在这里解压或修改源包。</span></div>`;
+  elements.assetBody.innerHTML = `<div class="asset-content"><div>${assetVisual}<div class="asset-path" title="${escapeHtml(assetPath || "")}">${escapeHtml(assetPath || "尚未选择文件")}</div></div><div class="asset-info-panel"><div class="asset-info-heading"><span>文件与配对事实</span><strong>${escapeHtml(fileName)}</strong></div><div class="asset-detail-list">${details.join("")}</div></div></div>`;
+  openModal(elements.assetModal);
+}
+
+function packageCandidates(scan, kind, currentPath = "") {
+  const allowed = new Set(["candidate", "to-import", "conflict"]);
+  const fileKind = kind === "preview" ? "png" : "zip";
+  const candidates = (scan?.files || []).filter((file) => {
+    if (file.kind !== fileKind) return false;
+    if (file.path && currentPath && path.resolve(file.path) === path.resolve(currentPath)) return true;
+    return allowed.has(file.status);
+  });
+  return candidates.sort((left, right) => String(left.relative || left.name).localeCompare(String(right.relative || right.name), "zh-CN"));
+}
+
+function packageEditOptions(scan, kind, selectedPath) {
+  const emptyLabel = kind === "preview" ? "选择预览图 PNG" : "选择打包文件 ZIP";
+  const options = [`<option value="">${emptyLabel}</option>`];
+  packageCandidates(scan, kind, selectedPath).forEach((file) => {
+    const selected = file.path && selectedPath && path.resolve(file.path) === path.resolve(selectedPath) ? " selected" : "";
+    options.push(`<option value="${escapeHtml(file.path)}"${selected}>${escapeHtml(packageFileName(file))}</option>`);
+  });
+  return options.join("");
+}
+
+function beginScanState(scan) {
+  state.scanFileBaseline = new Map(
+    (scan.files || []).map((file) => [file.path, { ...file }])
+  );
+  state.scanPackageBaseline = new Map(
+    (scan.packages || []).map((pkg) => [String(pkg.packageId), {
+      preview: pkg.preview ? { ...pkg.preview } : null,
+      source: pkg.source ? { ...pkg.source } : null,
+      state: pkg.state,
+      errors: [...(pkg.errors || [])],
+      warnings: [...(pkg.warnings || [])],
+    }])
+  );
+  state.editingPackageId = null;
+  state.editingPackageKind = null;
+  state.pendingPackageEdit = null;
+  state.selectedPackageId = scan.packages?.[0]?.packageId || null;
+}
+
+function isHardBlockedPackage(pkg) {
+  const baseline = state.scanPackageBaseline?.get(String(pkg.packageId));
+  return Boolean(
+    baseline?.warnings?.some((warning) => /阻止入库/.test(warning)) ||
+    baseline?.errors?.some((error) => /manifest.*阻止入库/i.test(error))
+  );
+}
+
+function refreshScanDerivedState() {
+  if (!state.scan) return;
+  const owners = new Map();
+  const duplicatePaths = new Set();
+  for (const pkg of state.scan.packages || []) {
+    for (const kind of ["preview", "source"]) {
+      const currentPath = packagePath(pkg, kind);
+      if (!currentPath) continue;
+      const key = `${kind}:${path.resolve(currentPath)}`;
+      if (owners.has(key)) duplicatePaths.add(key);
+      owners.set(key, pkg.packageId);
+    }
+  }
+
+  for (const pkg of state.scan.packages || []) {
+    const baseline = state.scanPackageBaseline?.get(String(pkg.packageId));
+    if (baseline) {
+      pkg.manualMatch = ["preview", "source"].some((kind) => {
+        const current = packagePath(pkg, kind);
+        const original = packagePath(baseline, kind);
+        return Boolean(current || original) && path.resolve(current || "") !== path.resolve(original || "");
+      });
+    }
+    const pairErrors = [];
+    const previewPath = packagePath(pkg, "preview");
+    const sourcePath = packagePath(pkg, "source");
+    if (!previewPath) pairErrors.push("缺少配对 PNG");
+    if (!sourcePath) pairErrors.push("缺少配对 ZIP");
+    for (const kind of ["preview", "source"]) {
+      const currentPath = packagePath(pkg, kind);
+      if (currentPath && duplicatePaths.has(`${kind}:${path.resolve(currentPath)}`)) {
+        pairErrors.push(`${kind === "preview" ? "PNG" : "ZIP"} 被多个包装记录选择`);
+      }
+    }
+    if (isHardBlockedPackage(pkg)) pairErrors.push("manifest 标记为阻止入库");
+    pkg.matchError = pairErrors[0] || "";
+    pkg.state = pairErrors.length > 0 ? "blocked" : "ready";
+    pkg.errors = pairErrors;
+  }
+
+  for (const file of state.scan.files || []) {
+    const baseline = state.scanFileBaseline?.get(file.path);
+    if (baseline) Object.assign(file, baseline);
+  }
+  for (const pkg of state.scan.packages || []) {
+    for (const kind of ["preview", "source"]) {
+      const currentPath = packagePath(pkg, kind);
+      const file = scanFileAt(state.scan, currentPath);
+      if (!file) continue;
+      file.packageId = pkg.packageId;
+      file.status = pkg.state === "ready" ? "to-import" : "conflict";
+      file.note = pkg.state === "ready" ? "" : pkg.matchError || "需要处理配对关系";
+    }
+  }
+  state.scan.stats = {
+    toImport: (state.scan.files || []).filter((file) => file.status === "to-import").length,
+    validateOnly: (state.scan.files || []).filter((file) => file.status === "validate-only").length,
+    ignore: (state.scan.files || []).filter((file) => file.status === "ignore").length,
+    conflict: (state.scan.files || []).filter((file) => file.status === "conflict").length,
+  };
+}
+
+function pairStatusBadge(pkg) {
+  const stateBadge = badge(pkg.state);
+  if (hasPendingPackageEdit(pkg)) {
+    return `${stateBadge}<span class="match-badge match-pending">待应用</span>`;
+  }
+  if (pkg.state === "blocked") return stateBadge;
+  const label = pkg.manualMatch ? "已修改" : "自动匹配";
+  const className = pkg.manualMatch ? "match-badge match-manual" : "match-badge match-auto";
+  return `${stateBadge}<span class="${className}">${label}</span>`;
+}
+
 function packageCard(pkg) {
-  const preview = pkg.preview?.path || "";
-  const source = pkg.source?.path || "";
-  const previewImage = preview
-    ? `<img src="${escapeHtml(fileUrl(preview))}" alt="" onerror="this.style.display='none'" />`
+  const previewPath = displayPackagePath(pkg, "preview");
+  const sourcePath = displayPackagePath(pkg, "source");
+  const packageType = pkg.packageType || "待补充类型";
+  const previewFile = scanFileAt(state.scan, previewPath) || pkg.preview;
+  const sourceFile = scanFileAt(state.scan, sourcePath) || pkg.source;
+  const editing = String(state.editingPackageId || "") === String(pkg.packageId || "");
+  const editingKind = state.editingPackageKind || "preview";
+  const previewImage = previewPath
+    ? `<img src="${escapeHtml(fileUrl(previewPath))}" alt="${escapeHtml(pkg.packageName || "包装预览")}" onerror="this.style.display='none'" />`
+    : `<span class="empty-asset">等待 PNG</span>`;
+  const reason = hasPendingPackageEdit(pkg)
+    ? `已预览新的${state.pendingPackageEdit.kind === "preview" ? " PNG" : " ZIP"}，点击应用后生效`
+    : pkg.matchError || (pkg.manualMatch ? "用户已覆盖自动匹配" : "manifest / 文件名规则自动匹配");
+  const editPanel = editing
+    ? `<div class="pair-edit-panel" data-package-edit-panel="${escapeHtml(pkg.packageId || "")}">
+        <div class="pair-edit-copy"><strong>更换${editingKind === "preview" ? "预览图 PNG" : "打包文件 ZIP"}</strong><span>选择后卡片会立即预览新文件，点击应用后正式写入这组配对。</span></div>
+        <div class="pair-edit-fields"><label>${assetLabel(editingKind)}<select data-package-edit-field="${editingKind}">${packageEditOptions(state.scan, editingKind, editingKind === "preview" ? previewPath : sourcePath)}</select></label><div class="pair-edit-current"><span>另一侧保持当前文件</span><strong>${escapeHtml(packageFileName(editingKind === "preview" ? sourceFile : previewFile))}</strong></div></div>
+        <div class="pair-edit-actions"><button class="quiet-btn" type="button" data-package-edit-action="restore" data-package-edit-kind="${editingKind}">恢复自动匹配</button><button class="primary-btn" type="button" data-package-edit-action="apply" data-package-edit-kind="${editingKind}">应用${editingKind === "preview" ? " PNG" : " ZIP"}配对</button></div>
+      </div>`
     : "";
-  return `<article class="package-card" data-package-id="${escapeHtml(pkg.packageId || "")}" data-status="${escapeHtml(pkg.state || "")}">
-    <div class="package-thumb ${packageTone(pkg)}"><span class="thumb-tag">PNG</span>${previewImage}</div>
-    <div class="card-copy"><div class="card-title-row"><span class="card-title">${escapeHtml(pkg.packageName || "未命名包装")}</span>${badge(pkg.state)}</div>
-      <div class="card-meta">${escapeHtml(pkg.packageType || "待补充类型")} · ${escapeHtml(pkg.version || "v01")} · ${escapeHtml(pkg.aeCompName || "未记录合成")}</div>
-      <div class="card-files"><span class="file-pill">${preview ? "PNG ✓" : "PNG —"}</span><span class="file-pill">${source ? "ZIP ✓" : "ZIP —"}</span><span class="file-pill">${pkg.manifestPath ? "META ✓" : "META —"}</span></div>
-    </div></article>`;
+  const previewChangeLabel = editing && editingKind === "preview" ? "收起更换" : "更换 PNG";
+  const sourceChangeLabel = editing && editingKind === "source" ? "收起更换" : "更换 ZIP";
+  return `<article class="package-card pair-card ${pairCardTone(pkg)} ${state.selectedPackageId === pkg.packageId ? "selected" : ""}" data-package-id="${escapeHtml(pkg.packageId || "")}" data-status="${escapeHtml(pkg.state || "")}" data-package-card="true">
+    <div class="pair-visual">
+      <div class="pair-asset asset-card" title="点击预览图查看原图" data-asset-action="preview" data-package-id="${escapeHtml(pkg.packageId || "")}"><div class="pair-asset-head"><strong>预览图</strong><span>PNG</span></div><div class="package-thumb asset-preview-hit ${packageTone(pkg)}" role="button" tabindex="0" aria-label="查看${escapeHtml(pkg.packageName || "包装")}原图">${previewImage}</div><div class="pair-file-name" title="${escapeHtml(packageFileName(previewFile))}">${escapeHtml(packageFileName(previewFile))}</div><div class="asset-card-footer"><button class="asset-change-btn" type="button" data-package-edit-kind="preview">${previewChangeLabel}</button></div></div>
+      <div class="pair-connector" aria-hidden="true">↔</div>
+      <div class="pair-asset asset-card" title="点击打包文件查看 ZIP 信息" data-asset-action="source" data-package-id="${escapeHtml(pkg.packageId || "")}"><div class="pair-asset-head"><strong>打包文件</strong><span>ZIP</span></div><div class="source-asset ${sourcePath ? "" : "empty"}" role="button" tabindex="0" aria-label="查看${escapeHtml(pkg.packageName || "包装")}打包文件信息"><div class="zip-mark">ZIP</div></div><div class="pair-file-name" title="${escapeHtml(packageFileName(sourceFile))}">${escapeHtml(packageFileName(sourceFile))}</div><div class="asset-card-footer"><button class="asset-change-btn" type="button" data-package-edit-kind="source">${sourceChangeLabel}</button></div></div>
+    </div>
+    <div class="pair-copy" title="${escapeHtml(reason)}"><div class="card-title-row"><input class="package-name-input ${pkg.nameEdited ? "edited" : ""}" data-package-name="${escapeHtml(pkg.packageId || "")}" value="${escapeHtml(pkg.packageName || "")}" placeholder="包装名称" aria-label="${escapeHtml(pkg.packageName || "包装")} 名称" /> <div class="pair-badges">${pairStatusBadge(pkg)}</div></div>
+      <div class="card-meta">${escapeHtml(pkg.projectName || "未命名项目")} · ${escapeHtml(pkg.packageType || "待补充类型")} · ${escapeHtml(pkg.version || "v01")} · 合成 ${escapeHtml(pkg.aeCompName || "未记录合成")}</div>
+      <div class="card-files"><span class="file-pill">${previewPath ? "PNG ✓" : "PNG —"}</span><span class="file-pill">${sourcePath ? "ZIP ✓" : "ZIP —"}</span><span class="file-pill">${pkg.manifestPath ? "META ✓" : "META —"}</span><span class="file-pill mono">${escapeHtml(pkg.packageId || "待生成")}</span></div>
+      <div class="pair-targets"><div class="pair-target"><span>PNG 入库</span><strong>01_预览图 / ${escapeHtml(packageType)}</strong></div><div class="pair-target"><span>ZIP 入库</span><strong>02_AE源文件 / ${escapeHtml(packageType)}</strong></div></div>
+    </div>
+    <div class="pair-facts"><span>配对来源</span><strong>${hasPendingPackageEdit(pkg) ? "待应用" : pkg.manualMatch ? "用户选择" : "自动规则"}</strong><span>预览尺寸</span><strong>${escapeHtml(previewFile?.dimensions || pkg.preview?.dimensions || "PNG 文件")}</strong><span>导入状态</span><strong class="${pkg.state === "ready" ? "check-ok" : "check-bad"}">${escapeHtml(statusLabel(pkg.state))}</strong></div>
+    ${editPanel}
+  </article>`;
 }
 
 function render(scan) {
+  if (state.scan !== scan) beginScanState(scan);
   state.scan = scan;
+  state.importStage = 2;
+  refreshScanDerivedState();
   elements.statToImport.textContent = String(scan.stats?.toImport ?? 0);
   elements.statValidate.textContent = String(scan.stats?.validateOnly ?? 0);
   elements.statIgnore.textContent = String(scan.stats?.ignore ?? 0);
@@ -182,7 +507,46 @@ function render(scan) {
   const readyCount = packages.filter((pkg) => pkg.state === "ready").length;
   const blockedCount = packages.filter((pkg) => pkg.state === "blocked").length;
   elements.importBtn.disabled = readyCount === 0 || blockedCount > 0;
+  elements.importBtn.textContent = "直接入库 Eagle";
   log(`扫描完成：${scan.stats?.toImport || 0} 个文件将导入，${blockedCount} 条记录被阻止`);
+}
+
+function packageById(packageId) {
+  return (state.scan?.packages || []).find(
+    (pkg) => String(pkg.packageId) === String(packageId)
+  ) || null;
+}
+
+function restorePackageMatch(packageId, kind = "preview") {
+  const pkg = packageById(packageId);
+  const baseline = state.scanPackageBaseline?.get(String(packageId));
+  if (!pkg || !baseline) return;
+  pkg[kind] = baseline[kind] ? { ...baseline[kind] } : null;
+  state.editingPackageId = null;
+  state.editingPackageKind = null;
+  state.pendingPackageEdit = null;
+  refreshScanDerivedState();
+  render(state.scan);
+  showToast("已恢复自动匹配", `${pkg.packageName || "当前包装"} 的${assetLabel(kind)}已恢复扫描器结果。`);
+}
+
+function applyPackageMatch(packageId, panel, kind = "preview") {
+  const pkg = packageById(packageId);
+  if (!pkg || !panel) return;
+  const selectedPath = panel.querySelector(`[data-package-edit-field="${kind}"]`)?.value || "";
+  const selectedFile = scanFileAt(state.scan, selectedPath);
+  pkg[kind] = selectedFile ? { path: selectedFile.path, relative: selectedFile.relative } : null;
+  state.selectedPackageId = pkg.packageId;
+  state.editingPackageId = null;
+  state.editingPackageKind = null;
+  state.pendingPackageEdit = null;
+  refreshScanDerivedState();
+  render(state.scan);
+  if (pkg.state === "ready") {
+    showToast("配对已更新", `${pkg.packageName || "当前包装"} 已形成唯一 PNG + ZIP 配对。`);
+  } else {
+    showToast("配对仍需处理", pkg.matchError || "请继续选择缺少的一侧文件。", "error");
+  }
 }
 
 function createAdapter() {
@@ -223,14 +587,14 @@ async function refreshBatches() {
     if (!root) {
       elements.batchSelect.innerHTML = "<option>还没有 00_待入库</option>";
       elements.batchCount.textContent = "0 项";
-      elements.formalCount.textContent = "0";
+      if (elements.formalCount) elements.formalCount.textContent = "0";
       log("Eagle 中还没有 00_待入库 目录");
       return;
     }
     const rootChildrenIds = new Set((root.children || []).map(folderId).filter(Boolean));
     state.batchFolders = folders.filter((folder) => folderId(folder.parent) === folderId(root) || rootChildrenIds.has(folderId(folder))).sort((a, b) => String(a.name).localeCompare(String(b.name), "zh-CN"));
     elements.batchCount.textContent = `${state.batchFolders.length} 项`;
-    elements.formalCount.textContent = String(state.batchFolders.length);
+    if (elements.formalCount) elements.formalCount.textContent = String(state.batchFolders.length);
     if (state.batchFolders.length === 0) {
       elements.batchSelect.innerHTML = "<option>还没有批次文件夹</option>";
       log("00_待入库 下还没有批次文件夹");
@@ -339,25 +703,39 @@ async function runImport() {
     elements.importBtn.disabled = true;
     const mode = elements.importMode.value;
     if (!IMPORT_MODES.includes(mode)) throw new Error("请选择有效的重复批次处理方式");
-    log("正在调用 Eagle API 导入…");
-    const result = await importBatch(adapter, state.scan, { mode });
+    const projectName = elements.projectName.value.trim();
+    if (!projectName) throw new Error("请先填写项目名称");
+    if (state.pendingPackageEdit) throw new Error("请先点击对应卡片上的“应用”按钮，完成配对更换");
+    state.scan.projectName = projectName;
+    log("正在把配对文件直接写入 Eagle 正式目录…");
+    const result = await importFormalBatch(adapter, state.scan, { mode });
     if (result.state === "duplicate") {
       state.pendingImport = result;
       elements.importBtn.disabled = false;
       const matched = result.matches.map((match) => `${match.batchId || match.batchFolderId}（${match.matchedBy.join("、")}）`).join("；");
       elements.duplicateSub.textContent = `匹配依据：${matched || "已有同名批次"}`;
       openModal(elements.duplicateModal);
-      log("检测到重复批次，等待选择处理策略");
+      log("检测到已有正式素材，等待选择处理策略");
       return;
     }
-    log(`导入完成：批次 ${result.batchId}，${result.imported.length + result.reused.length + result.updated.length} 条记录`);
-    elements.batchInfo.textContent = `batch_id：${result.batchId}（已导入）`;
-    showToast("导入完成", `批次已写入 ${INGEST_ROOT_NAME}，可以切换到正式入库。`);
-    setView("formal");
+    const filedCount = result.filed?.length || 0;
+    const reusedCount = result.reused?.length || 0;
+    state.importStage = 3;
+    elements.batchInfo.textContent = `batch_id：${result.batchId}（已直接入库）`;
+    log(`直接入库完成：批次 ${result.batchId}，${filedCount} 对素材已写入正式目录${reusedCount ? `，${reusedCount} 对复用已有记录` : ""}`);
+    try {
+      const published = publishIngestEvent(result);
+      log(published.skipped ? "没有新的正式入库记录，无需同步 SQLite" : `已写入 bot 索引同步队列：${published.filePath}`);
+    } catch (error) {
+      log(`写入 bot 索引同步队列失败：${error.message}`);
+    }
+    elements.importBtn.textContent = "本批次已入库";
+    setView("import");
+    showToast("直接入库完成", `${filedCount} 对素材已写入 01_预览图 / 02_AE源文件。`);
   } catch (error) {
-    log(`导入失败：${error.message}`);
+    log(`直接入库失败：${error.message}`);
     elements.importBtn.disabled = false;
-    showToast("导入失败", error.message, "error");
+    showToast("直接入库失败", error.message, "error");
   }
 }
 
@@ -501,44 +879,544 @@ async function confirmFile() {
   }
 }
 
+function aepCompositions() {
+  return state.aep.project?.compositions || [];
+}
+
+function aepComposition(compId) {
+  return aepCompositions().find((item) => Number(item.id) === Number(compId)) || null;
+}
+
+function aepIsCandidate(comp) {
+  return /(包装|背景|视频框|竖屏框|横屏框|信息条|人名条|标注|分镜)/u.test(String(comp?.name || ""));
+}
+
+function aepHasWarning(comp) {
+  return (comp?.parent_ids || []).length > 1 || /(测试|临时|视频框|横屏框|竖屏框)/u.test(String(comp?.name || ""));
+}
+
+function aepStatus(comp, reference = false) {
+  if (reference) return { label: "共享引用", tone: "" };
+  if (/(测试|临时)/u.test(String(comp?.name || ""))) return { label: "阻止收集", tone: "blocked" };
+  if (aepIsCandidate(comp)) return { label: "可收集", tone: "candidate" };
+  if (aepHasWarning(comp)) return { label: "需要复核", tone: "" };
+  return { label: "可查看", tone: "" };
+}
+
+function aepMatches(comp) {
+  const filter = state.aep.filter;
+  if (filter === "candidate" && !aepIsCandidate(comp)) return false;
+  if (filter === "root" && (comp.parent_ids || []).length) return false;
+  if (filter === "child" && !(comp.parent_ids || []).length) return false;
+  if (filter === "warning" && !aepHasWarning(comp)) return false;
+  const query = state.aep.search.trim().toLocaleLowerCase();
+  if (!query) return true;
+  return `${comp.name} ${comp.role || ""} ${comp.width}x${comp.height} ${comp.duration}`.toLocaleLowerCase().includes(query);
+}
+
+function aepHasVisibleDescendant(compId, trail = new Set()) {
+  if (trail.has(Number(compId))) return false;
+  const nextTrail = new Set(trail).add(Number(compId));
+  const comp = aepComposition(compId);
+  return Boolean(comp && (comp.child_ids || []).some((childId) => {
+    const child = aepComposition(childId);
+    return child && (aepMatches(child) || aepHasVisibleDescendant(child.id, nextTrail));
+  }));
+}
+
+function aepPreviewRecommendation(comp) {
+  return state.aep.project?.preview_recommendations?.[String(comp.id)] || {
+    source_id: comp.id,
+    source_name: comp.name,
+    relation: "self",
+    reason: "等待 Worker 返回预览来源",
+    time_seconds: 2,
+    frame: 0,
+  };
+}
+
+function aepRenderFilters() {
+  const items = {
+    all: aepCompositions().length,
+    candidate: aepCompositions().filter(aepIsCandidate).length,
+    root: aepCompositions().filter((item) => !(item.parent_ids || []).length).length,
+    child: aepCompositions().filter((item) => (item.parent_ids || []).length).length,
+    warning: aepCompositions().filter(aepHasWarning).length,
+  };
+  document.querySelectorAll("[data-aep-filter]").forEach((button) => {
+    const key = button.dataset.aepFilter;
+    button.classList.toggle("active", key === state.aep.filter);
+    const count = button.querySelector("span");
+    if (count) count.textContent = String(items[key] || 0);
+    button.title = `${button.textContent.trim()}：${items[key] || 0} 个`;
+  });
+}
+
+function aepTreeBranch(comp, depth, trail, seen) {
+  if (!aepMatches(comp) && !aepHasVisibleDescendant(comp.id, trail)) return "";
+  const isReference = seen.has(comp.id) || trail.has(comp.id);
+  const nextTrail = new Set(trail).add(comp.id);
+  seen.add(comp.id);
+  const children = (comp.child_ids || [])
+    .map((childId) => aepComposition(childId))
+    .filter(Boolean)
+    .map((child) => aepTreeBranch(child, Math.min(depth + 1, 3), nextTrail, seen))
+    .join("");
+  const hasChildren = Boolean(children) || (comp.child_ids || []).length > 0;
+  const expanded = state.aep.expandedIds.has(comp.id) && !isReference;
+  const status = aepStatus(comp, isReference);
+  const selected = Number(state.aep.activeCompId) === Number(comp.id);
+  const checked = state.aep.checkedIds.has(comp.id);
+  const role = comp.role || ((comp.parent_ids || []).length ? "预合成" : "顶层合成");
+  return `<div class="aep-tree-row ${selected ? "selected" : ""} ${isReference ? "reference" : ""}" data-aep-id="${escapeHtml(comp.id)}" data-depth="${depth}">
+    <button class="aep-tree-expander" type="button" data-aep-expander="${escapeHtml(comp.id)}" aria-label="${expanded ? "收起" : "展开"}" ${hasChildren && !isReference ? "" : "disabled"}>${hasChildren && !isReference ? (expanded ? "⌄" : "›") : "·"}</button>
+    <input class="aep-tree-check" type="checkbox" data-aep-check="${escapeHtml(comp.id)}" ${checked ? "checked" : ""} ${isReference ? "disabled" : ""} aria-label="选择 ${escapeHtml(comp.name)}" />
+    <div class="aep-tree-name" data-aep-name="${escapeHtml(comp.id)}"><strong>${escapeHtml(comp.name)}</strong><small>${escapeHtml(isReference ? "共享引用" : role)}</small></div>
+    <span class="aep-tree-meta">${escapeHtml(`${comp.width}×${comp.height}`)}</span><span class="aep-tree-meta">${escapeHtml(`${Number(comp.duration || 0).toFixed(2)}s`)}</span><span class="aep-tree-status ${status.tone}">${escapeHtml(status.label)}</span>
+  </div>${expanded ? children : ""}`;
+}
+
+function updateAepActions() {
+  const hasProject = Boolean(state.aep.project);
+  const compositions = aepCompositions();
+  const checkedCount = state.aep.checkedIds.size;
+  const candidateCount = compositions.filter(aepIsCandidate).length;
+  const warningCount = compositions.filter(aepHasWarning).length;
+  elements.aepInspectBtn.disabled = !state.aep.aepPath || state.aep.collecting;
+  elements.aepDefaultOutputBtn.disabled = !state.aep.aepPath || state.aep.collecting;
+  elements.aepExpandBtn.disabled = !hasProject || state.aep.collecting;
+  elements.aepCollapseBtn.disabled = !hasProject || state.aep.collecting;
+  elements.aepSelectVisibleBtn.disabled = !hasProject || state.aep.collecting;
+  elements.aepClearBtn.disabled = !checkedCount || state.aep.collecting;
+  elements.aepCollectBtn.disabled = !hasProject || !checkedCount || !String(elements.aepOutput.value || "").trim() || state.aep.collecting;
+  elements.aepStatCompositions.textContent = String(compositions.length);
+  elements.aepStatCandidates.textContent = String(candidateCount);
+  elements.aepStatSelected.textContent = String(checkedCount);
+  elements.aepStatWarnings.textContent = String(warningCount);
+  elements.aepSelectionSummary.textContent = `已选 ${checkedCount} 个合成`;
+  elements.aepCollectionSummary.textContent = hasProject ? ` · ${compositions.length} 个合成已载入` : "";
+}
+
+function renderAepTree() {
+  aepRenderFilters();
+  if (!state.aep.project) {
+    elements.aepTree.innerHTML = `<div class="aep-empty">先选择一个 AEP 工程，再读取离线合成结构。</div>`;
+    elements.aepTreeSummary.textContent = "选择 AEP 后显示 parent / child 关系";
+    updateAepActions();
+    return;
+  }
+  const roots = aepCompositions().filter((item) => !(item.parent_ids || []).length);
+  const rootItems = roots.length ? roots : aepCompositions();
+  const seen = new Set();
+  const markup = rootItems
+    .slice()
+    .sort((left, right) => String(left.name).localeCompare(String(right.name), "zh-CN") || left.id - right.id)
+    .map((comp) => aepTreeBranch(comp, 0, new Set(), seen))
+    .join("");
+  elements.aepTree.innerHTML = markup || `<div class="aep-empty">当前筛选条件下没有合成。</div>`;
+  const visible = aepCompositions().filter(aepMatches).length;
+  elements.aepTreeSummary.textContent = `${visible} 个合成可见 · 点击名称查看详情，勾选框加入收集队列`;
+  updateAepActions();
+}
+
+function renderAepInspector() {
+  const comp = aepComposition(state.aep.activeCompId);
+  if (!comp) {
+    elements.aepInspector.innerHTML = `<div class="aep-inspector-title">合成检查器</div><div class="aep-empty">点击左侧合成名称查看尺寸、父级、直属预合成和预览来源。</div>`;
+    return;
+  }
+  const recommendation = aepPreviewRecommendation(comp);
+  const preview = state.aep.previewFiles[comp.id];
+  const previewTime = state.aep.previewTimes[comp.id] ?? recommendation.time_seconds ?? 2;
+  const previewMarkup = preview?.preview_file
+    ? `<img src="${escapeHtml(fileUrl(preview.preview_file))}" alt="${escapeHtml(comp.name)} 预览" />`
+    : `<div class="aep-preview-empty">尚未生成预览<br /><span>默认取 ${escapeHtml(Number(recommendation.time_seconds || 0).toFixed(2))} 秒 · 帧 ${escapeHtml(recommendation.frame || 0)}</span></div>`;
+  const parentNames = (comp.parent_names || []).join("、") || "无（顶层合成）";
+  const childNames = (comp.child_names || []).join("、") || "无直属预合成";
+  elements.aepInspector.innerHTML = `<div class="aep-inspector-title"><span>${escapeHtml(comp.name)}</span><small>${escapeHtml(comp.role || "合成")}</small></div>
+    <div class="aep-inspector-card"><div class="aep-preview-box">${previewMarkup}</div><div class="aep-inspector-actions"><button class="quiet-btn" type="button" data-aep-action="preview" ${state.aep.previewBusy ? "disabled" : ""}>${state.aep.previewBusy ? "渲染中…" : "生成预览"}</button><button class="primary-btn" type="button" data-aep-action="toggle-check">${state.aep.checkedIds.has(comp.id) ? "移出队列" : "加入队列"}</button></div><label class="field-label" style="display:block;margin-top:9px;">代表帧秒数<input class="text-input" data-aep-preview-time="${escapeHtml(comp.id)}" type="number" min="0" step="0.01" value="${escapeHtml(Number(previewTime).toFixed(2))}" /></label></div>
+    <div class="aep-inspector-card"><h3>Composition facts</h3><div class="aep-detail-grid"><div><span>尺寸</span><strong>${escapeHtml(`${comp.width} × ${comp.height}`)}</strong></div><div><span>时长 / 帧率</span><strong>${escapeHtml(`${Number(comp.duration || 0).toFixed(2)}s · ${comp.frame_rate}fps`)}</strong></div><div><span>合成 ID</span><strong>${escapeHtml(comp.id)}</strong></div><div><span>父级数量</span><strong>${escapeHtml((comp.parent_ids || []).length)}</strong></div></div></div>
+    <div class="aep-inspector-card"><h3>关系与取景</h3><div class="aep-detail-grid"><div><span>父级合成</span><strong title="${escapeHtml(parentNames)}">${escapeHtml(parentNames)}</strong></div><div><span>直属预合成</span><strong title="${escapeHtml(childNames)}">${escapeHtml(childNames)}</strong></div><div><span>预览来源</span><strong title="${escapeHtml(recommendation.reason || "")}">${escapeHtml(recommendation.source_name || comp.name)}</strong></div><div><span>默认时间</span><strong>${escapeHtml(`${Number(recommendation.time_seconds || 0).toFixed(2)}s · 帧 ${recommendation.frame || 0}`)}</strong></div></div></div>
+    <div class="aep-inspector-card"><h3>收集状态</h3><div class="aep-detail-grid"><div><span>独立交付</span><strong>${state.aep.checkedIds.has(comp.id) ? "已加入队列" : "未选择"}</strong></div><div><span>子合成</span><strong>${escapeHtml((comp.child_ids || []).length)} 个依赖</strong></div></div></div>`;
+}
+
+function renderAepQueue() {
+  const selected = aepCompositions().filter((item) => state.aep.checkedIds.has(item.id));
+  const rows = selected.map((comp) => `<div class="aep-queue-row"><span>${escapeHtml(comp.name)}</span><small>${escapeHtml(`${comp.width}×${comp.height}`)} · 等待收集</small></div>`).join("");
+  elements.aepInspector?.querySelector("[data-aep-queue]")?.remove();
+  if (elements.aepInspector && selected.length) {
+    elements.aepInspector.insertAdjacentHTML("beforeend", `<div class="aep-inspector-card" data-aep-queue><h3>Collection queue</h3><div class="aep-queue">${rows}</div></div>`);
+  }
+}
+
+function setAepActive(compId) {
+  state.aep.activeCompId = Number(compId);
+  renderAepTree();
+  renderAepInspector();
+  renderAepQueue();
+}
+
+function defaultAepOutput() {
+  if (!state.aep.aepPath) return "";
+  const source = path.basename(state.aep.aepPath, path.extname(state.aep.aepPath));
+  return path.join(path.dirname(state.aep.aepPath), `${source}_Xbot_Collected`);
+}
+
+function setAepBusy(busy, label = "Worker 待命") {
+  state.aep.collecting = busy;
+  elements.aepWorkerState.textContent = label;
+  updateAepActions();
+}
+
+async function inspectAepProject() {
+  if (!state.aep.aepPath) return;
+  try {
+    const workerPath = resolveWorkerPath();
+    setAepBusy(true, `Worker · ${path.basename(workerPath)}`);
+    log(`开始读取 AEP：${state.aep.aepPath}`);
+    const project = await inspectAep(state.aep.aepPath);
+    state.aep.project = project;
+    state.aep.checkedIds.clear();
+    state.aep.previewFiles = {};
+    state.aep.previewTimes = {};
+    state.aep.filter = "all";
+    const roots = aepCompositions().filter((item) => !(item.parent_ids || []).length);
+    state.aep.expandedIds = new Set(roots.map((item) => item.id));
+    const candidate = aepCompositions().find(aepIsCandidate) || aepCompositions()[0];
+    state.aep.activeCompId = candidate?.id || null;
+    if (!elements.aepOutput.value.trim()) elements.aepOutput.value = defaultAepOutput();
+    renderAepTree();
+    renderAepInspector();
+    renderAepQueue();
+    log(`结构读取完成：${project.composition_count || aepCompositions().length} 个合成，${project.item_count || 0} 个项目项。`);
+    showToast("AEP 结构已读取", "现在可以在结构树中勾选独立交付对象。", "normal");
+  } catch (error) {
+    log(`AEP 读取失败：${error.message}`);
+    showToast("AEP 读取失败", error.message, "error");
+  } finally {
+    setAepBusy(false, state.aep.project ? "Worker 就绪" : "Worker 待命");
+    renderAepInspector();
+  }
+}
+
+async function previewAepComposition() {
+  const comp = aepComposition(state.aep.activeCompId);
+  if (!comp || !state.aep.aepPath || state.aep.previewBusy) return;
+  try {
+    state.aep.previewBusy = true;
+    elements.aepWorkerState.textContent = "正在渲染预览…";
+    renderAepInspector();
+    const result = await previewAep(state.aep.aepPath, comp.id, {
+      time: state.aep.previewTimes[comp.id],
+    });
+    state.aep.previewFiles[comp.id] = result;
+    state.aep.previewTimes[comp.id] = result.preview_time;
+    log(`预览完成：${comp.name} · ${result.preview_source_name || comp.name} · ${Number(result.preview_time || 0).toFixed(3)} 秒`);
+    showToast("预览已生成", `${comp.name} 的代表帧已准备好。`);
+  } catch (error) {
+    log(`预览失败：${error.message}`);
+    showToast("预览失败", error.message, "error");
+  } finally {
+    state.aep.previewBusy = false;
+    elements.aepWorkerState.textContent = "Worker 就绪";
+    renderAepInspector();
+    renderAepQueue();
+  }
+}
+
+async function collectAepSelection() {
+  const selectedIds = aepCompositions().filter((item) => state.aep.checkedIds.has(item.id)).map((item) => item.id);
+  const outputRoot = String(elements.aepOutput.value || "").trim() || defaultAepOutput();
+  if (!state.aep.aepPath || !selectedIds.length || !outputRoot) {
+    showToast("还不能开始收集", "请选择 AEP、至少一个合成，并填写输出目录。", "error");
+    return;
+  }
+  try {
+    setAepBusy(true, `正在收集 ${selectedIds.length} 个合成…`);
+    elements.aepCollectBtn.textContent = "收集中…";
+    log(`开始收集 ${selectedIds.length} 个合成，输出到：${outputRoot}`);
+    const results = await collectAep(state.aep.aepPath, selectedIds, outputRoot, {
+      previewTimes: state.aep.previewTimes,
+    });
+    const previewCount = results.filter((item) => item.preview_file).length;
+    const missingCount = results.filter((item) => (item.missing_files || []).length).length;
+    results.forEach((item) => log(`完成“${item.composition_name}”：${item.preview_file ? "PNG + " : ""}ZIP + manifest${item.preview_error ? `；预览失败：${item.preview_error}` : ""}`));
+    state.sourceDir = outputRoot;
+    const projectName = elements.projectName.value.trim() || path.basename(state.aep.aepPath, path.extname(state.aep.aepPath));
+    elements.projectName.value = projectName;
+    state.importStage = 1;
+    const scan = scanDirectory(outputRoot, { projectName });
+    render(scan);
+    setView("import");
+    showToast("AEP 收集完成", `${results.length} 个收集包已生成，${previewCount} 张 PNG 已配对；${missingCount ? `${missingCount} 项存在缺失素材，请在预检中处理。` : "现在进入 PNG + ZIP 配对预检。"}`);
+  } catch (error) {
+    log(`AEP 收集失败：${error.message}`);
+    showToast("AEP 收集失败", error.message, "error");
+  } finally {
+    elements.aepCollectBtn.textContent = "收集并进入配对预检";
+    setAepBusy(false, "Worker 就绪");
+  }
+}
+
 function setView(view) {
-  const allowed = ["import", "formal", "history", "diagnostics"];
+  const allowed = ["import", "aep", "formal", "history", "diagnostics"];
   if (!allowed.includes(view)) return;
   state.activeView = view;
+  document.body.dataset.activeView = view;
   window.scrollTo({ top: 0, left: 0, behavior: "auto" });
-  document.querySelectorAll(".workspace-tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.view === view));
+  const workflowStage = view === "import" ? (state.importStage || 1) : view === "aep" ? 0 : 3;
+  document.querySelectorAll(".workflow-step").forEach((step) => {
+    const stage = Number(step.dataset.workflowStep || 0);
+    step.classList.toggle("active", stage === workflowStage);
+    step.classList.toggle("done", stage > 0 && stage < workflowStage);
+  });
   document.querySelectorAll(".workspace-view").forEach((section) => {
     const active = section.id === `view-${view}`;
     section.hidden = !active;
     section.classList.toggle("active", active);
   });
-  const context = { import: ["导入待入库", "把本地项目整理进 Eagle 待入库批次"], formal: ["正式入库", "检查配对、补全元数据，再归位到正式目录"], history: ["批次记录", "让每一次入库都可以追溯"], diagnostics: ["系统诊断", "在操作前确认 Eagle 和入库环境"] }[view];
-  elements.contextTitle.textContent = context[0];
-  elements.contextSub.textContent = context[1];
+  document.querySelectorAll(".main-tab[data-view]").forEach((tab) => {
+    tab.classList.toggle("active", tab.dataset.view === view);
+    tab.setAttribute("aria-selected", tab.dataset.view === view ? "true" : "false");
+  });
   if (view === "formal") refreshBatches();
 }
 
 function resolvePickedDirectory(files) {
   if (!files || files.length === 0) return null;
   const first = files[0];
-  if (typeof first.path === "string" && first.path && first.webkitRelativePath) {
+  const directPath = typeof first.path === "string" && first.path ? first.path : "";
+  if (directPath && fileStat(directPath)?.isDirectory()) return path.resolve(directPath);
+  if (directPath && first.webkitRelativePath) {
     const depth = first.webkitRelativePath.split("/").length - 1;
-    let dir = first.path;
+    let dir = directPath;
     for (let i = 0; i < depth; i += 1) dir = path.dirname(dir);
-    return dir;
+    return fileStat(dir)?.isDirectory() ? path.resolve(dir) : null;
   }
   return null;
+}
+
+function droppedFiles(dataTransfer) {
+  const files = Array.from(dataTransfer?.files || []).filter(Boolean);
+  if (files.length > 0) return files;
+  return Array.from(dataTransfer?.items || [])
+    .filter((item) => item.kind === "file" && typeof item.getAsFile === "function")
+    .map((item) => {
+      try {
+        return item.getAsFile();
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
+function commonDirectory(filePaths) {
+  if (filePaths.length === 0) return null;
+  let candidate = path.dirname(filePaths[0]);
+  for (const filePath of filePaths.slice(1)) {
+    const directory = path.dirname(filePath);
+    while (candidate) {
+      const relative = path.relative(candidate, directory);
+      if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) break;
+      const parent = path.dirname(candidate);
+      if (parent === candidate) return null;
+      candidate = parent;
+    }
+  }
+  return candidate;
+}
+
+function normalizeDroppedPath(value) {
+  if (typeof value !== "string") return null;
+  let raw = value.trim().replace(/^['"]|['"]$/g, "");
+  if (!raw || raw.startsWith("#")) return null;
+  if (raw.toLocaleLowerCase().startsWith("file://")) {
+    try {
+      const url = new URL(raw);
+      raw = decodeURIComponent(url.pathname);
+      if (/^\/[A-Za-z]:/.test(raw)) raw = raw.slice(1);
+    } catch {
+      return null;
+    }
+  }
+  return raw.replaceAll("/", path.sep);
+}
+
+function droppedPathCandidates(dataTransfer) {
+  const candidates = [];
+  const add = (value) => {
+    const normalized = normalizeDroppedPath(value);
+    if (normalized && !candidates.includes(normalized)) candidates.push(normalized);
+  };
+  if (typeof dataTransfer?.getData === "function") {
+    for (const type of ["text/uri-list", "text/plain"]) {
+      let data = "";
+      try {
+        data = dataTransfer.getData(type);
+      } catch {
+        continue;
+      }
+      if (!data) continue;
+      data.split(/\r?\n/).forEach(add);
+    }
+  }
+  return candidates;
+}
+
+function directoryFromPath(candidate) {
+  if (!candidate) return null;
+  const resolved = path.resolve(candidate);
+  const stat = fileStat(resolved);
+  if (stat?.isDirectory()) return resolved;
+  if (stat?.isFile()) {
+    const parent = path.dirname(resolved);
+    return fileStat(parent)?.isDirectory() ? parent : null;
+  }
+  return null;
+}
+
+function resolveDroppedDirectory(dataTransfer) {
+  const files = droppedFiles(dataTransfer);
+  const textPaths = droppedPathCandidates(dataTransfer);
+  for (const candidate of textPaths) {
+    if (fileStat(candidate)?.isDirectory()) return path.resolve(candidate);
+  }
+
+  for (const file of files) {
+    const directPath = typeof file.path === "string" && file.path ? file.path : "";
+    const directory = directoryFromPath(directPath);
+    if (directory && fileStat(directPath)?.isDirectory()) return directory;
+  }
+
+  if (files.length === 0) return null;
+
+  const pickedDirectory = resolvePickedDirectory(files);
+  if (pickedDirectory) return pickedDirectory;
+
+  const filePaths = files
+    .map((file) => (typeof file.path === "string" && file.path ? path.resolve(file.path) : ""))
+    .filter(Boolean);
+  const directory = commonDirectory(filePaths);
+  if (directory && fileStat(directory)?.isDirectory()) return directory;
+
+  for (const candidate of textPaths) {
+    const fallback = directoryFromPath(candidate);
+    if (fallback) return fallback;
+  }
+  return null;
+}
+
+function setSourceDirectory(sourceDir) {
+  if (!sourceDir) return false;
+  const resolved = path.resolve(sourceDir);
+  if (!fileStat(resolved)?.isDirectory()) return false;
+  state.sourceDir = resolved;
+  state.importStage = 1;
+  elements.scanBtn.disabled = false;
+  elements.batchInfo.textContent = `已选择：${state.sourceDir}`;
+  elements.dropZone?.classList.add("has-folder");
+  if (elements.dropLabel) elements.dropLabel.textContent = `已选择：${state.sourceDir}`;
+  return true;
+}
+
+function isFileDrag(event) {
+  return Array.from(event.dataTransfer?.items || []).some((item) => item.kind === "file")
+    || Array.from(event.dataTransfer?.types || []).includes("Files");
+}
+
+function scanSelectedDirectory() {
+  if (!state.sourceDir) return false;
+  try {
+    state.activeView = "import";
+    state.importStage = 1;
+    const scan = scanDirectory(state.sourceDir, { projectName: elements.projectName.value.trim() || undefined });
+    render(scan);
+    setView("import");
+    return true;
+  } catch (error) {
+    log(`扫描失败：${error.message}`);
+    showToast("扫描失败", error.message, "error");
+    return false;
+  }
 }
 
 document.addEventListener("click", (event) => {
   const viewButton = event.target.closest("[data-view]");
   if (viewButton) { setView(viewButton.dataset.view); return; }
+  const aepFilter = event.target.closest("[data-aep-filter]");
+  if (aepFilter) {
+    state.aep.filter = aepFilter.dataset.aepFilter || "all";
+    renderAepTree();
+    renderAepInspector();
+    renderAepQueue();
+    return;
+  }
+  const aepExpander = event.target.closest("[data-aep-expander]");
+  if (aepExpander) {
+    const compId = Number(aepExpander.dataset.aepExpander);
+    if (state.aep.expandedIds.has(compId)) state.aep.expandedIds.delete(compId);
+    else state.aep.expandedIds.add(compId);
+    renderAepTree();
+    return;
+  }
+  const aepName = event.target.closest("[data-aep-name]");
+  if (aepName) {
+    setAepActive(aepName.dataset.aepName);
+    renderAepQueue();
+    return;
+  }
+  const aepAction = event.target.closest("[data-aep-action]");
+  if (aepAction) {
+    if (aepAction.dataset.aepAction === "preview") previewAepComposition();
+    if (aepAction.dataset.aepAction === "toggle-check") {
+      const comp = aepComposition(state.aep.activeCompId);
+      if (comp) {
+        if (state.aep.checkedIds.has(comp.id)) state.aep.checkedIds.delete(comp.id);
+        else state.aep.checkedIds.add(comp.id);
+        renderAepTree();
+        renderAepInspector();
+        renderAepQueue();
+      }
+    }
+    return;
+  }
   const packageCard = event.target.closest(".package-card[data-package-id]");
-  if (packageCard && state.scan) {
+  if (packageCard && state.scan && !event.target.closest("input, select, button, [data-asset-action]")) {
     document.querySelectorAll("#packageRows .package-card").forEach((card) => card.classList.remove("selected"));
     packageCard.classList.add("selected");
+    state.selectedPackageId = packageCard.dataset.packageId;
     const pkg = state.scan.packages.find((item) => String(item.packageId) === String(packageCard.dataset.packageId));
     if (pkg) showToast("已选择包装", `${pkg.packageName || "未命名包装"} · ${statusLabel(pkg.state)}`);
+    return;
+  }
+  const assetAction = event.target.closest("[data-asset-action]");
+  if (assetAction && state.scan && !event.target.closest("button")) {
+    openAssetModal(assetAction.dataset.assetAction, assetAction.dataset.packageId);
+    return;
+  }
+  const packageEditAction = event.target.closest("[data-package-edit-action]");
+  if (packageEditAction && state.scan) {
+    const panel = packageEditAction.closest("[data-package-edit-panel]");
+    const packageId = panel?.dataset.packageEditPanel;
+    const kind = packageEditAction.dataset.packageEditKind || state.editingPackageKind || "preview";
+    if (packageEditAction.dataset.packageEditAction === "apply") {
+      applyPackageMatch(packageId, panel, kind);
+    } else if (packageEditAction.dataset.packageEditAction === "restore") {
+      restorePackageMatch(packageId, kind);
+    }
+    return;
+  }
+  const assetChange = event.target.closest(".asset-change-btn[data-package-edit-kind]");
+  if (assetChange && state.scan) {
+    const card = assetChange.closest(".package-card[data-package-id]");
+    state.selectedPackageId = card?.dataset.packageId || null;
+    const kind = assetChange.dataset.packageEditKind;
+    const sameEdit = state.editingPackageId === state.selectedPackageId && state.editingPackageKind === kind;
+    if (!sameEdit) state.pendingPackageEdit = null;
+    state.editingPackageKind = sameEdit ? null : kind;
+    state.editingPackageId = state.editingPackageKind ? state.selectedPackageId : null;
+    render(state.scan);
     return;
   }
   const planCardElement = event.target.closest(".plan-card[data-pair-id]");
@@ -582,10 +1460,131 @@ document.addEventListener("click", (event) => {
   if (type === "toast") showToast(action.dataset.title || "已完成", action.dataset.message || "操作已完成。");
 });
 
+document.addEventListener("input", (event) => {
+  const aepTime = event.target.closest("[data-aep-preview-time]");
+  if (aepTime) {
+    const value = Number(aepTime.value);
+    if (Number.isFinite(value) && value >= 0) {
+      state.aep.previewTimes[Number(aepTime.dataset.aepPreviewTime)] = value;
+    }
+    return;
+  }
+  const input = event.target.closest("[data-package-name]");
+  if (!input || !state.scan) return;
+  const pkg = packageById(input.dataset.packageName);
+  if (!pkg) return;
+  pkg.packageName = input.value;
+  pkg.nameEdited = true;
+  state.selectedPackageId = pkg.packageId;
+});
+
+document.addEventListener("change", (event) => {
+  const aepCheck = event.target.closest("[data-aep-check]");
+  if (aepCheck) {
+    const compId = Number(aepCheck.dataset.aepCheck);
+    if (aepCheck.checked) state.aep.checkedIds.add(compId);
+    else state.aep.checkedIds.delete(compId);
+    setAepActive(compId);
+    renderAepQueue();
+    return;
+  }
+  const select = event.target.closest("[data-package-edit-field]");
+  if (!select || !state.scan) return;
+  const panel = select.closest("[data-package-edit-panel]");
+  const packageId = panel?.dataset.packageEditPanel;
+  const kind = select.dataset.packageEditField;
+  const pkg = packageById(packageId);
+  if (!pkg || !["preview", "source"].includes(kind)) return;
+  const selectedFile = scanFileAt(state.scan, select.value || "");
+  const selectedPath = selectedFile?.path || "";
+  const currentPath = packagePath(pkg, kind);
+  state.pendingPackageEdit = path.resolve(selectedPath || "") === path.resolve(currentPath || "")
+    ? null
+    : { packageId: pkg.packageId, kind, path: selectedPath, relative: selectedFile?.relative || "" };
+  state.selectedPackageId = pkg.packageId;
+  state.editingPackageId = pkg.packageId;
+  state.editingPackageKind = kind;
+  render(state.scan);
+  showToast("已更新预览", state.pendingPackageEdit
+    ? `新的${assetLabel(kind)}已即时显示，点击应用后正式写入配对。`
+    : `已恢复当前${assetLabel(kind)}。`);
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeModals();
+  const assetAction = event.target.closest("[data-asset-action]");
+  if (assetAction && (event.key === "Enter" || event.key === " ")) {
+    event.preventDefault();
+    openAssetModal(assetAction.dataset.assetAction, assetAction.dataset.packageId);
+  }
+});
+
 document.querySelectorAll("[data-close-modal]").forEach((button) => button.addEventListener("click", closeModals));
 document.querySelectorAll(".modal-backdrop").forEach((backdrop) => backdrop.addEventListener("click", (event) => { if (event.target === backdrop) closeModals(); }));
-elements.folderPicker.addEventListener("change", () => { const sourceDir = resolvePickedDirectory(elements.folderPicker.files); elements.scanBtn.disabled = !sourceDir; if (sourceDir) { state.sourceDir = sourceDir; elements.batchInfo.textContent = `已选择：${sourceDir}`; } });
-elements.scanBtn.addEventListener("click", () => { if (!state.sourceDir) return; try { state.activeView = "import"; const scan = scanDirectory(state.sourceDir, { projectName: elements.projectName.value.trim() || undefined }); render(scan); } catch (error) { log(`扫描失败：${error.message}`); showToast("扫描失败", error.message, "error"); } });
+elements.folderPicker.addEventListener("change", () => {
+  const sourceDir = resolvePickedDirectory(elements.folderPicker.files);
+  if (!setSourceDirectory(sourceDir)) {
+    showToast("无法读取文件夹", "请在 Eagle 内选择本地项目包装文件夹。", "error");
+  }
+});
+elements.dropZone.addEventListener("dragenter", (event) => {
+  if (!isFileDrag(event)) return;
+  event.preventDefault();
+  state.dragDepth += 1;
+  elements.dropZone.classList.add("is-dragover");
+  if (!state.sourceDir && elements.dropLabel) elements.dropLabel.textContent = "松开鼠标后自动读取文件夹并开始扫描";
+});
+elements.dropZone.addEventListener("dragover", (event) => {
+  if (!isFileDrag(event)) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "copy";
+  elements.dropZone.classList.add("is-dragover");
+});
+elements.dropZone.addEventListener("dragleave", (event) => {
+  state.dragDepth = Math.max(0, state.dragDepth - 1);
+  if (state.dragDepth > 0) return;
+  elements.dropZone.classList.remove("is-dragover");
+  if (!state.sourceDir && elements.dropLabel) elements.dropLabel.textContent = "拖入文件夹后自动扫描；也支持收集器输出的 PNG、ZIP、manifest";
+});
+elements.dropZone.addEventListener("drop", (event) => {
+  event.preventDefault();
+  state.dragDepth = 0;
+  elements.dropZone.classList.remove("is-dragover");
+  const sourceDir = resolveDroppedDirectory(event.dataTransfer);
+  if (!setSourceDirectory(sourceDir)) {
+    if (elements.dropLabel) elements.dropLabel.textContent = "拖入文件夹后自动扫描；也支持收集器输出的 PNG、ZIP、manifest";
+    showToast("拖入失败", "Eagle 未返回文件夹的本地路径，请改用“选择文件夹”或在 Eagle 内重新拖入。", "error");
+    return;
+  }
+  if (scanSelectedDirectory()) showToast("已扫描文件夹", "已进入 PNG + ZIP 配对预检。", "success");
+});
+elements.scanBtn.addEventListener("click", scanSelectedDirectory);
+elements.aepPicker.addEventListener("change", () => {
+  const file = elements.aepPicker.files?.[0];
+  const aepPath = file?.path || "";
+  state.aep.aepPath = aepPath && path.extname(aepPath).toLocaleLowerCase() === ".aep" ? aepPath : null;
+  state.aep.project = null;
+  state.aep.checkedIds.clear();
+  state.aep.previewFiles = {};
+  state.aep.previewTimes = {};
+  elements.aepFileLabel.textContent = state.aep.aepPath ? path.basename(state.aep.aepPath) : "无法读取 AEP 本地路径";
+  elements.aepOutput.value = defaultAepOutput();
+  renderAepTree();
+  renderAepInspector();
+  renderAepQueue();
+  updateAepActions();
+  if (!state.aep.aepPath) showToast("AEP 路径不可用", "请在 Eagle 内选择本地 .aep 文件；当前浏览器预览无法提供本地路径。", "error");
+});
+elements.aepInspectBtn.addEventListener("click", inspectAepProject);
+elements.aepDefaultOutputBtn.addEventListener("click", () => { elements.aepOutput.value = defaultAepOutput(); updateAepActions(); });
+elements.aepOutput.addEventListener("input", updateAepActions);
+elements.aepSearch.addEventListener("input", () => { state.aep.search = elements.aepSearch.value; renderAepTree(); });
+elements.aepExpandBtn.addEventListener("click", () => { state.aep.expandedIds = new Set(aepCompositions().filter((item) => (item.child_ids || []).length).map((item) => item.id)); renderAepTree(); });
+elements.aepCollapseBtn.addEventListener("click", () => { state.aep.expandedIds.clear(); renderAepTree(); });
+elements.aepSelectVisibleBtn.addEventListener("click", () => { aepCompositions().filter(aepMatches).forEach((item) => state.aep.checkedIds.add(item.id)); renderAepTree(); renderAepInspector(); renderAepQueue(); });
+elements.aepClearBtn.addEventListener("click", () => { state.aep.checkedIds.clear(); renderAepTree(); renderAepInspector(); renderAepQueue(); });
+elements.aepCollectBtn.addEventListener("click", collectAepSelection);
+elements.projectName.addEventListener("input", () => { if (state.scan && elements.projectName.value.trim()) state.scan.projectName = elements.projectName.value.trim(); });
 elements.importBtn.addEventListener("click", runImport);
 elements.reloadBatchBtn.addEventListener("click", refreshBatches);
 elements.batchSelect.addEventListener("change", () => { state.fileOverrides = {}; state.nameOverrides = {}; state.selectedPair = null; loadFilePlan(); });
@@ -605,7 +1604,6 @@ elements.sourceTemplate.addEventListener("input", () => applyRenameRule(false));
     elements.apiDot.classList.add("ok");
     elements.diagApi.textContent = "已连接";
     elements.diagApi.className = "check-ok";
-    refreshBatches();
   } else {
     elements.apiState.textContent = "未检测到 Eagle API（浏览预览可用，导入需在 Eagle 内运行）";
     elements.diagApi.textContent = "未连接";

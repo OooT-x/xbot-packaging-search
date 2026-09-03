@@ -5,6 +5,8 @@ const path = require("path");
 const {
   buildAnnotation,
   buildTags,
+  EaglePluginAdapter,
+  importFormalBatch,
   importBatch,
 } = require("../eagle-plugin/lib/eagle-api");
 
@@ -59,7 +61,13 @@ class FakeAdapter {
 
   async addFromPath(filePath, options) {
     const id = `item-${this.nextId++}`;
-    const item = { id, filePath, ...options, annotation: options.annotation || "" };
+    const item = {
+      id,
+      filePath,
+      ext: path.extname(filePath).replace(/^\./u, ""),
+      ...options,
+      annotation: options.annotation || "",
+    };
     this.items.push(item);
     return id;
   }
@@ -76,6 +84,102 @@ class FakeAdapter {
     return item;
   }
 }
+
+test("adds a new project tag to the existing project tag group", async () => {
+  const calls = [];
+  const group = {
+    id: "project-group",
+    name: "项目",
+    tags: ["变速箱"],
+    async addTags(options) {
+      calls.push(options);
+      this.tags.push(...options.tags);
+      return this;
+    },
+  };
+  const adapter = new EaglePluginAdapter({
+    tagGroup: {
+      async get() { return [group]; },
+    },
+  });
+
+  await adapter.ensureProjectTagGroup("联想");
+
+  assert.deepEqual(calls, [{ tags: ["联想"] }]);
+  assert.deepEqual(group.tags, ["变速箱", "联想"]);
+});
+
+test("creates the project tag group when it does not exist", async () => {
+  const calls = [];
+  const adapter = new EaglePluginAdapter({
+    tagGroup: {
+      async get() { return []; },
+      async create(options) {
+        calls.push(options);
+        return { id: "project-group", ...options };
+      },
+    },
+  });
+
+  await adapter.ensureProjectTagGroup("联想");
+
+  assert.deepEqual(calls, [{ name: "项目", color: "yellow", tags: ["联想"] }]);
+});
+
+test("synchronizes the imported project with its project tag group", async () => {
+  const adapter = new (class extends FakeAdapter {
+    constructor() {
+      super();
+      this.projectTags = [];
+    }
+
+    async ensureProjectTagGroup(projectName) {
+      this.projectTags.push(projectName);
+    }
+  })();
+
+  await importBatch(adapter, makeScanResult({ projectName: "联想" }));
+
+  assert.deepEqual(adapter.projectTags, ["联想"]);
+});
+
+test("imports a ready batch directly into the formal Eagle folders", async () => {
+  const adapter = new FakeAdapter();
+  const result = await importFormalBatch(adapter, makeScanResult());
+
+  assert.equal(result.state, "filed");
+  assert.equal(result.batchFolderId, "");
+  assert.equal(result.filed.length, 1);
+  assert.deepEqual(
+    adapter.folders.map((folder) => folder.name),
+    ["01_预览图", "02_AE源文件", "背景", "背景"]
+  );
+  assert.equal(adapter.items.length, 2);
+  assert.ok(adapter.items.every((item) => !item.tags.includes("00_待入库")));
+  assert.ok(adapter.items.find((item) => item.tags.includes("01_预览图")));
+  assert.ok(adapter.items.find((item) => item.tags.includes("02_AE源文件")));
+  assert.ok(adapter.items.every((item) => item.folders.length === 1));
+});
+
+test("protects direct formal import duplicates and supports an explicit update", async () => {
+  const adapter = new FakeAdapter();
+  await importFormalBatch(adapter, makeScanResult());
+  const duplicate = await importFormalBatch(adapter, makeScanResult({ projectName: "联想" }));
+
+  assert.equal(duplicate.state, "duplicate");
+  assert.deepEqual(duplicate.matches[0].matchedBy, ["package_id"]);
+  assert.equal(adapter.items.length, 2);
+
+  const updated = await importFormalBatch(
+    adapter,
+    makeScanResult({ projectName: "联想" }),
+    { mode: "update" }
+  );
+  assert.equal(updated.mode, "update");
+  assert.equal(updated.filed.length, 1);
+  assert.equal(adapter.items.length, 2);
+  assert.ok(adapter.items.every((item) => item.tags.includes("联想")));
+});
 
 test("imports a ready batch into a created batch folder", async () => {
   const adapter = new FakeAdapter();
