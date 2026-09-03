@@ -505,6 +505,7 @@ function setView(view) {
   const allowed = ["import", "formal", "history", "diagnostics"];
   if (!allowed.includes(view)) return;
   state.activeView = view;
+  window.scrollTo({ top: 0, left: 0, behavior: "auto" });
   document.querySelectorAll(".workspace-tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.view === view));
   document.querySelectorAll(".workspace-view").forEach((section) => section.classList.toggle("active", section.id === `view-${view}`));
   const context = { import: ["导入待入库", "把本地项目整理进 Eagle 待入库批次"], formal: ["正式入库", "检查配对、补全元数据，再归位到正式目录"], history: ["批次记录", "让每一次入库都可以追溯"], diagnostics: ["系统诊断", "在操作前确认 Eagle 和入库环境"] }[view];
