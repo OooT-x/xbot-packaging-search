@@ -22,7 +22,7 @@
 - [x] 新增 UI 交互预览原型 `ui-preview/xbot-packaging-workbench.html`：统一展示 Eagle 批次审核工作台、AEP 合成浏览器与收集队列，支持模块切换、筛选、检查器、重复批次决策、代表帧调节、队列状态、主题/密度 Tweaks，以及收集产物的批量规范命名、逐条自定义、非法字符/重复名称校验和 manifest 同步提示；仅用于界面方向验证，尚未替换现有生产 UI。
 - [x] Eagle 入库插件 UI 迭代（2026-09-03）：`eagle-plugin/index.html` 与 `eagle-plugin/js/plugin.js` 切换为批次审核工作台布局，导入、正式入库、批次记录和系统诊断分为独立视图；正式入库支持预检卡片、右侧检查器、缺失类型补全、批量规范命名、逐条自定义和确认前校验。`eagle-plugin/lib/eagle-api.js` 通过官方 API 写入最终 PNG/ZIP 名称，不改变稳定 ID 或配对关系；manifest 版本更新为 1.3.0，定向插件测试 33 项通过。
 - [x] Eagle 插件 UI 修复（2026-09-03）：限制导入预检卡片缩略图为固定比例容器，避免纵向 PNG 原始尺寸把整行卡片拉高；修复导入视图多余 `</div>` 导致正式入库 section 被解析到 `.app` 外、内容整体下移的问题；正式入库视图切换时重置页面滚动位置，并以原生 `hidden` 管理非当前视图；补丁版本更新为 1.3.1，新增 HTML 结构回归测试。
-- [x] 新增 GitHub Actions 持续集成：push、pull request 和手动触发时，在 `windows-latest` 上使用 Node.js 24 与 Python 3.14 安装收集器依赖，并自动执行 `npm test` 和 `npm run check`；当前本地验证为 98 项 JS + 23 项 Python 测试通过。
+- [x] 新增 GitHub Actions 持续集成：push、pull request 和手动触发时，在 `windows-latest` 上使用 Node.js 24 与 Python 3.14 安装收集器依赖，并自动执行 `npm test` 和 `npm run check`；当前本地验证为 99 项 JS + 23 项 Python 测试通过。
 - [x] 明确多终端共享 NAS 部署边界：Eagle 集成插件直接通过官方 Plugin API 写入共享 Library，中央索引服务单点写入数据库；本地 outbox 只用于幂等事件重试，终端不直接打开共享 SQLite。
 - [x] 飞书消息类型兼容：compact `post` 中的文字、`@` 和图片占位会规范化后进入现有 AI 对话、包装查询和候选确认链路；纯图片在私聊、有效 `@X.bot` 或群聊回复 X.bot 时回应，但不下载图片、不调用外部视觉模型、不伪装识图。新增富文本规范化、图片门控和富文本确认回归测试；85 项 JS + 18 项 Python 测试全部通过。
 - [x] 整理项目本地产物：删除 `aep-collector/` 下可重建的 `.build-venv`、`build`、`__pycache__` 及 `dist/AE-Preview-Bridge` 源码冗余副本，保留交付物 `dist/XbotAepCollector.exe` 与活跃的运行数据/日志；`aep-collector` 由约 130MB 精简至约 28MB，git 工作区干净（变更见 `CHANGELOG.md`）。
