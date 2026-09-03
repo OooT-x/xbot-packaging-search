@@ -5,6 +5,7 @@
 ## Unreleased
 
 ### Changed
+- 状态与文档同步（2026-09-03）：核心文档入口统一为 v1.26；按当前运行索引更新为 4 个项目、19 组包装、配对错误 0，并将 M5 剩余项收敛为 Collect Files Report 正文解析与真实 Eagle→bot 现场验证。
 - Eagle 标签整理（2026-09-02）：通过 Eagle 官方标签组接口新增黄色“项目”分组，并将“支付宝阿宝”“华为途灵”“乾崑奕境”“变速箱”4 个项目名标签归入该组；素材上的原标签关联保持不变。核心文档升级为 v1.24。
 - 插件入库结果同步（2026-09-02）：正式归位后由插件把批次元数据、`package_id`、PNG/ZIP Eagle ID 和路径追加到共享 `packaging-ingest-events.jsonl`；bot 监听器作为 SQLite 唯一写入方消费事件，按 `event_id` 去重，写入 `batches`/`batch_details` 后强制刷新 Eagle 索引，失败事件保留并自动重试。新增 1 个桥接测试、1 个小型重试集成测试和 1 个批次事件状态测试；当前 96 项 JS + 18 项 Python 测试通过。真实 Eagle UI → 常驻 bot 的现场联调仍待执行。
 - 核心文档升级为 v1.23：新增 D-037，明确插件通过共享 JSONL 事件队列把正式入库结果交给 bot 单写入 SQLite，并以 `event_id` 保证幂等和失败重试。
@@ -30,6 +31,8 @@
 - 核心文档升级为 v1.19，新增 D-032，正式取代 D-018、D-024 中的无引用回退规则。
 
 ### Added
+
+- GitHub Actions 持续集成（2026-09-03）：新增 `.github/workflows/ci.yml`，在 push、pull request 和手动触发时使用 `windows-latest`、Node.js 24 与 Python 3.14，自动安装 `aep-collector/requirements.txt` 并运行 `npm test`、`npm run check`。
 
 - 视频框父级预览取帧修复（2026-09-02）：默认不再盲目渲染父级合成的绝对 2 秒，而是读取视频框图层的 `in_point`，取其出现后的第 2 秒；短于 2 秒时回退到图层仍可见的最后一帧。预览 manifest 新增父级图层时间与实际取样偏移记录，新增 3 项 Python 回归测试。
 
