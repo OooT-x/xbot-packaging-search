@@ -42,7 +42,7 @@ test("production import view exposes preview-first pairing and direct naming", (
   assert.doesNotMatch(html, /写入 00_待入库/);
   assert.match(html, /id="assetModal"/);
   assert.match(html, /class="bottom-bar import-bottom"/);
-  assert.match(html, /AE → Eagle 工作台 · v1\.6\.0/);
+  assert.match(html, /AE → Eagle 工作台 · v1\.6\.1/);
   assert.match(html, /@keyframes view-in \{ from \{ opacity: 0; \} to \{ opacity: 1; \} \}/);
   assert.match(html, /body\[data-active-view="import"\] #view-import \{ padding-bottom: 104px; \}/);
   assert.match(html, /body\[data-active-view="import"\] #view-import \.import-bottom \{ position: fixed/);
@@ -92,7 +92,7 @@ test("production import view exposes preview-first pairing and direct naming", (
   assert.match(pluginJs, /file\.status = pkg\.state === "ready" \? "to-import" : "conflict"/);
   assert.match(pluginJs, /importFormalBatch/);
   assert.match(pluginJs, /state\.importStage/);
-  assert.equal(manifest.version, "1.6.0");
+  assert.equal(manifest.version, "1.6.1");
 });
 
 test("hosts the AEP collector inside the Eagle plugin and returns to pairing", () => {
@@ -195,6 +195,13 @@ test("exposes the formal packaging maintenance workspace", () => {
   assert.match(pluginJs, /basePackageId: pkg\.packageId/);
   assert.match(pluginJs, /if \(pkg\) elements\.projectName\.value = pkg\.projectName/);
   assert.match(pluginJs, /确认后会创建独立的 v01 包装记录/);
+  assert.match(html, /id="managedPreviewModal"/);
+  assert.match(html, /id="managedPreviewStage"/);
+  assert.match(html, /data-managed-preview-zoom="reset"/);
+  assert.match(pluginJs, /data-managed-preview=/);
+  assert.match(pluginJs, /function openManagedPreviewModal\(packageId\)/);
+  assert.match(pluginJs, /state\.managedPreview/);
+  assert.match(pluginJs, /bindPreviewStageInteractions\(elements\.managedPreviewStage, state\.managedPreview, elements\.managedPreviewZoom\)/);
 });
 
 test("ships an interactive preview-first PNG and ZIP pairing prototype", () => {

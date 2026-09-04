@@ -59,6 +59,12 @@ const state = {
     previewPanY: 0,
     previewDrag: null,
   },
+  managedPreview: {
+    previewZoom: 1,
+    previewPanX: 0,
+    previewPanY: 0,
+    previewDrag: null,
+  },
   dragDepth: 0,
   aep: {
     aepPath: null,
@@ -128,6 +134,12 @@ const elements = {
   assetTitle: document.getElementById("assetTitle"),
   assetSub: document.getElementById("assetSub"),
   assetBody: document.getElementById("assetBody"),
+  managedPreviewModal: document.getElementById("managedPreviewModal"),
+  managedPreviewTitle: document.getElementById("managedPreviewTitle"),
+  managedPreviewSub: document.getElementById("managedPreviewSub"),
+  managedPreviewStage: document.getElementById("managedPreviewStage"),
+  managedPreviewImage: document.getElementById("managedPreviewImage"),
+  managedPreviewZoom: document.getElementById("managedPreviewZoom"),
   duplicateSub: document.getElementById("duplicateSub"),
   renameModal: document.getElementById("renameModal"),
   previewTemplate: document.getElementById("previewTemplate"),
@@ -277,8 +289,31 @@ function renderManagedInspector() {
   }
   const previewPath = pkg.preview?.filePath || pkg.preview?.filepath || "";
   const sourcePath = pkg.source?.filePath || pkg.source?.filepath || "";
-  const preview = previewPath ? `<img src="${escapeHtml(fileUrl(previewPath))}" alt="${escapeHtml(pkg.packageName)}" />` : "暂无 PNG";
+  const preview = previewPath
+    ? `<button class="managed-preview-trigger" type="button" data-managed-preview="${escapeHtml(pkg.packageId)}" title="点击查看大图 · 滚轮缩放" aria-label="打开${escapeHtml(pkg.packageName)}预览大图"><img src="${escapeHtml(fileUrl(previewPath))}" alt="${escapeHtml(pkg.packageName)}" /></button>`
+    : "暂无 PNG";
   elements.managedInspector.innerHTML = `<div class="managed-inspector-head"><div><h2>${escapeHtml(pkg.packageName)}</h2><p>${escapeHtml(pkg.projectName)} · ${escapeHtml(pkg.packageType || "待补充类型")}</p></div><span class="status-badge status-ready">${escapeHtml(pkg.version)}</span></div><div class="managed-preview">${preview}</div><div class="managed-detail-list"><div class="managed-detail-row"><span>package_id</span><strong class="mono">${escapeHtml(pkg.packageId)}</strong></div><div class="managed-detail-row"><span>batch_id</span><strong class="mono">${escapeHtml(pkg.batchId || "-")}</strong></div><div class="managed-detail-row"><span>预览图</span><strong title="${escapeHtml(previewPath)}">${escapeHtml(previewPath ? path.basename(previewPath) : "缺失")}</strong></div><div class="managed-detail-row"><span>源文件</span><strong title="${escapeHtml(sourcePath)}">${escapeHtml(sourcePath ? path.basename(sourcePath) : "缺失")}</strong></div></div><div class="managed-actions"><button class="quiet-btn" type="button" data-managed-action="update-preview" data-managed-package-id="${escapeHtml(pkg.packageId)}" ${pkg.preview ? "" : "disabled"}>更新预览图</button><button class="quiet-btn" type="button" data-managed-action="update-source" data-managed-package-id="${escapeHtml(pkg.packageId)}" ${pkg.source ? "" : "disabled"}>更新打包文件</button><button class="primary-btn" type="button" data-managed-action="new-version" data-managed-package-id="${escapeHtml(pkg.packageId)}">发布新版本</button></div><div class="managed-history-note">替换预览图或 ZIP 会保留旧素材到“03_历史版本”，并为本次操作生成修订号。设计内容发生变化时，请发布新版本。</div>`;
+}
+
+function openManagedPreviewModal(packageId) {
+  const pkg = managedPackageById(packageId);
+  const previewPath = pkg?.preview?.filePath || pkg?.preview?.filepath || "";
+  if (!pkg || !previewPath || !elements.managedPreviewModal) {
+    showToast("暂无预览图", "当前正式包装没有可查看的 PNG。", "error");
+    return;
+  }
+  elements.managedPreviewTitle.textContent = `${pkg.packageName || "包装"} · 预览大图`;
+  elements.managedPreviewSub.textContent = `${pkg.projectName || "未命名项目"} · ${pkg.packageType || "待补充类型"} · ${pkg.version || "v01"}`;
+  elements.managedPreviewImage.src = fileUrl(previewPath);
+  elements.managedPreviewImage.alt = `${pkg.packageName || "包装"} 预览大图`;
+  state.managedPreview.previewZoom = 1;
+  state.managedPreview.previewPanX = 0;
+  state.managedPreview.previewPanY = 0;
+  state.managedPreview.previewDrag = null;
+  elements.managedPreviewStage?.classList.remove("is-dragging");
+  setPreviewZoom(state.managedPreview, elements.managedPreviewStage, elements.managedPreviewZoom, 1);
+  openModal(elements.managedPreviewModal);
+  elements.managedPreviewStage?.focus({ preventScroll: true });
 }
 
 function renderManaged() {
@@ -365,8 +400,10 @@ function closeModals() {
   document.querySelectorAll(".modal-backdrop").forEach((modal) => modal.classList.remove("open"));
   state.aep.previewDrag = null;
   state.assetPreview.previewDrag = null;
+  state.managedPreview.previewDrag = null;
   elements.aepPreviewStage?.classList.remove("is-dragging");
   elements.assetBody?.querySelector("[data-asset-preview-stage]")?.classList.remove("is-dragging");
+  elements.managedPreviewStage?.classList.remove("is-dragging");
 }
 
 function statusClass(status) {
@@ -1947,6 +1984,19 @@ document.addEventListener("click", (event) => {
     }
     return;
   }
+  const managedPreviewZoomAction = event.target.closest("[data-managed-preview-zoom]");
+  if (managedPreviewZoomAction) {
+    const action = managedPreviewZoomAction.dataset.managedPreviewZoom;
+    if (action === "in") setPreviewZoom(state.managedPreview, elements.managedPreviewStage, elements.managedPreviewZoom, state.managedPreview.previewZoom * 1.25);
+    if (action === "out") setPreviewZoom(state.managedPreview, elements.managedPreviewStage, elements.managedPreviewZoom, state.managedPreview.previewZoom * 0.8);
+    if (action === "reset") setPreviewZoom(state.managedPreview, elements.managedPreviewStage, elements.managedPreviewZoom, 1);
+    return;
+  }
+  const managedPreview = event.target.closest("[data-managed-preview]");
+  if (managedPreview) {
+    openManagedPreviewModal(managedPreview.dataset.managedPreview);
+    return;
+  }
   const packageCard = event.target.closest(".package-card[data-package-id]");
   if (packageCard && state.scan && !event.target.closest("input, select, button, [data-asset-action]")) {
     document.querySelectorAll("#packageRows .package-card").forEach((card) => card.classList.remove("selected"));
@@ -2170,6 +2220,7 @@ elements.aepClearBtn.addEventListener("click", () => { state.aep.checkedOccurren
 elements.aepStopBtn.addEventListener("click", stopAepCollection);
 elements.aepCollectBtn.addEventListener("click", collectAepSelection);
 bindPreviewStageInteractions(elements.aepPreviewStage, state.aep, elements.aepPreviewZoom);
+bindPreviewStageInteractions(elements.managedPreviewStage, state.managedPreview, elements.managedPreviewZoom);
 elements.managedProject?.addEventListener("change", () => { state.managed.project = elements.managedProject.value || "all"; renderManaged(); });
 elements.managedSearch?.addEventListener("input", () => { state.managed.search = elements.managedSearch.value || ""; renderManaged(); });
 elements.managedPreviewPicker?.addEventListener("change", () => applyManagedReplacement("preview", elements.managedPreviewPicker.files?.[0]));
