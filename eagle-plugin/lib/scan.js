@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const { parseReportFile } = require("./report");
 
 const PACKAGE_TYPES = ["信息条", "视频框", "背景", "分镜排版"];
 const PACKAGE_TYPE_SET = new Set(PACKAGE_TYPES);
@@ -354,6 +355,158 @@ function findManifests(entries) {
     .map((entry) => entry.path);
 }
 
+function uniqueDependencyValues(...values) {
+  const result = [];
+  const seen = new Set();
+  for (const value of values.flatMap((item) => normalizeDependencyList(item))) {
+    const key = value.toLocaleLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(value);
+  }
+  return result;
+}
+
+function reportReferencePaths(pkg, root, reports) {
+  const references = normalizeDependencyList(pkg.reportReferences);
+  if (!references.length) return [];
+  const packageRoot = path.resolve(root);
+  const manifestDir = pkg.manifestPath ? path.dirname(path.resolve(pkg.manifestPath)) : packageRoot;
+  return references
+    .map((reference) => {
+      const candidates = [
+        path.resolve(manifestDir, reference),
+        path.resolve(packageRoot, reference),
+      ];
+      return candidates.find((candidate) => {
+        const resolved = path.resolve(candidate);
+        return resolved === packageRoot || resolved.startsWith(`${packageRoot}${path.sep}`);
+      });
+    })
+    .filter(Boolean)
+    .map((candidate) => path.resolve(candidate))
+    .filter((candidate) => reports.some((report) => path.resolve(report.path) === candidate));
+}
+
+function reportCandidatesForPackage(pkg, root, reports) {
+  if (!reports.length) return [];
+
+  const explicitPaths = new Set(reportReferencePaths(pkg, root, reports));
+  if (explicitPaths.size > 0) {
+    return reports.filter((report) => explicitPaths.has(path.resolve(report.path)));
+  }
+
+  const packageDirectories = [pkg.preview?.path, pkg.source?.path, pkg.manifestPath]
+    .filter(Boolean)
+    .map((value) => path.dirname(path.resolve(value)));
+  const exact = reports.filter((report) => packageDirectories.includes(path.dirname(path.resolve(report.path))));
+  if (exact.length > 0) return exact;
+
+  const rootPath = path.resolve(root);
+  const packageHints = [
+    pkg.packageName,
+    pkg.aeCompName,
+    pkg.preview && path.basename(pkg.preview.path, path.extname(pkg.preview.path)),
+    pkg.source && path.basename(pkg.source.path, path.extname(pkg.source.path)),
+  ]
+    .map((value) => normalizeText(value))
+    .filter(Boolean);
+  const ranked = reports
+    .map((report) => {
+      const reportDirectory = path.dirname(path.resolve(report.path));
+      let best = 0;
+      for (const packageDirectory of packageDirectories) {
+        const reportRelativeToPackage = path.relative(packageDirectory, reportDirectory);
+        const packageRelativeToReport = path.relative(reportDirectory, packageDirectory);
+        if (!reportRelativeToPackage.startsWith(`..${path.sep}`) && reportRelativeToPackage !== ".." && !path.isAbsolute(reportRelativeToPackage)) {
+          const distance = reportRelativeToPackage ? reportRelativeToPackage.split(path.sep).length : 0;
+          best = Math.max(best, 80 - distance);
+        }
+        if (!packageRelativeToReport.startsWith(`..${path.sep}`) && packageRelativeToReport !== ".." && !path.isAbsolute(packageRelativeToReport)) {
+          const distance = packageRelativeToReport ? packageRelativeToReport.split(path.sep).length : 0;
+          best = Math.max(best, 70 - distance);
+        }
+      }
+      const reportHint = normalizeText(`${path.basename(reportDirectory)} ${report.name}`);
+      if (packageHints.some((hint) => reportHint.includes(hint))) best += 20;
+      if (!(reportDirectory === rootPath || reportDirectory.startsWith(`${rootPath}${path.sep}`))) best = 0;
+      return { report, score: best };
+    })
+    .filter((item) => item.score > 0);
+  const bestScore = ranked.reduce((best, item) => Math.max(best, item.score), 0);
+  return ranked.filter((item) => item.score === bestScore).map((item) => item.report);
+}
+
+function reportFactsForPackage(pkg, reports) {
+  const facts = {
+    reportFiles: reports.map((report) => report.relative || report.name),
+    reportStatus: reports.length === 0
+      ? "absent"
+      : reports.every((report) => report.status === "parsed")
+        ? "parsed"
+        : reports.some((report) => report.status === "error")
+          ? "error"
+          : "unrecognized",
+    reportCompositions: uniqueDependencyValues(...reports.map((report) => report.compositions)),
+    reportCollectedFiles: uniqueDependencyValues(...reports.map((report) => report.files)),
+    missingFootage: uniqueDependencyValues(pkg.missingFootage, ...reports.map((report) => report.missingFootage)),
+    fonts: uniqueDependencyValues(pkg.fonts, ...reports.map((report) => report.fonts)),
+    effects: uniqueDependencyValues(pkg.effects, ...reports.map((report) => report.effects)),
+    reportDetails: reports.map((report) => ({
+      path: report.path,
+      relative: report.relative || report.name,
+      name: report.name,
+      encoding: report.encoding,
+      status: report.status,
+      recognizedSectionCount: report.recognizedSectionCount,
+      project: report.project,
+      compositions: report.compositions,
+      files: report.files,
+      missingFootage: report.missingFootage,
+      fonts: report.fonts,
+      effects: report.effects,
+      error: report.error,
+    })),
+  };
+  return facts;
+}
+
+function applyReportFacts(pkg, reports) {
+  const facts = reportFactsForPackage(pkg, reports);
+  Object.assign(pkg, facts);
+  if (!pkg.aeCompName && facts.reportCompositions.length > 0) {
+    pkg.aeCompName = facts.reportCompositions[0];
+  }
+  if (!pkg.packageType) {
+    pkg.packageType = inferPackageType(`${pkg.packageName || ""} ${facts.reportCompositions.join(" ")}`);
+  }
+
+  const reportWarnings = [];
+  for (const report of reports) {
+    if (report.status === "error") {
+      reportWarnings.push(`AE Report 解析失败：${report.relative || report.name}${report.error ? `（${report.error}）` : ""}`);
+    } else if (report.status === "unrecognized") {
+      reportWarnings.push(`AE Report 未识别到标准依赖章节：${report.relative || report.name}`);
+    }
+  }
+  if (facts.missingFootage.length > 0) {
+    reportWarnings.push(`Report 检出缺失素材，阻止入库：${facts.missingFootage.join("、")}`);
+    pkg.state = "blocked";
+    pkg.errors = [...(pkg.errors || []), "Report 检出缺失素材，不能确认依赖完整性"];
+    pkg.dependencyStatus = "blocked";
+  } else if (facts.fonts.length > 0 || facts.effects.length > 0 || reportWarnings.length > 0) {
+    pkg.dependencyStatus = "warning";
+  }
+  if (facts.fonts.length > 0) {
+    reportWarnings.push(`Report 检出字体依赖：${facts.fonts.join("、")}`);
+  }
+  if (facts.effects.length > 0) {
+    reportWarnings.push(`Report 检出效果或插件依赖：${facts.effects.join("、")}`);
+  }
+  pkg.warnings = uniqueDependencyValues(pkg.warnings, reportWarnings);
+  return pkg;
+}
+
 function pairWithoutManifest(files) {
   const pngCandidates = files.filter(
     (file) => file.kind === "png" && file.status === "candidate"
@@ -438,6 +591,20 @@ function scanDirectory(sourceDir, options = {}) {
   const errors = [];
   const warnings = [];
   const manifestPaths = findManifests(allEntries);
+  const reportSummaries = files
+    .filter((file) => file.kind === "report")
+    .map((file) => ({
+      ...parseReportFile(file.path),
+      relative: file.relative,
+      name: file.name,
+    }));
+  reportSummaries.forEach((report) => {
+    if (report.status === "error") {
+      warnings.push(`AE Report 解析失败：${report.relative}${report.error ? `（${report.error}）` : ""}`);
+    } else if (report.status === "unrecognized") {
+      warnings.push(`AE Report 未识别到标准依赖章节：${report.relative}`);
+    }
+  });
   const manifestEntries = [];
   const collectionEntries = [];
   for (const manifestPath of manifestPaths) {
@@ -520,6 +687,7 @@ function scanDirectory(sourceDir, options = {}) {
           warnings: entryWarnings,
           errors: ["预览图或源文件无法配对"],
           manifestPath: entry.manifestPath,
+          reportReferences: normalizeDependencyList(entry.report_files),
         });
         continue;
       }
@@ -539,6 +707,7 @@ function scanDirectory(sourceDir, options = {}) {
           warnings: [...entryWarnings, "manifest 标记为阻止入库"],
           errors: [],
           manifestPath: entry.manifestPath,
+          reportReferences: normalizeDependencyList(entry.report_files),
         });
         continue;
       }
@@ -556,6 +725,7 @@ function scanDirectory(sourceDir, options = {}) {
         warnings: entryWarnings,
         errors: [],
         manifestPath: entry.manifestPath,
+        reportReferences: normalizeDependencyList(entry.report_files),
         fonts: normalizeDependencyList(entry.fonts),
         effects: normalizeDependencyList(entry.effects),
         dependencyStatus: /警告|warning/i.test(dependencyStatus) ? "warning" : "complete",
@@ -662,6 +832,7 @@ function scanDirectory(sourceDir, options = {}) {
         warnings: entryWarnings,
         errors: entryErrors,
         manifestPath: entry.manifestPath,
+        reportReferences: normalizeDependencyList(entry.report_files),
         fonts: normalizeDependencyList(entry.fonts),
         effects: normalizeDependencyList(entry.effects),
         dependencyStatus: /警告|warning/i.test(dependencyStatus) ? "warning" : "complete",
@@ -724,6 +895,10 @@ function scanDirectory(sourceDir, options = {}) {
     }
   }
 
+  for (const pkg of packages) {
+    applyReportFacts(pkg, reportCandidatesForPackage(pkg, root, reportSummaries));
+  }
+
   const referencedPaths = new Set(referencedFiles.keys());
   const manifestPathSet = new Set(manifestPaths.map((manifestPath) => path.resolve(manifestPath)));
   const collectionManifestPathSet = new Set(
@@ -739,6 +914,16 @@ function scanDirectory(sourceDir, options = {}) {
       note: file.note || "",
       packageId: null,
     };
+    if (file.kind === "report") {
+      const report = reportSummaries.find((item) => path.resolve(item.path) === path.resolve(file.path));
+      record.status = "validate-only";
+      record.note = report?.status === "parsed"
+        ? `AE 收集报告已解析（${report.recognizedSectionCount} 个章节）`
+        : report?.status === "error"
+          ? `AE 收集报告解析失败：${report.error || "无法读取"}`
+          : "AE 收集报告未识别到标准依赖章节";
+      return record;
+    }
     if (manifestPathSet.has(path.resolve(file.path))) {
       record.status = "validate-only";
       record.note = collectionManifestPathSet.has(path.resolve(file.path))
@@ -795,6 +980,7 @@ function scanDirectory(sourceDir, options = {}) {
     hasManifest,
     hasCollectionManifest,
     manifestFiles: manifestPaths,
+    reports: reportSummaries,
     packages,
     files: fileRecords,
     stats,

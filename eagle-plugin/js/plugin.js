@@ -314,8 +314,12 @@ function openAssetModal(kind, packageId) {
     assetDetailRow("版本", pkg.version || "v01"),
   ];
   if (kind === "source") {
-    details.push(assetDetailRow("依赖状态", pkg.dependencyStatus === "warning" ? "依赖存在警告" : "依赖完整"));
+    details.push(assetDetailRow("依赖状态", pkg.dependencyStatus === "blocked" ? "存在缺失素材，阻止入库" : pkg.dependencyStatus === "warning" ? "依赖存在警告" : "依赖完整"));
     details.push(assetDetailRow("manifest", relativeScanPath(pkg.manifestPath), true));
+    details.push(assetDetailRow("AE Report", pkg.reportFiles?.join("、") || (pkg.reportStatus === "absent" ? "未提供" : "未能读取"), true));
+    if (pkg.fonts?.length) details.push(assetDetailRow("Report 字体", pkg.fonts.join("、")));
+    if (pkg.effects?.length) details.push(assetDetailRow("Report 效果/插件", pkg.effects.join("、")));
+    if (pkg.missingFootage?.length) details.push(assetDetailRow("Report 缺失素材", pkg.missingFootage.join("、")));
   }
   elements.assetTitle.textContent = kind === "preview" ? "预览图原图" : "打包文件信息";
   elements.assetSub.textContent = `${pkg.projectName || "未命名项目"} · ${pkg.packageName || "未命名包装"} · ${label}`;
@@ -460,9 +464,16 @@ function packageCard(pkg) {
   const previewImage = previewPath
     ? `<img src="${escapeHtml(fileUrl(previewPath))}" alt="${escapeHtml(pkg.packageName || "包装预览")}" onerror="this.style.display='none'" />`
     : `<span class="empty-asset">等待 PNG</span>`;
-  const reason = hasPendingPackageEdit(pkg)
+  const reportFacts = [
+    pkg.reportFiles?.length ? `AE Report：${pkg.reportFiles.join("、")}` : "",
+    pkg.fonts?.length ? `字体：${pkg.fonts.join("、")}` : "",
+    pkg.effects?.length ? `效果/插件：${pkg.effects.join("、")}` : "",
+    pkg.missingFootage?.length ? `缺失素材：${pkg.missingFootage.join("、")}` : "",
+  ].filter(Boolean).join("\n");
+  const reason = [hasPendingPackageEdit(pkg)
     ? `已预览新的${state.pendingPackageEdit.kind === "preview" ? " PNG" : " ZIP"}，点击应用后生效`
-    : pkg.matchError || (pkg.manualMatch ? "用户已覆盖自动匹配" : "manifest / 文件名规则自动匹配");
+    : pkg.matchError || (pkg.manualMatch ? "用户已覆盖自动匹配" : "manifest / 文件名规则自动匹配"), reportFacts].filter(Boolean).join("\n");
+  const reportBadge = pkg.reportStatus === "parsed" ? "REPORT ✓" : pkg.reportStatus === "absent" ? "REPORT —" : "REPORT !";
   const editPanel = editing
     ? `<div class="pair-edit-panel" data-package-edit-panel="${escapeHtml(pkg.packageId || "")}">
         <div class="pair-edit-copy"><strong>更换${editingKind === "preview" ? "预览图 PNG" : "打包文件 ZIP"}</strong><span>选择后卡片会立即预览新文件，点击应用后正式写入这组配对。</span></div>
@@ -480,7 +491,7 @@ function packageCard(pkg) {
     </div>
     <div class="pair-copy" title="${escapeHtml(reason)}"><div class="card-title-row"><input class="package-name-input ${pkg.nameEdited ? "edited" : ""}" data-package-name="${escapeHtml(pkg.packageId || "")}" value="${escapeHtml(pkg.packageName || "")}" placeholder="包装名称" aria-label="${escapeHtml(pkg.packageName || "包装")} 名称" /> <div class="pair-badges">${pairStatusBadge(pkg)}</div></div>
       <div class="card-meta">${escapeHtml(pkg.projectName || "未命名项目")} · ${escapeHtml(pkg.packageType || "待补充类型")} · ${escapeHtml(pkg.version || "v01")} · 合成 ${escapeHtml(pkg.aeCompName || "未记录合成")}</div>
-      <div class="card-files"><span class="file-pill">${previewPath ? "PNG ✓" : "PNG —"}</span><span class="file-pill">${sourcePath ? "ZIP ✓" : "ZIP —"}</span><span class="file-pill">${pkg.manifestPath ? "META ✓" : "META —"}</span><span class="file-pill mono">${escapeHtml(pkg.packageId || "待生成")}</span></div>
+      <div class="card-files"><span class="file-pill">${previewPath ? "PNG ✓" : "PNG —"}</span><span class="file-pill">${sourcePath ? "ZIP ✓" : "ZIP —"}</span><span class="file-pill">${pkg.manifestPath ? "META ✓" : "META —"}</span><span class="file-pill">${reportBadge}</span><span class="file-pill mono">${escapeHtml(pkg.packageId || "待生成")}</span></div>
       <div class="pair-targets"><div class="pair-target"><span>PNG 入库</span><strong>01_预览图 / ${escapeHtml(packageType)}</strong></div><div class="pair-target"><span>ZIP 入库</span><strong>02_AE源文件 / ${escapeHtml(packageType)}</strong></div></div>
     </div>
     <div class="pair-facts"><span>配对来源</span><strong>${hasPendingPackageEdit(pkg) ? "待应用" : pkg.manualMatch ? "用户选择" : "自动规则"}</strong><span>预览尺寸</span><strong>${escapeHtml(previewFile?.dimensions || pkg.preview?.dimensions || "PNG 文件")}</strong><span>导入状态</span><strong class="${pkg.state === "ready" ? "check-ok" : "check-bad"}">${escapeHtml(statusLabel(pkg.state))}</strong></div>
