@@ -66,6 +66,7 @@ const state = {
     collecting: false,
     collectAbortController: null,
     stopRequested: false,
+    collectionProgress: { total: 0, completed: 0, index: 0, compositionId: null, compositionName: "", phase: "" },
   },
 };
 
@@ -151,6 +152,11 @@ const elements = {
   aepDeselectVisibleBtn: document.getElementById("aepDeselectVisibleBtn"),
   aepSelectionSummary: document.getElementById("aepSelectionSummary"),
   aepCollectionSummary: document.getElementById("aepCollectionSummary"),
+  aepProgress: document.getElementById("aepProgress"),
+  aepProgressLabel: document.getElementById("aepProgressLabel"),
+  aepProgressCount: document.getElementById("aepProgressCount"),
+  aepProgressTrack: document.getElementById("aepProgressTrack"),
+  aepProgressBar: document.getElementById("aepProgressBar"),
   aepClearBtn: document.getElementById("aepClearBtn"),
   aepStopBtn: document.getElementById("aepStopBtn"),
   aepCollectBtn: document.getElementById("aepCollectBtn"),
@@ -1079,6 +1085,7 @@ function updateAepActions() {
   elements.aepClearBtn.disabled = !checkedCount || state.aep.collecting;
   elements.aepStopBtn.hidden = !state.aep.collectAbortController;
   elements.aepStopBtn.disabled = !state.aep.collectAbortController || state.aep.stopRequested;
+  elements.aepProgress.hidden = !state.aep.collectAbortController;
   elements.aepCollectBtn.disabled = !hasProject || !checkedCount || !String(elements.aepOutput.value || "").trim() || state.aep.collecting;
   elements.aepStatCompositions.textContent = String(compositions.length);
   elements.aepStatCandidates.textContent = String(candidateCount);
@@ -1234,10 +1241,47 @@ function openAepPreviewModal() {
 
 function renderAepQueue() {
   const selected = aepCompositions().filter((item) => state.aep.checkedIds.has(item.id));
-  const rows = selected.map((comp) => `<div class="aep-queue-row"><span>${escapeHtml(comp.name)}</span><small>${escapeHtml(`${comp.width}×${comp.height}`)} · 等待收集</small></div>`).join("");
+  const rows = selected.map((comp) => `<div class="aep-queue-row" data-aep-queue-id="${escapeHtml(comp.id)}"><span>${escapeHtml(comp.name)}</span><small data-aep-queue-status>${escapeHtml(`${comp.width}×${comp.height}`)} · 等待收集</small></div>`).join("");
   elements.aepInspector?.querySelector("[data-aep-queue]")?.remove();
   if (elements.aepInspector && selected.length) {
     elements.aepInspector.insertAdjacentHTML("beforeend", `<div class="aep-inspector-card" data-aep-queue><h3>Collection queue</h3><div class="aep-queue">${rows}</div></div>`);
+  }
+}
+
+function handleAepCollectionProgress(progress) {
+  if (!progress || progress.command !== "collect") return;
+  const total = Math.max(0, Number(progress.total) || 0);
+  const completed = Math.min(total, Math.max(0, Number(progress.completed) || 0));
+  const phaseLabels = { collect: "正在收集素材", preview: "正在生成预览", complete: "已完成" };
+  const phaseLabel = phaseLabels[progress.phase] || (progress.event === "done" ? "收集完成" : "准备收集");
+  state.aep.collectionProgress = {
+    total,
+    completed,
+    index: Number(progress.index) || 0,
+    compositionId: progress.composition_id ?? null,
+    compositionName: String(progress.composition_name || ""),
+    phase: String(progress.phase || progress.event || ""),
+  };
+  const percent = total ? Math.round((completed / total) * 100) : 0;
+  if (elements.aepProgressLabel) {
+    elements.aepProgressLabel.textContent = progress.composition_name
+      ? `${phaseLabel} · ${progress.composition_name}`
+      : phaseLabel;
+  }
+  if (elements.aepProgressCount) elements.aepProgressCount.textContent = `${completed}/${total} · ${percent}%`;
+  if (elements.aepProgressTrack) elements.aepProgressTrack.setAttribute("aria-valuenow", String(percent));
+  if (elements.aepProgressBar) elements.aepProgressBar.style.width = `${percent}%`;
+  if (progress.event === "done") {
+    elements.aepWorkerState.textContent = `收集完成 · ${completed}/${total}`;
+  } else {
+    elements.aepWorkerState.textContent = `收集中 ${completed}/${total} · ${phaseLabel}`;
+  }
+  if (progress.composition_id !== undefined && progress.composition_id !== null) {
+    const row = elements.aepInspector?.querySelector(`[data-aep-queue-id="${String(progress.composition_id)}"]`);
+    const status = progress.phase === "complete"
+      ? `已完成${progress.status === "warning" ? " · 有警告" : ""}`
+      : phaseLabel;
+    if (row?.querySelector("[data-aep-queue-status]")) row.querySelector("[data-aep-queue-status]").textContent = status;
   }
 }
 
@@ -1328,11 +1372,14 @@ async function collectAepSelection() {
   state.aep.stopRequested = false;
   try {
     setAepBusy(true, `正在收集 ${selectedIds.length} 个合成…`);
+    state.aep.collectionProgress = { total: selectedIds.length, completed: 0, index: 0, compositionId: null, compositionName: "", phase: "start" };
+    handleAepCollectionProgress({ command: "collect", event: "start", total: selectedIds.length, completed: 0 });
     elements.aepCollectBtn.textContent = "收集中…";
     log(`开始收集 ${selectedIds.length} 个合成，输出到：${outputRoot}`);
     const results = await collectAep(state.aep.aepPath, selectedIds, outputRoot, {
       previewTimes: state.aep.previewTimes,
       signal: controller.signal,
+      onProgress: handleAepCollectionProgress,
     });
     const previewCount = results.filter((item) => item.preview_file).length;
     const missingCount = results.filter((item) => (item.missing_files || []).length).length;
@@ -1356,6 +1403,7 @@ async function collectAepSelection() {
   } finally {
     state.aep.collectAbortController = null;
     state.aep.stopRequested = false;
+    state.aep.collectionProgress = { total: 0, completed: 0, index: 0, compositionId: null, compositionName: "", phase: "" };
     elements.aepCollectBtn.textContent = "收集并进入配对预检";
     setAepBusy(false, "Worker 就绪");
   }

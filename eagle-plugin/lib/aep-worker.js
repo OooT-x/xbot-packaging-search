@@ -7,6 +7,7 @@ const crypto = require("crypto");
 const WORKER_ENV = "XBOT_AEP_WORKER";
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
 const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
+const PROGRESS_PREFIX = "XBOT_PROGRESS ";
 
 function envValue(name) {
   return typeof process === "undefined" ? "" : String(process.env?.[name] || "").trim();
@@ -79,6 +80,7 @@ function runAepWorker(args, options = {}) {
     let timer = null;
     let child;
     let abortHandler = null;
+    let stdoutBuffer = "";
     const finish = (callback, value) => {
       if (settled) return;
       settled = true;
@@ -108,10 +110,27 @@ function runAepWorker(args, options = {}) {
       }
       return next;
     };
-    child.stdout?.on("data", (chunk) => { stdout = append(stdout, chunk); });
+    const handleStdoutLine = (line) => {
+      if (line.startsWith(PROGRESS_PREFIX)) {
+        try {
+          options.onProgress?.(JSON.parse(line.slice(PROGRESS_PREFIX.length)));
+        } catch (_error) {
+          // Progress events are best effort and must not break the final result.
+        }
+        return;
+      }
+      stdout = append(stdout, `${line}\n`);
+    };
+    child.stdout?.on("data", (chunk) => {
+      stdoutBuffer += chunk.toString();
+      const lines = stdoutBuffer.split(/\r?\n/);
+      stdoutBuffer = lines.pop() || "";
+      lines.forEach(handleStdoutLine);
+    });
     child.stderr?.on("data", (chunk) => { stderr = append(stderr, chunk); });
     child.once("error", (error) => finish(reject, error));
     child.once("close", (code) => {
+      if (stdoutBuffer) handleStdoutLine(stdoutBuffer);
       if (code !== 0) {
         let message = "AEP Worker 执行失败";
         try {

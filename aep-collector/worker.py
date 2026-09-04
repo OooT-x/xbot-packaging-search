@@ -23,6 +23,12 @@ from xbot_aep_collector.core import (
 )
 from xbot_aep_collector.preview import render_preview, select_preview_frame
 
+PROGRESS_PREFIX = "XBOT_PROGRESS "
+
+
+def emit_progress(payload: dict) -> None:
+    print(f"{PROGRESS_PREFIX}{json.dumps(payload, ensure_ascii=True)}", flush=True)
+
 
 def _composition(project, composition_id: int):
     return next(
@@ -126,16 +132,42 @@ def collect_payload(
     composition_ids: list[int],
     output_root: str,
     preview_times: dict[int, float] | None = None,
+    progress=None,
 ) -> list[dict]:
     project = inspect_project(aep_path)
     by_id = {item.id: item for item in project.compositions}
     preview_times = preview_times or {}
     results = []
-    for composition_id in composition_ids:
+    total = len(composition_ids)
+    if progress:
+        progress({"command": "collect", "event": "start", "total": total, "completed": 0})
+    for index, composition_id in enumerate(composition_ids):
         target = by_id.get(int(composition_id))
         if target is None:
             raise CollectorError(f"找不到合成 ID：{composition_id}")
+        if progress:
+            progress({
+                "command": "collect",
+                "event": "composition",
+                "phase": "collect",
+                "index": index + 1,
+                "total": total,
+                "completed": index,
+                "composition_id": target.id,
+                "composition_name": target.name,
+            })
         result = collect_composition(aep_path, target.id, output_root)
+        if progress:
+            progress({
+                "command": "collect",
+                "event": "composition",
+                "phase": "preview",
+                "index": index + 1,
+                "total": total,
+                "completed": index,
+                "composition_id": target.id,
+                "composition_name": target.name,
+            })
         preview_target = Path(result.zip_file).with_suffix(".png")
         metadata = _preview_metadata(project, target, preview_times.get(target.id))
         source = by_id[metadata["source_id"]]
@@ -171,6 +203,20 @@ def collect_payload(
             preview_target.unlink(missing_ok=True)
             result = mark_collection_preview_error(result, exc)
         results.append(result.to_dict())
+        if progress:
+            progress({
+                "command": "collect",
+                "event": "composition",
+                "phase": "complete",
+                "index": index + 1,
+                "total": total,
+                "completed": index + 1,
+                "composition_id": target.id,
+                "composition_name": target.name,
+                "status": "warning" if result.warnings or result.preview_error else "ready",
+            })
+    if progress:
+        progress({"command": "collect", "event": "done", "total": total, "completed": total})
     return results
 
 
@@ -216,7 +262,7 @@ def main(argv: list[str] | None = None) -> int:
                     preview_times[int(comp_id)] = float(seconds)
                 except ValueError as exc:
                     raise CollectorError(f"预览时间格式无效：{value}，应为 COMP_ID=SECONDS") from exc
-            result = collect_payload(args.aep, args.comp_id, args.output, preview_times)
+            result = collect_payload(args.aep, args.comp_id, args.output, preview_times, progress=emit_progress)
         # Keep the process protocol ASCII-safe on Windows consoles (some
         # PyInstaller console hosts still expose a GBK stdout encoding).
         print(json.dumps(result, ensure_ascii=True, indent=2))

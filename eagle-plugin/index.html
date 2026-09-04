@@ -609,6 +609,12 @@
       .aep-queue-row { display: flex; justify-content: space-between; gap: 8px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); font-size: 10px; }
       .aep-queue-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .aep-queue-row small { color: var(--ink-faint); font: 9px var(--font-mono); white-space: nowrap; }
+      .aep-progress { display: grid; gap: 4px; min-width: 240px; margin-top: 5px; }
+      .aep-progress-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+      .aep-progress-head strong { min-width: 0; overflow: hidden; color: var(--ink-soft); font-size: 9px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+      .aep-progress-head span { flex: none; color: var(--ink-faint); font: 9px var(--font-mono); }
+      .aep-progress-track { height: 5px; overflow: hidden; border-radius: 99px; background: var(--line); }
+      .aep-progress-track > span { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--blue); transition: width 180ms ease-out; }
       .aep-bottom { margin-top: 0; }
       .main-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; margin: 12px 20px 0; overflow: hidden; border: 2px solid #20242b; border-radius: 12px; background: #20242b; }
       .main-tab { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 46px; padding: 8px 14px; border: 0; background: #ffffff; color: #20242b; text-align: left; cursor: pointer; }
@@ -766,7 +772,7 @@
   <body data-theme="light" data-active-view="import">
     <div class="app">
       <header class="topbar">
-        <div class="brand"><img src="logo.png" alt="X.bot" /><div><strong>X.bot 包装素材收集与入库助手</strong><span>AE → Eagle 工作台 · v1.5.9</span></div></div>
+        <div class="brand"><img src="logo.png" alt="X.bot" /><div><strong>X.bot 包装素材收集与入库助手</strong><span>AE → Eagle 工作台 · v1.5.10</span></div></div>
         <div class="top-actions"><div class="api-state"><span class="api-dot" id="apiDot"></span><span id="apiState">正在检测 Eagle API…</span></div><button class="quiet-btn utility-btn" type="button" data-view="formal">历史待入库</button><button class="quiet-btn utility-btn" type="button" data-view="history">批次记录</button><button class="quiet-btn utility-btn" type="button" data-view="diagnostics">诊断</button><button class="icon-btn" type="button" data-action="toast" data-title="帮助" data-message="AEP 收集会在本机 Worker 中离线解析工程，在副本目录生成 PNG、ZIP 与 manifest，然后回到配对预检并直接写入 Eagle。">?</button><button class="icon-btn" type="button" data-action="toggle-theme" aria-label="切换主题">◐</button></div>
       </header>
       <nav class="main-tabs" aria-label="主工作区"><button class="main-tab" type="button" data-view="aep" aria-selected="false"><strong>AEP 收集</strong><span>结构 · 预览 · Worker</span></button><button class="main-tab active" type="button" data-view="import" aria-selected="true"><strong>入库工作台</strong><span>PNG + ZIP · Eagle</span></button></nav>
@@ -806,7 +812,7 @@
               <aside class="aep-inspector" id="aepInspector"><div class="aep-inspector-title">合成检查器</div><div class="aep-empty">点击左侧合成名称查看尺寸、父级、直属预合成和预览来源。</div></aside>
             </div>
           </div>
-          <div class="bottom-bar aep-bottom" title="收集完成后会自动回到入库工作台，进入 PNG + ZIP 配对预检"><div class="bottom-copy"><strong id="aepSelectionSummary">已选 0 个合成</strong><span id="aepCollectionSummary" aria-live="polite"></span></div><div class="bottom-actions"><button class="quiet-btn" id="aepClearBtn" type="button" disabled>清空选择</button><button class="danger-btn" id="aepStopBtn" type="button" hidden>停止收集</button><button class="primary-btn" id="aepCollectBtn" type="button" disabled>收集并进入配对预检</button></div></div>
+          <div class="bottom-bar aep-bottom" title="收集完成后会自动回到入库工作台，进入 PNG + ZIP 配对预检"><div class="bottom-copy"><div><strong id="aepSelectionSummary">已选 0 个合成</strong><span id="aepCollectionSummary" aria-live="polite"></span></div><div class="aep-progress" id="aepProgress" hidden><div class="aep-progress-head"><strong id="aepProgressLabel">准备收集</strong><span id="aepProgressCount">0/0 · 0%</span></div><div class="aep-progress-track" id="aepProgressTrack" role="progressbar" aria-label="AEP 收集进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="aepProgressBar"></span></div></div></div><div class="bottom-actions"><button class="quiet-btn" id="aepClearBtn" type="button" disabled>清空选择</button><button class="danger-btn" id="aepStopBtn" type="button" hidden>停止收集</button><button class="primary-btn" id="aepCollectBtn" type="button" disabled>收集并进入配对预检</button></div></div>
         </div>
         <details class="log-drawer"><summary>收集运行记录</summary><div id="aepLog">等待选择 AEP 工程…</div></details>
       </section>

@@ -98,6 +98,27 @@ test("cancels a running Worker through AbortSignal", async () => {
   fs.rmSync(fixture.root, { recursive: true, force: true });
 });
 
+test("streams Worker progress events without corrupting the final result", async () => {
+  const fixture = workerFixture();
+  const progress = [];
+  const child = new EventEmitter();
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  process.nextTick(() => {
+    child.stdout.emit("data", Buffer.from("XBOT_PROGRESS {\"command\":\"collect\",\"completed\":1}\n{\"ok\":true}"));
+    child.emit("close", 0);
+  });
+  const result = await runAepWorker(["collect", "demo.aep"], {
+    workerPath: fixture.executable,
+    spawnImpl: () => child,
+    onProgress: (event) => progress.push(event),
+  });
+
+  assert.deepEqual(progress, [{ command: "collect", completed: 1 }]);
+  assert.deepEqual(result, { ok: true });
+  fs.rmSync(fixture.root, { recursive: true, force: true });
+});
+
 test("preview protocol writes to an isolated preview cache and reports Worker failures", async () => {
   const fixture = workerFixture();
   const result = await previewAep("C:\\projects\\demo.aep", 21, {

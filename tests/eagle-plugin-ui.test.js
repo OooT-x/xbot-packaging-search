@@ -42,7 +42,7 @@ test("production import view exposes preview-first pairing and direct naming", (
   assert.doesNotMatch(html, /写入 00_待入库/);
   assert.match(html, /id="assetModal"/);
   assert.match(html, /class="bottom-bar import-bottom"/);
-  assert.match(html, /AE → Eagle 工作台 · v1\.5\.9/);
+  assert.match(html, /AE → Eagle 工作台 · v1\.5\.10/);
   assert.match(html, /@keyframes view-in \{ from \{ opacity: 0; \} to \{ opacity: 1; \} \}/);
   assert.match(html, /body\[data-active-view="import"\] #view-import \{ padding-bottom: 104px; \}/);
   assert.match(html, /body\[data-active-view="import"\] #view-import \.import-bottom \{ position: fixed/);
@@ -92,7 +92,7 @@ test("production import view exposes preview-first pairing and direct naming", (
   assert.match(pluginJs, /file\.status = pkg\.state === "ready" \? "to-import" : "conflict"/);
   assert.match(pluginJs, /importFormalBatch/);
   assert.match(pluginJs, /state\.importStage/);
-  assert.equal(manifest.version, "1.5.9");
+  assert.equal(manifest.version, "1.5.10");
 });
 
 test("hosts the AEP collector inside the Eagle plugin and returns to pairing", () => {
@@ -119,6 +119,9 @@ test("hosts the AEP collector inside the Eagle plugin and returns to pairing", (
   assert.match(html, /id="aepTree"/);
   assert.match(html, /id="aepCollectBtn"/);
   assert.match(html, /id="aepStopBtn"/);
+  assert.match(html, /id="aepProgress"/);
+  assert.match(html, /id="aepProgressBar"/);
+  assert.match(html, /aria-label="AEP 收集进度"/);
   assert.match(html, /class="danger-btn" id="aepStopBtn"[^>]*>停止收集/);
   assert.match(html, /id="aepDeselectVisibleBtn"/);
   assert.match(html, /全选当前<\/button><button[^>]*id="aepDeselectVisibleBtn"[^>]*>取消选择/);
@@ -137,6 +140,10 @@ test("hosts the AEP collector inside the Eagle plugin and returns to pairing", (
   assert.match(pluginJs, /function inspectAepProject\(\)/);
   assert.match(pluginJs, /function collectAepSelection\(\)/);
   assert.match(pluginJs, /function stopAepCollection\(\)/);
+  assert.match(pluginJs, /function handleAepCollectionProgress\(progress\)/);
+  assert.match(pluginJs, /onProgress: handleAepCollectionProgress/);
+  assert.match(pluginJs, /data-aep-queue-id=/);
+  assert.match(pluginJs, /aepProgressBar\.style\.width/);
   assert.match(pluginJs, /new AbortController\(\)/);
   assert.match(pluginJs, /signal: controller\.signal/);
   assert.match(pluginJs, /controller\.abort\(\)/);
