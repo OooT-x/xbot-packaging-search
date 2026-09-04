@@ -247,6 +247,24 @@ function packageFileName(file) {
   return file.relative || file.name || path.basename(file.path || "");
 }
 
+function packageTypeOptions(pkg) {
+  const currentType = String(pkg.packageType || "").trim();
+  const options = [`<option value=""${currentType ? "" : " selected"}>待补充类型</option>`];
+  if (currentType && !KNOWN_PACKAGE_TYPES.includes(currentType)) {
+    options.push(`<option value="${escapeHtml(currentType)}" selected>${escapeHtml(currentType)}（未知）</option>`);
+  }
+  KNOWN_PACKAGE_TYPES.forEach((type) => {
+    options.push(`<option value="${escapeHtml(type)}"${type === currentType ? " selected" : ""}>${escapeHtml(type)}</option>`);
+  });
+  return options.join("");
+}
+
+function packageTypeEditor(pkg) {
+  const currentType = String(pkg.packageType || "").trim();
+  const isMissing = !KNOWN_PACKAGE_TYPES.includes(currentType);
+  return `<label class="package-type-control"><span class="sr-only">包装类型</span><select class="package-type-select${isMissing ? " is-missing" : ""}" data-package-type="${escapeHtml(pkg.packageId || "")}" aria-label="修改包装类型">${packageTypeOptions(pkg)}</select></label>`;
+}
+
 function assetLabel(kind) {
   return kind === "preview" ? "预览图 PNG" : "打包文件 ZIP";
 }
@@ -408,6 +426,9 @@ function refreshScanDerivedState() {
     const sourcePath = packagePath(pkg, "source");
     if (!previewPath) pairErrors.push("缺少配对 PNG");
     if (!sourcePath) pairErrors.push("缺少配对 ZIP");
+    if (!KNOWN_PACKAGE_TYPES.includes(String(pkg.packageType || "").trim())) {
+      pairErrors.push(pkg.packageType ? `未知包装类型“${pkg.packageType}”，请选择包装类型` : "缺少包装类型，请先选择");
+    }
     for (const kind of ["preview", "source"]) {
       const currentPath = packagePath(pkg, kind);
       if (currentPath && duplicatePaths.has(`${kind}:${path.resolve(currentPath)}`)) {
@@ -490,7 +511,7 @@ function packageCard(pkg) {
       <div class="pair-asset asset-card" title="点击打包文件查看 ZIP 信息" data-asset-action="source" data-package-id="${escapeHtml(pkg.packageId || "")}"><div class="pair-asset-head"><strong>打包文件</strong><span>ZIP</span></div><div class="source-asset ${sourcePath ? "" : "empty"}" role="button" tabindex="0" aria-label="查看${escapeHtml(pkg.packageName || "包装")}打包文件信息"><div class="zip-mark">ZIP</div></div><div class="pair-file-name" title="${escapeHtml(packageFileName(sourceFile))}">${escapeHtml(packageFileName(sourceFile))}</div><div class="asset-card-footer"><button class="asset-change-btn" type="button" data-package-edit-kind="source">${sourceChangeLabel}</button></div></div>
     </div>
     <div class="pair-copy" title="${escapeHtml(reason)}"><div class="card-title-row"><input class="package-name-input ${pkg.nameEdited ? "edited" : ""}" data-package-name="${escapeHtml(pkg.packageId || "")}" value="${escapeHtml(pkg.packageName || "")}" placeholder="包装名称" aria-label="${escapeHtml(pkg.packageName || "包装")} 名称" /> <div class="pair-badges">${pairStatusBadge(pkg)}</div></div>
-      <div class="card-meta">${escapeHtml(pkg.projectName || "未命名项目")} · ${escapeHtml(pkg.packageType || "待补充类型")} · ${escapeHtml(pkg.version || "v01")} · 合成 ${escapeHtml(pkg.aeCompName || "未记录合成")}</div>
+      <div class="card-meta"><span>${escapeHtml(pkg.projectName || "未命名项目")}</span> · ${packageTypeEditor(pkg)} · ${escapeHtml(pkg.version || "v01")} · 合成 ${escapeHtml(pkg.aeCompName || "未记录合成")}</div>
       <div class="card-files"><span class="file-pill">${previewPath ? "PNG ✓" : "PNG —"}</span><span class="file-pill">${sourcePath ? "ZIP ✓" : "ZIP —"}</span><span class="file-pill">${pkg.manifestPath ? "META ✓" : "META —"}</span><span class="file-pill">${reportBadge}</span><span class="file-pill mono">${escapeHtml(pkg.packageId || "待生成")}</span></div>
       <div class="pair-targets"><div class="pair-target"><span>PNG 入库</span><strong>01_预览图 / ${escapeHtml(packageType)}</strong></div><div class="pair-target"><span>ZIP 入库</span><strong>02_AE源文件 / ${escapeHtml(packageType)}</strong></div></div>
     </div>
@@ -1503,6 +1524,21 @@ document.addEventListener("change", (event) => {
     else state.aep.checkedIds.delete(compId);
     setAepActive(compId);
     renderAepQueue();
+    return;
+  }
+  const packageTypeSelect = event.target.closest("[data-package-type]");
+  if (packageTypeSelect && state.scan) {
+    const pkg = packageById(packageTypeSelect.dataset.packageType);
+    if (!pkg) return;
+    pkg.packageType = String(packageTypeSelect.value || "").trim() || null;
+    state.selectedPackageId = pkg.packageId;
+    refreshScanDerivedState();
+    render(state.scan);
+    if (pkg.packageType) {
+      showToast("包装类型已更新", `${pkg.packageName || "当前包装"} 已归入“${pkg.packageType}”，可继续检查后入库。`);
+    } else {
+      showToast("仍待补充包装类型", "请选择信息条、视频框、背景或分镜排版后才能直接入库。", "error");
+    }
     return;
   }
   const select = event.target.closest("[data-package-edit-field]");
