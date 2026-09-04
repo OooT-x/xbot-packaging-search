@@ -193,6 +193,8 @@ test("exposes the formal packaging maintenance workspace", () => {
   assert.match(pluginJs, /replaceFormalAsset/);
   assert.match(pluginJs, /state\.managedDraft/);
   assert.match(pluginJs, /basePackageId: pkg\.packageId/);
+  assert.match(pluginJs, /if \(pkg\) elements\.projectName\.value = pkg\.projectName/);
+  assert.match(pluginJs, /确认后会创建独立的 v01 包装记录/);
 });
 
 test("ships an interactive preview-first PNG and ZIP pairing prototype", () => {

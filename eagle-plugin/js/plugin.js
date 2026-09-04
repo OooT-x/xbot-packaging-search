@@ -1857,7 +1857,12 @@ document.addEventListener("click", (event) => {
     const packageId = managedAction.dataset.managedPackageId || state.managed.selectedPackageId;
     if (packageId) state.managed.selectedPackageId = packageId;
     if (action === "refresh") refreshManagedPackages();
-    if (action === "add") { setView("import"); showToast("添加新包装", "请在入库工作台选择新的 PNG + ZIP 配对；确认后会作为该项目下的新包装记录入库。"); }
+    if (action === "add") {
+      const pkg = managedPackageById(packageId);
+      if (pkg) elements.projectName.value = pkg.projectName;
+      setView("import");
+      showToast("添加新包装", `${pkg ? `${pkg.projectName} · ` : ""}请在入库工作台选择新的 PNG + ZIP 配对；确认后会创建独立的 v01 包装记录。`);
+    }
     if (action === "update-preview") openManagedPicker("preview", packageId);
     if (action === "update-source") openManagedPicker("source", packageId);
     if (action === "new-version") {
