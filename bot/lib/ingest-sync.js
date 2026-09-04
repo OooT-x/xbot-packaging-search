@@ -37,6 +37,9 @@ function normalizeBatchDetail(detail) {
     sourcePath: String(detail?.source_path || detail?.sourcePath || "").trim(),
     previewEagleId: String(detail?.preview_eagle_id || detail?.previewItemId || "").trim(),
     sourceEagleId: String(detail?.source_eagle_id || detail?.sourceItemId || "").trim(),
+    revisionId: String(detail?.revision_id || detail?.revisionId || "").trim(),
+    replacedEagleId: String(detail?.replaced_eagle_id || detail?.replacedEagleId || "").trim(),
+    replacedKind: String(detail?.replaced_kind || detail?.replacedKind || "").trim(),
     status: String(detail?.status || "filed").trim(),
   };
 }
@@ -128,6 +131,18 @@ class IngestEventWatcher {
         details,
         { mode: importModeForEvent(batch.import_mode), status: "filed" }
       );
+      for (const detail of details) {
+        if (detail.revisionId && typeof this.database.recordPackageRevision === "function") {
+          this.database.recordPackageRevision({
+            revisionId: detail.revisionId,
+            packageId: detail.packageId,
+            operation: "replace",
+            replacedKind: detail.replacedKind,
+            replacedEagleId: detail.replacedEagleId,
+            newEagleId: detail.replacedKind === "preview" ? detail.previewEagleId : detail.sourceEagleId,
+          });
+        }
+      }
       const report = await this.refreshCatalog(true);
       if (!report) throw new Error("catalog refresh did not complete");
       this.database.markBatchSyncEventCompleted(eventId);

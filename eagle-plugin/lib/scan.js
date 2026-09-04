@@ -2,15 +2,11 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { parseReportFile } = require("./report");
-
-const PACKAGE_TYPES = ["信息条", "视频框", "背景", "分镜排版"];
-const PACKAGE_TYPE_SET = new Set(PACKAGE_TYPES);
-const PACKAGE_TYPE_KEYWORDS = new Map([
-  ["信息条", ["信息条", "标注", "人名条"]],
-  ["视频框", ["视频框", "横屏框", "竖屏框"]],
-  ["背景", ["背景"]],
-  ["分镜排版", ["分镜排版"]],
-]);
+const {
+  PACKAGE_TYPES,
+  PACKAGE_TYPE_SET,
+  inferPackageType: inferConfiguredPackageType,
+} = require("./package-types");
 const MANIFEST_NAME = "manifest.json";
 const COLLECTION_MANIFEST_TYPE = "xbot-collection";
 const INGEST_MANIFEST_TYPE = "xbot-eagle-ingest";
@@ -56,15 +52,7 @@ function normalizeText(value) {
 }
 
 function inferPackageType(value) {
-  const normalized = normalizeText(value);
-  if (!normalized) return null;
-  for (const type of PACKAGE_TYPES) {
-    const keywords = PACKAGE_TYPE_KEYWORDS.get(type) || [type];
-    if (keywords.some((keyword) => normalized.includes(normalizeText(keyword)))) {
-      return type;
-    }
-  }
-  return null;
+  return inferConfiguredPackageType(normalizeText(value));
 }
 
 function createBatchId() {
@@ -566,7 +554,11 @@ function metadataFromPair(png, zip, projectName) {
     );
     if (typeIndex >= 0) tokens.splice(typeIndex, 1);
   }
-  const packageName = tokens.join("") || (zip ? path.basename(zip.name, path.extname(zip.name)) : path.basename(png.name, path.extname(png.name)));
+  const packageName = tokens.join("") || (
+    zip
+      ? path.basename(zip.name, path.extname(zip.name))
+      : type || path.basename(png.name, path.extname(png.name))
+  );
   return {
     packageId: stableId("pkg", projectName, packageName, version || "unversioned"),
     projectName,
@@ -672,8 +664,12 @@ function scanDirectory(sourceDir, options = {}) {
       if (!version) entryWarnings.push("缺少版本，确认时默认登记为 v01");
 
       const previewPath = registerReference(entry.preview_file, packageId, "预览图", entry.manifestPath);
-      const sourcePath = registerReference(entry.source_file, packageId, "源文件", entry.manifestPath);
-      if (!previewPath || !sourcePath) {
+      const sourceName = String(entry.source_file || "").trim();
+      const sourcePath = sourceName
+        ? registerReference(sourceName, packageId, "源文件", entry.manifestPath)
+        : null;
+      const imageOnlyBackground = packageType === "背景" && !sourcePath && !sourceName;
+      if (!previewPath || (!sourcePath && !imageOnlyBackground)) {
         packages.push({
           packageId,
           projectName: entryProject || projectName,
@@ -683,6 +679,7 @@ function scanDirectory(sourceDir, options = {}) {
           aeCompName: String(entry.ae_comp_name || "").trim() || null,
           preview: null,
           source: null,
+          sourceOptional: false,
           state: "blocked",
           warnings: entryWarnings,
           errors: ["预览图或源文件无法配对"],
@@ -703,6 +700,7 @@ function scanDirectory(sourceDir, options = {}) {
           aeCompName: String(entry.ae_comp_name || "").trim() || null,
           preview: { path: previewPath, relative: path.relative(root, previewPath) },
           source: { path: sourcePath, relative: path.relative(root, sourcePath) },
+          sourceOptional: false,
           state: "blocked",
           warnings: [...entryWarnings, "manifest 标记为阻止入库"],
           errors: [],
@@ -720,9 +718,12 @@ function scanDirectory(sourceDir, options = {}) {
         version,
         aeCompName: String(entry.ae_comp_name || "").trim() || null,
         preview: { path: previewPath, relative: path.relative(root, previewPath) },
-        source: { path: sourcePath, relative: path.relative(root, sourcePath) },
+        source: sourcePath ? { path: sourcePath, relative: path.relative(root, sourcePath) } : null,
+        sourceOptional: imageOnlyBackground,
         state: "ready",
-        warnings: entryWarnings,
+        warnings: imageOnlyBackground
+          ? [...entryWarnings, "仅图片背景：没有对应工程 ZIP，Bot 只发送预览图"]
+          : entryWarnings,
         errors: [],
         manifestPath: entry.manifestPath,
         reportReferences: normalizeDependencyList(entry.report_files),
@@ -784,12 +785,14 @@ function scanDirectory(sourceDir, options = {}) {
         ...normalizeDependencyList(entry.warnings),
       ];
       const entryErrors = [];
+      const packageType = inferPackageType(packageName);
+      const imageOnlyBackground = packageType === "背景" && !sourceName;
 
-      if (!sourcePath || !fs.existsSync(sourcePath) || path.extname(sourcePath).toLowerCase() !== ZIP_EXT) {
+      if (!imageOnlyBackground && (!sourcePath || !fs.existsSync(sourcePath) || path.extname(sourcePath).toLowerCase() !== ZIP_EXT)) {
         entryErrors.push(`收集记录引用的 ZIP 不存在：${sourceName || "未填写"}`);
-      } else if (usedSourcePaths.has(path.resolve(sourcePath))) {
+      } else if (sourcePath && usedSourcePaths.has(path.resolve(sourcePath))) {
         entryErrors.push(`ZIP 被多个收集记录引用：${sourceName}`);
-      } else {
+      } else if (sourcePath) {
         usedSourcePaths.add(path.resolve(sourcePath));
       }
       if (!previewFile) {
@@ -823,13 +826,16 @@ function scanDirectory(sourceDir, options = {}) {
         packageId,
         projectName,
         packageName,
-        packageType: inferPackageType(packageName),
+        packageType,
+        sourceOptional: imageOnlyBackground,
         version,
         aeCompName: compName || null,
         preview,
         source,
         state,
-        warnings: entryWarnings,
+        warnings: imageOnlyBackground
+          ? [...entryWarnings, "仅图片背景：没有对应工程 ZIP，Bot 只发送预览图"]
+          : entryWarnings,
         errors: entryErrors,
         manifestPath: entry.manifestPath,
         reportReferences: normalizeDependencyList(entry.report_files),
@@ -844,14 +850,17 @@ function scanDirectory(sourceDir, options = {}) {
           role: "预览图",
           entryPath: entry.manifestPath,
         });
-        referencedFiles.set(path.resolve(source.path), {
-          packageId,
-          role: "源文件",
-          entryPath: entry.manifestPath,
-        });
+        if (source) {
+          referencedFiles.set(path.resolve(source.path), {
+            packageId,
+            role: "源文件",
+            entryPath: entry.manifestPath,
+          });
+        }
       }
     });
   } else {
+    const hasAnyZip = files.some((file) => file.kind === "zip");
     for (const pair of pairWithoutManifest(files)) {
       const { png, zip, conflict } = pair;
       if (png && zip) {
@@ -867,6 +876,24 @@ function scanDirectory(sourceDir, options = {}) {
             ...(metadata.aeCompName ? [] : ["缺少 AE 合成名称，确认时可补充"]),
           ],
           errors: [],
+          manifestPath: null,
+          fonts: [],
+          effects: [],
+          dependencyStatus: "complete",
+        });
+      } else if (png && !zip) {
+        const metadata = metadataFromPair(png, null, projectName);
+        const imageOnlyBackground = metadata.packageType === "背景" && !hasAnyZip;
+        packages.push({
+          ...metadata,
+          preview: { path: png.path, relative: png.relative },
+          source: null,
+          sourceOptional: imageOnlyBackground,
+          state: imageOnlyBackground ? "ready" : "blocked",
+          warnings: imageOnlyBackground
+            ? ["仅图片背景：没有对应工程 ZIP，Bot 只发送预览图"]
+            : [],
+          errors: imageOnlyBackground ? [] : ["缺少配对 ZIP"],
           manifestPath: null,
           fonts: [],
           effects: [],

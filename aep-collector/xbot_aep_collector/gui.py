@@ -301,6 +301,7 @@ class PreviewDialog:
                         selection.time,
                         self.cache_file,
                         display_start_frame=source.display_start_frame,
+                        composition_id=source.id,
                     )
                 self.window.after(0, lambda: self._render_done(result, source.id))
             except Exception as exc:
@@ -1588,7 +1589,7 @@ class CollectorWindow:
                         source = by_id.get(self.preview_source_ids.get(comp.id, comp.id), comp)
                         source_layer = preview_source_layer_usage(project, comp, source)
                         self.root.after(0, lambda comp=comp, source=source: (self.status_var.set(f"正在高质量渲染“{comp.name}”预览（取景：{source.name}）…"), self._set_queue_status(comp.id, "正在生成预览", "PNG + ZIP + manifest")))
-                        rendered = render_preview(aep, source.name, source.duration, source.frame_rate, self.preview_times.get(comp.id, default_preview_time(comp.duration, comp.frame_rate)), preview_target, display_start_frame=source.display_start_frame)
+                        rendered = render_preview(aep, source.name, source.duration, source.frame_rate, self.preview_times.get(comp.id, default_preview_time(comp.duration, comp.frame_rate)), preview_target, display_start_frame=source.display_start_frame, composition_id=source.id)
                         result = attach_collection_preview(result, preview_target, rendered.time, rendered.frame_number, preview_source_id=source.id, preview_source_name=source.name, preview_source_relation=("self" if source.id == comp.id else "parent-display"), preview_renderer=rendered.renderer, preview_source_layer=source_layer)
                     except Exception as preview_error:
                         preview_target.unlink(missing_ok=True)

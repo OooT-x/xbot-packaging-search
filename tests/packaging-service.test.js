@@ -175,6 +175,62 @@ test("sends a preview, accepts only the requester, and delivers the ZIP once", a
   }
 });
 
+test("returns image-only backgrounds without creating a confirmation query", async () => {
+  const app = fixture();
+  try {
+    const preview = path.join(app.root, "image-only-background.png");
+    fs.writeFileSync(preview, "background");
+    app.database.replaceCatalog(
+      [{
+        project_id: "project-1",
+        project_name: "变速箱",
+        normalized_name: "变速箱",
+        aliases: ["变速箱包装"],
+      }],
+      [{
+        package_id: "pkg-image-only",
+        project_id: "project-1",
+        package_name: "纯图片背景",
+        package_type: "背景",
+        tags: ["背景"],
+        version: "v01",
+        preview_eagle_id: "preview-image-only",
+        source_eagle_id: null,
+        preview_path: preview,
+        source_path: null,
+        ae_comp_name: "纯图片背景",
+        dependency_status: "complete",
+        status: "active",
+      }]
+    );
+
+    const handled = await app.service.tryHandleQuery(
+      {
+        event_id: "event-image-only",
+        message_id: "om_image_query",
+        message_type: "text",
+        chat_id: "oc_chat",
+        sender_id: "ou_requester",
+        content: "@X.bot 找变速箱背景",
+      },
+      { mentioned: true }
+    );
+
+    assert.equal(handled, true);
+    const post = app.calls.find((call) => call.kind === "post");
+    assert.ok(post);
+    const postText = JSON.stringify(post.content);
+    assert.match(postText, /仅图片背景/);
+    assert.match(postText, /没有对应工程 ZIP/);
+    assert.match(postText, /不进入源文件确认流程/);
+    assert.equal(app.database.listActivePackages().length, 1);
+    assert.equal(app.database.db.prepare("SELECT COUNT(*) AS count FROM queries").get().count, 0);
+    assert.equal(app.calls.filter((call) => call.kind === "file").length, 0);
+  } finally {
+    app.close();
+  }
+});
+
 test("ignores a bare confirmation without a reply reference", async () => {
   const app = fixture();
   try {

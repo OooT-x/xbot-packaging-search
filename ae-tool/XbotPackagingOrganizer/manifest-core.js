@@ -5,7 +5,7 @@
     module.exports = api;
   }
 }(this, function () {
-  var PACKAGE_TYPES = ["信息条", "视频框", "背景", "分镜排版"];
+  var PACKAGE_TYPES = ["信息条", "视频框", "背景", "分镜排版", "分Part板", "报道", "时间轴"];
 
   function text(value) {
     return String(value === null || typeof value === "undefined" ? "" : value);
@@ -57,6 +57,9 @@
     if (normalized.indexOf("视频框") >= 0) return "视频框";
     if (normalized.indexOf("背景") >= 0) return "背景";
     if (normalized.indexOf("分镜排版") >= 0) return "分镜排版";
+    if (normalized.indexOf("分part板") >= 0 || normalized.indexOf("分p板") >= 0) return "分Part板";
+    if (normalized.indexOf("报道") >= 0) return "报道";
+    if (normalized.indexOf("时间轴") >= 0 || normalized.indexOf("时间线") >= 0) return "时间轴";
     return "";
   }
 

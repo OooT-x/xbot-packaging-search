@@ -714,7 +714,15 @@ def collect_many(
     composition_ids: Iterable[int],
     output_root: str | Path,
 ) -> list[CollectionResult]:
-    return [collect_composition(aep_path, comp_id, output_root) for comp_id in composition_ids]
+    unique_ids: list[int] = []
+    seen_ids: set[int] = set()
+    for composition_id in composition_ids:
+        normalized_id = int(composition_id)
+        if normalized_id in seen_ids:
+            continue
+        seen_ids.add(normalized_id)
+        unique_ids.append(normalized_id)
+    return [collect_composition(aep_path, comp_id, output_root) for comp_id in unique_ids]
 
 
 def collect_precompositions(

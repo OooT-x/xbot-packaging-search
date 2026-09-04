@@ -112,6 +112,7 @@ def preview_payload(
         display_start_frame=next(
             item for item in project.compositions if item.id == metadata["source_id"]
         ).display_start_frame,
+        composition_id=metadata["source_id"],
     )
     return {
         "composition_id": target.id,
@@ -137,12 +138,20 @@ def collect_payload(
     project = inspect_project(aep_path)
     by_id = {item.id: item for item in project.compositions}
     preview_times = preview_times or {}
+    unique_ids: list[int] = []
+    seen_ids: set[int] = set()
+    for composition_id in composition_ids:
+        normalized_id = int(composition_id)
+        if normalized_id in seen_ids:
+            continue
+        seen_ids.add(normalized_id)
+        unique_ids.append(normalized_id)
     results = []
-    total = len(composition_ids)
+    total = len(unique_ids)
     if progress:
         progress({"command": "collect", "event": "start", "total": total, "completed": 0})
-    for index, composition_id in enumerate(composition_ids):
-        target = by_id.get(int(composition_id))
+    for index, composition_id in enumerate(unique_ids):
+        target = by_id.get(composition_id)
         if target is None:
             raise CollectorError(f"找不到合成 ID：{composition_id}")
         if progress:
@@ -180,6 +189,7 @@ def collect_payload(
                 metadata["time_seconds"],
                 preview_target,
                 display_start_frame=source.display_start_frame,
+                composition_id=source.id,
             )
             result = attach_collection_preview(
                 result,

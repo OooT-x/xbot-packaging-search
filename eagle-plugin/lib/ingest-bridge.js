@@ -45,9 +45,12 @@ function buildIngestEvent(fileResult) {
       source_eagle_id: String(item.sourceItemId || "").trim(),
       preview_path: String(item.previewPath || "").trim(),
       source_path: String(item.sourcePath || "").trim(),
+      revision_id: String(item.revisionId || "").trim(),
+      replaced_eagle_id: String(item.replacedItemId || "").trim(),
+      replaced_kind: String(item.replacedKind || "").trim(),
       status: "filed",
     }))
-    .filter((item) => item.package_id && item.preview_eagle_id && item.source_eagle_id)
+    .filter((item) => item.package_id && item.preview_eagle_id && (item.source_eagle_id || item.package_type === "背景"))
     .sort((left, right) => left.package_id.localeCompare(right.package_id));
   if (filed.length === 0) return null;
 

@@ -1703,7 +1703,7 @@ async function judgePackagingIntent(content, catalogText) {
     "判断用户消息是否在请求查找某个项目的包装素材（信息条/人名条/标注条、视频框/画面框、背景、分镜排版等）。",
     "只有用户明确想找包装素材时才返回 true；闲聊、提问、找音乐、找素材网站等都不是包装查询。",
     `可选项目（只能从这里选）：${catalogText || "无"}`,
-    "包装类型只能是：信息条、视频框、背景、分镜排版；没有则为空字符串。",
+    "包装类型只能是：信息条、视频框、背景、分镜排版、分Part板、报道、时间轴；没有则为空字符串。",
     '只输出 JSON，不要输出任何其他文字：{"is_packaging_query":true|false,"project_name":"项目名或空","package_type":"类型或空"}',
   ].join("\n");
   const user = `用户消息：\n${content}`;

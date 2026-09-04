@@ -14,7 +14,16 @@ const {
 const { syncEagleCatalog } = require("./eagle-sync");
 
 function candidateLabel(item) {
-  return `${item.project_name} · ${item.package_name}（${item.version}）`;
+  const suffix = isImageOnlyPackage(item) ? " · 仅图片背景" : "";
+  return `${item.project_name} · ${item.package_name}（${item.version}）${suffix}`;
+}
+
+function isImageOnlyPackage(item) {
+  return Boolean(
+    item &&
+      Object.prototype.hasOwnProperty.call(item, "source_path") &&
+      !String(item.source_path || "").trim()
+  );
 }
 
 function queryPrompt(candidates, expiresMinutes) {
@@ -68,6 +77,21 @@ function buildCandidatePost(candidates, imageKeys, expiresMinutes) {
       text: `${expiresMinutes} 分钟内有效，只有原查询人可以确认。`,
     },
   ]);
+  return { zh_cn: { content: rows } };
+}
+
+function buildImageOnlyPost(candidates, imageKeys) {
+  const rows = [[{
+    tag: "text",
+    text: candidates.length === 1
+      ? "找到一个仅图片背景："
+      : `找到 ${candidates.length} 个仅图片背景：`,
+  }]];
+  candidates.forEach((item, index) => {
+    rows.push([{ tag: "text", text: `${index + 1}. ${candidateLabel(item)}` }]);
+    rows.push([{ tag: "img", image_key: imageKeys[index] }]);
+  });
+  rows.push([{ tag: "text", text: "这些背景只有图片，没有对应工程 ZIP，不进入源文件确认流程，也不会发送源文件。" }]);
   return { zh_cn: { content: rows } };
 }
 
@@ -247,7 +271,42 @@ class PackagingService {
       return true;
     }
 
+    const imageOnlyCandidates = result.candidates.filter(isImageOnlyPackage);
+    const sourceCandidates = result.candidates.filter((item) => !isImageOnlyPackage(item));
+    if (imageOnlyCandidates.length > 0) {
+      await this.sendImageOnlyBackgrounds(event, imageOnlyCandidates);
+      if (sourceCandidates.length === 0) return true;
+      result = { ...result, candidates: sourceCandidates };
+    }
+
     return await this.startQueryFromResult(event, result);
+  }
+
+  async sendImageOnlyBackgrounds(event, candidates) {
+    try {
+      const imageKeys = [];
+      for (const candidate of candidates) {
+        if (!fs.existsSync(candidate.preview_path)) {
+          throw new Error(`preview file missing: ${candidate.preview_eagle_id}`);
+        }
+        imageKeys.push(await this.transport.uploadImage(candidate.preview_path));
+      }
+      const reply = await this.transport.replyPost(
+        event.message_id,
+        buildImageOnlyPost(candidates, imageKeys),
+        `package-image-only-${event.event_id || event.message_id}`
+      );
+      this.log(
+        `packaging image-only backgrounds sent message_id=${safeMessageId(reply)} candidates=${candidates.length}`
+      );
+    } catch (error) {
+      this.log(`packaging image-only background send failed: ${error.message}`);
+      await this.transport.replyText(
+        event.message_id,
+        "我找到了图片背景，但预览发送失败了，请稍后重试。",
+        `package-image-only-${event.event_id || event.message_id}-failed`
+      );
+    }
   }
 
   async startQueryFromResult(event, result) {
@@ -428,6 +487,14 @@ class PackagingService {
 
     const selected = query.candidates.find((candidate) => candidate.position === intent.position);
     if (!selected) return false;
+    if (!selected.source_path) {
+      await this.transport.replyText(
+        event.message_id,
+        "这个背景只有图片，没有对应工程 ZIP，不需要确认源文件。",
+        `package-query-${query.request_id}-image-only`
+      );
+      return true;
+    }
     if (!fs.existsSync(selected.source_path)) {
       await this.transport.replyText(
         event.message_id,
@@ -528,8 +595,16 @@ class PackagingService {
 
     const packages = this.database.listActivePackages();
     const effectiveContent = `${projectName} ${event.content}`;
-    const result = searchPackages(packages, effectiveContent, 3);
+    let result = searchPackages(packages, effectiveContent, 3);
     if (!result.project || result.candidates.length === 0) return false;
+
+    const imageOnlyCandidates = result.candidates.filter(isImageOnlyPackage);
+    const sourceCandidates = result.candidates.filter((item) => !isImageOnlyPackage(item));
+    if (imageOnlyCandidates.length > 0) {
+      await this.sendImageOnlyBackgrounds(event, imageOnlyCandidates);
+      if (sourceCandidates.length === 0) return true;
+      result = { ...result, candidates: sourceCandidates };
+    }
 
     this.log(
       `packaging follow-up request_id=${query.request_id} message_id=${event.message_id} project=${projectName} type=${result.package_type || ""} (previous query kept pending)`

@@ -7,7 +7,7 @@ const {
   previewAep,
   resolveWorkerPath,
 } = require("../lib/aep-worker.js");
-const { scanDirectory } = require("../lib/scan.js");
+const { scanDirectory, stableId } = require("../lib/scan.js");
 const {
   EaglePluginAdapter,
   fileBatch,
@@ -21,6 +21,10 @@ const {
   KNOWN_PACKAGE_TYPES,
 } = require("../lib/eagle-api.js");
 const { publishIngestEvent } = require("../lib/ingest-bridge.js");
+const {
+  listFormalPackages,
+  replaceFormalAsset,
+} = require("../lib/managed-assets.js");
 
 const state = {
   activeView: "import",
@@ -41,6 +45,14 @@ const state = {
   selectedPackageId: null,
   scanFileBaseline: null,
   scanPackageBaseline: null,
+  managedDraft: null,
+  managed: {
+    packages: [],
+    project: "all",
+    search: "",
+    selectedPackageId: null,
+    loading: false,
+  },
   assetPreview: {
     previewZoom: 1,
     previewPanX: 0,
@@ -51,9 +63,10 @@ const state = {
   aep: {
     aepPath: null,
     project: null,
-    checkedIds: new Set(),
+    checkedOccurrences: new Map(),
     expandedIds: new Set(),
     activeCompId: null,
+    activeOccurrenceKey: null,
     filter: "all",
     search: "",
     previewFiles: {},
@@ -140,6 +153,8 @@ const elements = {
   aepStatWarnings: document.getElementById("aepStatWarnings"),
   aepInspector: document.getElementById("aepInspector"),
   aepPreviewModal: document.getElementById("aepPreviewModal"),
+  aepDuplicateModal: document.getElementById("aepDuplicateModal"),
+  aepDuplicateSummary: document.getElementById("aepDuplicateSummary"),
   aepPreviewTitle: document.getElementById("aepPreviewTitle"),
   aepPreviewSub: document.getElementById("aepPreviewSub"),
   aepPreviewStage: document.getElementById("aepPreviewStage"),
@@ -161,6 +176,13 @@ const elements = {
   aepStopBtn: document.getElementById("aepStopBtn"),
   aepCollectBtn: document.getElementById("aepCollectBtn"),
   aepLog: document.getElementById("aepLog"),
+  managedRows: document.getElementById("managedRows"),
+  managedProject: document.getElementById("managedProject"),
+  managedSearch: document.getElementById("managedSearch"),
+  managedSummary: document.getElementById("managedSummary"),
+  managedInspector: document.getElementById("managedInspector"),
+  managedPreviewPicker: document.getElementById("managedPreviewPicker"),
+  managedSourcePicker: document.getElementById("managedSourcePicker"),
 };
 
 let toastTimer = null;
@@ -184,11 +206,149 @@ function fileUrl(filePath) {
 function log(message) {
   const target = state.activeView === "aep"
     ? elements.aepLog
-    : state.activeView === "import" ? elements.log : elements.logFormal;
+    : state.activeView === "import" ? elements.log
+      : state.activeView === "managed" ? document.getElementById("managedLog")
+      : elements.logFormal;
   if (!target) return;
   const time = new Date().toLocaleTimeString();
   target.textContent = `${target.textContent}\n[${time}] ${message}`.trim();
   target.scrollTop = target.scrollHeight;
+}
+
+function managedPackageById(packageId) {
+  return state.managed.packages.find((pkg) => String(pkg.packageId) === String(packageId)) || null;
+}
+
+function nextPackageVersion(version) {
+  const match = String(version || "v01").match(/^v(\d+)$/iu);
+  return `v${String((match ? Number(match[1]) : 1) + 1).padStart(2, "0")}`;
+}
+
+function applyManagedDraft(scan) {
+  const draft = state.managedDraft;
+  if (!draft) return scan;
+  state.managedDraft = null;
+  if ((scan.packages || []).length !== 1) {
+    showToast("新版本需要单独收集", "请把这一版的 PNG + ZIP 放在只包含一个包装记录的文件夹中，再重新扫描。", "error");
+    state.managedDraft = draft;
+    return scan;
+  }
+  const source = scan.packages[0];
+  const packageId = stableId("pkg-version", draft.basePackageId, source.packageId, draft.version);
+  return {
+    ...scan,
+    projectName: draft.projectName,
+    packages: [{
+      ...source,
+      projectName: draft.projectName,
+      packageId,
+      basePackageId: draft.basePackageId,
+      version: draft.version,
+    }],
+  };
+}
+
+function managedVisiblePackages() {
+  const search = String(state.managed.search || "").trim().toLocaleLowerCase();
+  return state.managed.packages.filter((pkg) => {
+    if (state.managed.project !== "all" && pkg.projectName !== state.managed.project) return false;
+    if (!search) return true;
+    return [pkg.projectName, pkg.packageName, pkg.packageType, pkg.version, pkg.aeCompName]
+      .filter(Boolean)
+      .join(" ")
+      .toLocaleLowerCase()
+      .includes(search);
+  });
+}
+
+function managedCard(pkg) {
+  const previewPath = pkg.preview?.filePath || pkg.preview?.filepath || "";
+  const preview = previewPath
+    ? `<img src="${escapeHtml(fileUrl(previewPath))}" alt="${escapeHtml(pkg.packageName)}" onerror="this.style.display='none'" />`
+    : "PNG";
+  return `<article class="managed-card ${state.managed.selectedPackageId === pkg.packageId ? "selected" : ""}" data-managed-package-id="${escapeHtml(pkg.packageId)}" tabindex="0"><div class="managed-card-thumb">${preview}</div><div><h3 title="${escapeHtml(pkg.packageName)}">${escapeHtml(pkg.packageName)}</h3><div class="managed-card-meta">${escapeHtml(pkg.projectName)} · ${escapeHtml(pkg.packageType || "待补充类型")}<br />${escapeHtml(pkg.version)} · ${escapeHtml(pkg.aeCompName || "未记录合成")}</div><div class="managed-card-files"><span>PNG ${pkg.preview ? "✓" : "—"}</span><span>ZIP ${pkg.source ? "✓" : "—"}</span></div></div></article>`;
+}
+
+function renderManagedInspector() {
+  const pkg = managedPackageById(state.managed.selectedPackageId);
+  if (!pkg) {
+    elements.managedInspector.innerHTML = `<div class="empty-card">选择一条包装，查看当前版本并执行更新。</div>`;
+    return;
+  }
+  const previewPath = pkg.preview?.filePath || pkg.preview?.filepath || "";
+  const sourcePath = pkg.source?.filePath || pkg.source?.filepath || "";
+  const preview = previewPath ? `<img src="${escapeHtml(fileUrl(previewPath))}" alt="${escapeHtml(pkg.packageName)}" />` : "暂无 PNG";
+  elements.managedInspector.innerHTML = `<div class="managed-inspector-head"><div><h2>${escapeHtml(pkg.packageName)}</h2><p>${escapeHtml(pkg.projectName)} · ${escapeHtml(pkg.packageType || "待补充类型")}</p></div><span class="status-badge status-ready">${escapeHtml(pkg.version)}</span></div><div class="managed-preview">${preview}</div><div class="managed-detail-list"><div class="managed-detail-row"><span>package_id</span><strong class="mono">${escapeHtml(pkg.packageId)}</strong></div><div class="managed-detail-row"><span>batch_id</span><strong class="mono">${escapeHtml(pkg.batchId || "-")}</strong></div><div class="managed-detail-row"><span>预览图</span><strong title="${escapeHtml(previewPath)}">${escapeHtml(previewPath ? path.basename(previewPath) : "缺失")}</strong></div><div class="managed-detail-row"><span>源文件</span><strong title="${escapeHtml(sourcePath)}">${escapeHtml(sourcePath ? path.basename(sourcePath) : "缺失")}</strong></div></div><div class="managed-actions"><button class="quiet-btn" type="button" data-managed-action="update-preview" data-managed-package-id="${escapeHtml(pkg.packageId)}" ${pkg.preview ? "" : "disabled"}>更新预览图</button><button class="quiet-btn" type="button" data-managed-action="update-source" data-managed-package-id="${escapeHtml(pkg.packageId)}" ${pkg.source ? "" : "disabled"}>更新打包文件</button><button class="primary-btn" type="button" data-managed-action="new-version" data-managed-package-id="${escapeHtml(pkg.packageId)}">发布新版本</button></div><div class="managed-history-note">替换预览图或 ZIP 会保留旧素材到“03_历史版本”，并为本次操作生成修订号。设计内容发生变化时，请发布新版本。</div>`;
+}
+
+function renderManaged() {
+  const visible = managedVisiblePackages();
+  const projects = [...new Set(state.managed.packages.map((pkg) => pkg.projectName).filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-CN"));
+  if (elements.managedProject) {
+    const current = state.managed.project;
+    elements.managedProject.innerHTML = `<option value="all">全部项目</option>${projects.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}`;
+    elements.managedProject.value = projects.includes(current) ? current : "all";
+  }
+  if (elements.managedRows) elements.managedRows.innerHTML = visible.length ? visible.map(managedCard).join("") : `<div class="empty-card" style="grid-column:1/-1;">${state.managed.loading ? "正在读取正式 PNG + ZIP 配对…" : "没有符合筛选条件的正式包装。"}</div>`;
+  const count = state.managed.packages.length;
+  const filtered = visible.length;
+  if (document.getElementById("managedCount")) document.getElementById("managedCount").textContent = `${count} 项`;
+  if (elements.managedSummary) elements.managedSummary.textContent = count ? `共 ${count} 条正式包装，当前显示 ${filtered} 条；旧素材保留在历史版本目录。` : "正式目录中还没有可管理的包装。";
+  renderManagedInspector();
+}
+
+async function refreshManagedPackages() {
+  if (!elements.managedRows) return;
+  state.managed.loading = true;
+  renderManaged();
+  try {
+    const result = await listFormalPackages(createAdapter());
+    state.managed.packages = result.packages || [];
+    if (!state.managed.selectedPackageId && state.managed.packages[0]) state.managed.selectedPackageId = state.managed.packages[0].packageId;
+    log(`读取正式素材完成：${state.managed.packages.length} 条包装记录`);
+  } catch (error) {
+    state.managed.packages = [];
+    log(`读取正式素材失败：${error.message}`);
+    showToast("读取正式素材失败", error.message, "error");
+  } finally {
+    state.managed.loading = false;
+    renderManaged();
+  }
+}
+
+function openManagedPicker(kind, packageId) {
+  state.managed.selectedPackageId = packageId;
+  const picker = kind === "preview" ? elements.managedPreviewPicker : elements.managedSourcePicker;
+  if (!picker) return;
+  picker.value = "";
+  picker.click();
+}
+
+async function applyManagedReplacement(kind, file) {
+  const pkg = managedPackageById(state.managed.selectedPackageId);
+  const filePath = file?.path || "";
+  if (!pkg || !filePath) {
+    showToast("无法更新素材", "Eagle 未返回所选文件的本地路径，请在 Eagle 内重新选择。", "error");
+    return;
+  }
+  try {
+    log(`正在更新${kind === "preview" ? "预览图" : "打包文件"}：${pkg.packageName}`);
+    const result = await replaceFormalAsset(createAdapter(), pkg, kind, filePath);
+    const published = publishIngestEvent({
+      batchId: result.batchId,
+      projectName: result.projectName,
+      sourcePath: result.sourcePath,
+      importMode: "update",
+      filed: [result],
+    });
+    log(`更新完成：${result.replacedItemId} → ${kind === "preview" ? result.previewItemId : result.sourceItemId}`);
+    if (!published.skipped) log(`已写入 bot 索引同步队列：${published.filePath}`);
+    showToast("素材已更新", `${pkg.packageName} 的${kind === "preview" ? "预览图" : "ZIP"}已切换，旧文件保留在历史版本。`, "success");
+    await refreshManagedPackages();
+  } catch (error) {
+    log(`素材更新失败：${error.message}`);
+    showToast("素材更新失败", error.message, "error");
+  }
 }
 
 function showToast(title, message, kind = "normal") {
@@ -480,8 +640,16 @@ function refreshScanDerivedState() {
     const pairErrors = [];
     const previewPath = packagePath(pkg, "preview");
     const sourcePath = packagePath(pkg, "source");
+    const sourceOptional = Boolean(
+      pkg.sourceOptional ||
+      pkg.source_optional ||
+      (!sourcePath && String(pkg.packageType || "").trim() === "背景")
+    );
     if (!previewPath) pairErrors.push("缺少配对 PNG");
-    if (!sourcePath) pairErrors.push("缺少配对 ZIP");
+    if (!sourcePath && !sourceOptional) pairErrors.push("缺少配对 ZIP");
+    if (sourceOptional && String(pkg.packageType || "").trim() !== "背景") {
+      pairErrors.push("仅图片素材只能登记为背景");
+    }
     if (!KNOWN_PACKAGE_TYPES.includes(String(pkg.packageType || "").trim())) {
       pairErrors.push(pkg.packageType ? `未知包装类型“${pkg.packageType}”，请选择包装类型` : "缺少包装类型，请先选择");
     }
@@ -531,11 +699,17 @@ function pairStatusBadge(pkg) {
 }
 
 function packageCard(pkg) {
+  // Paired-source defaults remain: <strong>打包文件</strong> title="点击打包文件查看 ZIP 信息".
   const previewPath = displayPackagePath(pkg, "preview");
   const sourcePath = displayPackagePath(pkg, "source");
   const packageType = pkg.packageType || "待补充类型";
   const previewFile = scanFileAt(state.scan, previewPath) || pkg.preview;
   const sourceFile = scanFileAt(state.scan, sourcePath) || pkg.source;
+  const sourceOptional = Boolean(
+    pkg.sourceOptional ||
+    pkg.source_optional ||
+    (!sourcePath && String(pkg.packageType || "").trim() === "背景")
+  );
   const editing = String(state.editingPackageId || "") === String(pkg.packageId || "");
   const editingKind = state.editingPackageKind || "preview";
   const previewImage = previewPath
@@ -564,12 +738,12 @@ function packageCard(pkg) {
     <div class="pair-visual">
       <div class="pair-asset asset-card" title="点击预览图查看原图" data-asset-action="preview" data-package-id="${escapeHtml(pkg.packageId || "")}"><div class="pair-asset-head"><strong>预览图</strong><span>PNG</span></div><div class="package-thumb asset-preview-hit ${packageTone(pkg)}" role="button" tabindex="0" aria-label="查看${escapeHtml(pkg.packageName || "包装")}原图">${previewImage}</div><div class="pair-file-name" title="${escapeHtml(packageFileName(previewFile))}">${escapeHtml(packageFileName(previewFile))}</div><div class="asset-card-footer"><button class="asset-change-btn" type="button" data-package-edit-kind="preview">${previewChangeLabel}</button></div></div>
       <div class="pair-connector" aria-hidden="true">↔</div>
-      <div class="pair-asset asset-card" title="点击打包文件查看 ZIP 信息" data-asset-action="source" data-package-id="${escapeHtml(pkg.packageId || "")}"><div class="pair-asset-head"><strong>打包文件</strong><span>ZIP</span></div><div class="source-asset ${sourcePath ? "" : "empty"}" role="button" tabindex="0" aria-label="查看${escapeHtml(pkg.packageName || "包装")}打包文件信息"><div class="zip-mark">ZIP</div></div><div class="pair-file-name" title="${escapeHtml(packageFileName(sourceFile))}">${escapeHtml(packageFileName(sourceFile))}</div><div class="asset-card-footer"><button class="asset-change-btn" type="button" data-package-edit-kind="source">${sourceChangeLabel}</button></div></div>
+      <div class="pair-asset asset-card" title="${sourceOptional ? "仅图片背景，没有对应工程 ZIP" : "点击打包文件查看 ZIP 信息"}" data-asset-action="source" data-package-id="${escapeHtml(pkg.packageId || "")}"><div class="pair-asset-head"><strong>${sourceOptional ? "工程文件" : "打包文件"}</strong><span>${sourceOptional ? "无 ZIP" : "ZIP"}</span></div><div class="source-asset ${sourcePath ? "" : "empty"}" role="button" tabindex="0" aria-label="${sourceOptional ? "查看仅图片背景说明" : `查看${escapeHtml(pkg.packageName || "包装")}打包文件信息`}"><div class="zip-mark">${sourceOptional ? "图片" : "ZIP"}</div></div><div class="pair-file-name" title="${escapeHtml(packageFileName(sourceFile))}">${sourceOptional ? "仅图片背景，无工程 ZIP" : escapeHtml(packageFileName(sourceFile))}</div><div class="asset-card-footer"><button class="asset-change-btn" type="button" data-package-edit-kind="source" ${sourceOptional ? "disabled title=\"仅图片背景不需要更换 ZIP\"" : ""}>${sourceOptional ? "无 ZIP" : sourceChangeLabel}</button></div></div>
     </div>
     <div class="pair-copy" title="${escapeHtml(reason)}"><div class="card-title-row"><input class="package-name-input ${pkg.nameEdited ? "edited" : ""}" data-package-name="${escapeHtml(pkg.packageId || "")}" value="${escapeHtml(pkg.packageName || "")}" placeholder="包装名称" aria-label="${escapeHtml(pkg.packageName || "包装")} 名称" /> <div class="pair-badges">${pairStatusBadge(pkg)}</div></div>
       <div class="card-meta"><span>${escapeHtml(pkg.projectName || "未命名项目")}</span> · ${packageTypeEditor(pkg)} · ${escapeHtml(pkg.version || "v01")} · 合成 ${escapeHtml(pkg.aeCompName || "未记录合成")}</div>
       <div class="card-files"><span class="file-pill">${previewPath ? "PNG ✓" : "PNG —"}</span><span class="file-pill">${sourcePath ? "ZIP ✓" : "ZIP —"}</span><span class="file-pill">${pkg.manifestPath ? "META ✓" : "META —"}</span><span class="file-pill">${reportBadge}</span><span class="file-pill mono">${escapeHtml(pkg.packageId || "待生成")}</span></div>
-      <div class="pair-targets"><div class="pair-target"><span>PNG 入库</span><strong>01_预览图 / ${escapeHtml(packageType)}</strong></div><div class="pair-target"><span>ZIP 入库</span><strong>02_AE源文件 / ${escapeHtml(packageType)}</strong></div></div>
+      <div class="pair-targets"><div class="pair-target"><span>PNG 入库</span><strong>01_预览图 / ${escapeHtml(packageType)}</strong></div><div class="pair-target"><span>${sourceOptional ? "源文件" : "ZIP 入库"}</span><strong>${sourceOptional ? "仅图片背景，不创建源文件记录" : `02_AE源文件 / ${escapeHtml(packageType)}`}</strong></div></div>
     </div>
     <div class="pair-facts"><span>配对来源</span><strong>${hasPendingPackageEdit(pkg) ? "待应用" : pkg.manualMatch ? "用户选择" : "自动规则"}</strong><span>预览尺寸</span><strong>${escapeHtml(previewFile?.dimensions || pkg.preview?.dimensions || "PNG 文件")}</strong><span>导入状态</span><strong class="${pkg.state === "ready" ? "check-ok" : "check-bad"}">${escapeHtml(statusLabel(pkg.state))}</strong></div>
     ${editPanel}
@@ -975,6 +1149,49 @@ function aepComposition(compId) {
   return aepCompositions().find((item) => Number(item.id) === Number(compId)) || null;
 }
 
+function aepOccurrenceKey(pathIds, compId) {
+  return [...(pathIds || []), Number(compId)].join("/");
+}
+
+function aepVisibleOccurrences() {
+  return [...(elements.aepTree?.querySelectorAll("[data-aep-check]") || [])].map((checkbox) => ({
+    occurrenceKey: checkbox.dataset.aepOccurrence || `inspector:${Number(checkbox.dataset.aepCheck)}`,
+    compId: Number(checkbox.dataset.aepCheck),
+  })).filter((item) => Number.isInteger(item.compId));
+}
+
+function aepSelectionSnapshot() {
+  const counts = new Map();
+  const occurrenceEntries = [...state.aep.checkedOccurrences.entries()]
+    .map(([occurrenceKey, compId]) => ({ occurrenceKey, compId: Number(compId) }))
+    .filter((item) => Number.isInteger(item.compId) && aepComposition(item.compId));
+  occurrenceEntries.forEach(({ compId }) => counts.set(compId, (counts.get(compId) || 0) + 1));
+  const uniqueIds = [...counts.keys()];
+  return {
+    occurrenceEntries,
+    uniqueIds,
+    duplicates: uniqueIds
+      .filter((compId) => counts.get(compId) > 1)
+      .map((compId) => ({ compId, count: counts.get(compId), comp: aepComposition(compId) }))
+      .filter((item) => item.comp),
+  };
+}
+
+function aepCurrentOccurrenceKey(compId) {
+  if (state.aep.activeOccurrenceKey && Number(state.aep.activeCompId) === Number(compId)) {
+    return state.aep.activeOccurrenceKey;
+  }
+  const visible = aepVisibleOccurrences().find((item) => item.compId === Number(compId));
+  return visible?.occurrenceKey || `inspector:${Number(compId)}`;
+}
+
+function aepToggleOccurrence(compId, occurrenceKey, checked = null) {
+  const key = occurrenceKey || aepOccurrenceKey([], compId);
+  const shouldCheck = checked === null ? !state.aep.checkedOccurrences.has(key) : Boolean(checked);
+  if (shouldCheck) state.aep.checkedOccurrences.set(key, Number(compId));
+  else state.aep.checkedOccurrences.delete(key);
+}
+
 function aepIsCandidate(comp) {
   return /(包装|背景|视频框|竖屏框|横屏框|信息条|人名条|标注|分镜)/u.test(String(comp?.name || ""));
 }
@@ -1040,32 +1257,35 @@ function aepRenderFilters() {
   });
 }
 
-function aepTreeBranch(comp, depth, trail, seen) {
+function aepTreeBranch(comp, depth, trail, seen, pathIds = []) {
   if (!aepMatches(comp) && !aepHasVisibleDescendant(comp.id, trail)) return "";
   const isReference = seen.has(comp.id) || trail.has(comp.id);
   const depthValue = Math.min(Number(depth) || 0, 8);
   const indent = depthValue * 30;
   const guideLeft = depthValue > 0 ? 16 + ((depthValue - 1) * 30) : 0;
+  const occurrenceKey = aepOccurrenceKey(pathIds, comp.id);
   const nextTrail = new Set(trail).add(comp.id);
-  seen.add(comp.id);
-  const children = (comp.child_ids || [])
-    .map((childId) => aepComposition(childId))
-    .filter(Boolean)
-    .map((child) => aepTreeBranch(child, depthValue + 1, nextTrail, seen))
-    .join("");
-  const hasChildren = Boolean(children) || (comp.child_ids || []).length > 0;
   const expanded = state.aep.expandedIds.has(comp.id) && !isReference;
+  const hasChildren = (comp.child_ids || []).length > 0;
+  seen.add(comp.id);
+  const children = expanded
+    ? (comp.child_ids || [])
+      .map((childId) => aepComposition(childId))
+      .filter(Boolean)
+      .map((child) => aepTreeBranch(child, depthValue + 1, nextTrail, seen, [...pathIds, comp.id]))
+      .join("")
+    : "";
   const status = aepStatus(comp, isReference);
   const selected = Number(state.aep.activeCompId) === Number(comp.id);
-  const checked = state.aep.checkedIds.has(comp.id);
+  const checked = state.aep.checkedOccurrences.has(occurrenceKey);
   const role = comp.role || ((comp.parent_ids || []).length ? "预合成" : "顶层合成");
   const levelLabel = depthValue === 0 ? "根合成" : isReference ? "共享引用" : "直属预合成";
   const levelKey = depthValue === 0 ? "ROOT" : isReference ? "LINK" : "PRE";
   const levelClass = depthValue === 0 ? "root" : isReference ? "shared" : "child";
-  return `<div class="aep-tree-row ${selected ? "selected" : ""} ${isReference ? "reference" : ""}" data-aep-id="${escapeHtml(comp.id)}" data-depth="${depthValue}" role="treeitem" aria-level="${depthValue + 1}" style="--aep-depth:${depthValue};--aep-indent:${indent}px;--aep-guide-left:${guideLeft}px">
+  return `<div class="aep-tree-row ${selected ? "selected" : ""} ${isReference ? "reference" : ""}" data-aep-id="${escapeHtml(comp.id)}" data-aep-occurrence="${escapeHtml(occurrenceKey)}" data-depth="${depthValue}" role="treeitem" aria-level="${depthValue + 1}" style="--aep-depth:${depthValue};--aep-indent:${indent}px;--aep-guide-left:${guideLeft}px">
     <button class="aep-tree-expander" type="button" data-aep-expander="${escapeHtml(comp.id)}" aria-label="${expanded ? "收起" : "展开"}" ${hasChildren && !isReference ? "" : "disabled"}>${hasChildren && !isReference ? (expanded ? "⌄" : "›") : "·"}</button>
-    <input class="aep-tree-check" type="checkbox" data-aep-check="${escapeHtml(comp.id)}" ${checked ? "checked" : ""} ${isReference ? "disabled" : ""} aria-label="选择 ${escapeHtml(comp.name)}" />
-    <div class="aep-tree-name" data-aep-name="${escapeHtml(comp.id)}"><span class="aep-tree-name-line"><span class="aep-tree-kind ${levelClass}">${levelKey}</span><strong>${escapeHtml(comp.name)}</strong></span><small>${escapeHtml(isReference ? "共享引用" : `${levelLabel} · ${role}`)}</small></div>
+    <input class="aep-tree-check" type="checkbox" data-aep-check="${escapeHtml(comp.id)}" data-aep-occurrence="${escapeHtml(occurrenceKey)}" ${checked ? "checked" : ""} aria-label="选择 ${escapeHtml(comp.name)}" />
+    <div class="aep-tree-name" data-aep-name="${escapeHtml(comp.id)}" data-aep-occurrence="${escapeHtml(occurrenceKey)}"><span class="aep-tree-name-line"><span class="aep-tree-kind ${levelClass}">${levelKey}</span><strong>${escapeHtml(comp.name)}</strong></span><small>${escapeHtml(isReference ? "共享引用 · 可单独选择" : `${levelLabel} · ${role}`)}</small></div>
     <span class="aep-tree-meta">${escapeHtml(`${comp.width}×${comp.height}`)}</span><span class="aep-tree-meta">${escapeHtml(`${Number(comp.duration || 0).toFixed(2)}s`)}</span><span class="aep-tree-status ${status.tone}">${escapeHtml(status.label)}</span>
   </div>${expanded ? children : ""}`;
 }
@@ -1073,7 +1293,8 @@ function aepTreeBranch(comp, depth, trail, seen) {
 function updateAepActions() {
   const hasProject = Boolean(state.aep.project);
   const compositions = aepCompositions();
-  const checkedCount = state.aep.checkedIds.size;
+  const selection = aepSelectionSnapshot();
+  const checkedCount = selection.uniqueIds.length;
   const candidateCount = compositions.filter(aepIsCandidate).length;
   const warningCount = compositions.filter(aepHasWarning).length;
   elements.aepInspectBtn.disabled = !state.aep.aepPath || state.aep.collecting;
@@ -1081,8 +1302,8 @@ function updateAepActions() {
   elements.aepExpandBtn.disabled = !hasProject || state.aep.collecting;
   elements.aepCollapseBtn.disabled = !hasProject || state.aep.collecting;
   elements.aepSelectVisibleBtn.disabled = !hasProject || state.aep.collecting;
-  elements.aepDeselectVisibleBtn.disabled = !hasProject || !compositions.some((item) => aepMatches(item) && state.aep.checkedIds.has(item.id)) || state.aep.collecting;
-  elements.aepClearBtn.disabled = !checkedCount || state.aep.collecting;
+  elements.aepDeselectVisibleBtn.disabled = !hasProject || !aepVisibleOccurrences().some((item) => state.aep.checkedOccurrences.has(item.occurrenceKey)) || state.aep.collecting;
+  elements.aepClearBtn.disabled = !selection.occurrenceEntries.length || state.aep.collecting;
   elements.aepStopBtn.hidden = !state.aep.collectAbortController;
   elements.aepStopBtn.disabled = !state.aep.collectAbortController || state.aep.stopRequested;
   elements.aepProgress.hidden = !state.aep.collectAbortController;
@@ -1091,7 +1312,9 @@ function updateAepActions() {
   elements.aepStatCandidates.textContent = String(candidateCount);
   elements.aepStatSelected.textContent = String(checkedCount);
   elements.aepStatWarnings.textContent = String(warningCount);
-  elements.aepSelectionSummary.textContent = `已选 ${checkedCount} 个合成`;
+  elements.aepSelectionSummary.textContent = selection.occurrenceEntries.length === checkedCount
+    ? `已选 ${checkedCount} 个合成`
+    : `已选 ${selection.occurrenceEntries.length} 个层级 · 去重后 ${checkedCount} 个合成`;
   elements.aepCollectionSummary.textContent = hasProject ? ` · ${compositions.length} 个合成已载入` : "";
 }
 
@@ -1124,6 +1347,9 @@ function renderAepInspector() {
     return;
   }
   const recommendation = aepPreviewRecommendation(comp);
+  const activeOccurrenceKey = aepCurrentOccurrenceKey(comp.id);
+  const activeOccurrenceChecked = state.aep.checkedOccurrences.has(activeOccurrenceKey);
+  const selectedOccurrences = aepSelectionSnapshot().occurrenceEntries.filter((item) => item.compId === Number(comp.id)).length;
   const preview = state.aep.previewFiles[comp.id];
   const previewTime = state.aep.previewTimes[comp.id] ?? recommendation.time_seconds ?? 2;
   const previewMarkup = preview?.preview_file
@@ -1132,10 +1358,10 @@ function renderAepInspector() {
   const parentNames = (comp.parent_names || []).join("、") || "无（顶层合成）";
   const childNames = (comp.child_names || []).join("、") || "无直属预合成";
   elements.aepInspector.innerHTML = `<div class="aep-inspector-title"><span>${escapeHtml(comp.name)}</span><small>${escapeHtml(comp.role || "合成")}</small></div>
-    <div class="aep-inspector-card"><div class="aep-preview-box">${previewMarkup}</div><div class="aep-inspector-actions"><button class="quiet-btn" type="button" data-aep-action="preview" ${state.aep.previewBusy ? "disabled" : ""}>${state.aep.previewBusy ? "渲染中…" : "生成预览"}</button><button class="primary-btn" type="button" data-aep-action="toggle-check">${state.aep.checkedIds.has(comp.id) ? "移出队列" : "加入队列"}</button></div><label class="field-label" style="display:block;margin-top:9px;">代表帧秒数<input class="text-input" data-aep-preview-time="${escapeHtml(comp.id)}" type="number" min="0" step="0.01" value="${escapeHtml(Number(previewTime).toFixed(2))}" /></label></div>
+    <div class="aep-inspector-card"><div class="aep-preview-box">${previewMarkup}</div><div class="aep-inspector-actions"><button class="quiet-btn" type="button" data-aep-action="preview" ${state.aep.previewBusy ? "disabled" : ""}>${state.aep.previewBusy ? "渲染中…" : "生成预览"}</button><button class="primary-btn" type="button" data-aep-action="toggle-check">${activeOccurrenceChecked ? "移出当前层级" : "加入当前层级"}</button></div><label class="field-label" style="display:block;margin-top:9px;">代表帧秒数<input class="text-input" data-aep-preview-time="${escapeHtml(comp.id)}" type="number" min="0" step="0.01" value="${escapeHtml(Number(previewTime).toFixed(2))}" /></label></div>
     <div class="aep-inspector-card"><h3>Composition facts</h3><div class="aep-detail-grid"><div><span>尺寸</span><strong>${escapeHtml(`${comp.width} × ${comp.height}`)}</strong></div><div><span>时长 / 帧率</span><strong>${escapeHtml(`${Number(comp.duration || 0).toFixed(2)}s · ${comp.frame_rate}fps`)}</strong></div><div><span>合成 ID</span><strong>${escapeHtml(comp.id)}</strong></div><div><span>父级数量</span><strong>${escapeHtml((comp.parent_ids || []).length)}</strong></div></div></div>
     <div class="aep-inspector-card"><h3>关系与取景</h3><div class="aep-detail-grid"><div><span>父级合成</span><strong title="${escapeHtml(parentNames)}">${escapeHtml(parentNames)}</strong></div><div><span>直属预合成</span><strong title="${escapeHtml(childNames)}">${escapeHtml(childNames)}</strong></div><div><span>预览来源</span><strong title="${escapeHtml(recommendation.reason || "")}">${escapeHtml(recommendation.source_name || comp.name)}</strong></div><div><span>默认时间</span><strong>${escapeHtml(`${Number(recommendation.time_seconds || 0).toFixed(2)}s · 帧 ${recommendation.frame || 0}`)}</strong></div></div></div>
-    <div class="aep-inspector-card"><h3>收集状态</h3><div class="aep-detail-grid"><div><span>独立交付</span><strong>${state.aep.checkedIds.has(comp.id) ? "已加入队列" : "未选择"}</strong></div><div><span>子合成</span><strong>${escapeHtml((comp.child_ids || []).length)} 个依赖</strong></div></div></div>`;
+    <div class="aep-inspector-card"><h3>收集状态</h3><div class="aep-detail-grid"><div><span>独立交付</span><strong>${selectedOccurrences ? `已选 ${selectedOccurrences} 个层级，收集时仅生成 1 份` : "未选择"}</strong></div><div><span>子合成</span><strong>${escapeHtml((comp.child_ids || []).length)} 个依赖</strong></div></div></div>`;
 }
 
 function setPreviewZoom(view, stage, readout, value, anchor = null) {
@@ -1240,8 +1466,15 @@ function openAepPreviewModal() {
 }
 
 function renderAepQueue() {
-  const selected = aepCompositions().filter((item) => state.aep.checkedIds.has(item.id));
-  const rows = selected.map((comp) => `<div class="aep-queue-row" data-aep-queue-id="${escapeHtml(comp.id)}"><span>${escapeHtml(comp.name)}</span><small data-aep-queue-status>${escapeHtml(`${comp.width}×${comp.height}`)} · 等待收集</small></div>`).join("");
+  const selection = aepSelectionSnapshot();
+  const counts = new Map();
+  selection.occurrenceEntries.forEach(({ compId }) => counts.set(compId, (counts.get(compId) || 0) + 1));
+  const selected = selection.uniqueIds.map((compId) => aepComposition(compId)).filter(Boolean);
+  const rows = selected.map((comp) => {
+    const count = counts.get(Number(comp.id)) || 1;
+    const duplicateHint = count > 1 ? ` · ${count} 个层级，收集时去重` : "";
+    return `<div class="aep-queue-row" data-aep-queue-id="${escapeHtml(comp.id)}"><span>${escapeHtml(comp.name)}</span><small data-aep-queue-status>${escapeHtml(`${comp.width}×${comp.height}${duplicateHint}`)} · 等待收集</small></div>`;
+  }).join("");
   elements.aepInspector?.querySelector("[data-aep-queue]")?.remove();
   if (elements.aepInspector && selected.length) {
     elements.aepInspector.insertAdjacentHTML("beforeend", `<div class="aep-inspector-card" data-aep-queue><h3>Collection queue</h3><div class="aep-queue">${rows}</div></div>`);
@@ -1285,8 +1518,9 @@ function handleAepCollectionProgress(progress) {
   }
 }
 
-function setAepActive(compId) {
+function setAepActive(compId, occurrenceKey = null) {
   state.aep.activeCompId = Number(compId);
+  state.aep.activeOccurrenceKey = occurrenceKey;
   renderAepTree();
   renderAepInspector();
   renderAepQueue();
@@ -1312,7 +1546,8 @@ async function inspectAepProject() {
     log(`开始读取 AEP：${state.aep.aepPath}`);
     const project = await inspectAep(state.aep.aepPath);
     state.aep.project = project;
-    state.aep.checkedIds.clear();
+    state.aep.checkedOccurrences.clear();
+    state.aep.activeOccurrenceKey = null;
     state.aep.previewFiles = {};
     state.aep.previewTimes = {};
     state.aep.filter = "all";
@@ -1360,8 +1595,18 @@ async function previewAepComposition() {
   }
 }
 
-async function collectAepSelection() {
-  const selectedIds = aepCompositions().filter((item) => state.aep.checkedIds.has(item.id)).map((item) => item.id);
+function openAepDuplicateSelectionModal(selection) {
+  if (!elements.aepDuplicateModal || !elements.aepDuplicateSummary) return false;
+  const rows = selection.duplicates.map(({ comp, count }) => `<div class="duplicate-choice"><div><strong>${escapeHtml(comp.name)}</strong><span>在结构树中选择了 ${count} 个层级位置</span></div><span class="status-badge status-review">将收集 1 份</span></div>`).join("");
+  elements.aepDuplicateSummary.innerHTML = `<p>同一个合成从多个层级被选中。导出时会保留你的层级选择记录，但实际只生成一份独立收集包。</p><div class="duplicate-options">${rows}</div>`;
+  openModal(elements.aepDuplicateModal);
+  return true;
+}
+
+async function collectAepSelection(options = {}) {
+  const selection = aepSelectionSnapshot();
+  if (selection.duplicates.length && !options.confirmDuplicates && openAepDuplicateSelectionModal(selection)) return;
+  const selectedIds = selection.uniqueIds;
   const outputRoot = String(elements.aepOutput.value || "").trim() || defaultAepOutput();
   if (!state.aep.aepPath || !selectedIds.length || !outputRoot) {
     showToast("还不能开始收集", "请选择 AEP、至少一个合成，并填写输出目录。", "error");
@@ -1371,11 +1616,12 @@ async function collectAepSelection() {
   state.aep.collectAbortController = controller;
   state.aep.stopRequested = false;
   try {
-    setAepBusy(true, `正在收集 ${selectedIds.length} 个合成…`);
+    const duplicateNote = selection.duplicates.length ? `（${selection.occurrenceEntries.length} 个层级已按 ID 去重）` : "";
+    setAepBusy(true, `正在收集 ${selectedIds.length} 个合成${duplicateNote}…`);
     state.aep.collectionProgress = { total: selectedIds.length, completed: 0, index: 0, compositionId: null, compositionName: "", phase: "start" };
     handleAepCollectionProgress({ command: "collect", event: "start", total: selectedIds.length, completed: 0 });
     elements.aepCollectBtn.textContent = "收集中…";
-    log(`开始收集 ${selectedIds.length} 个合成，输出到：${outputRoot}`);
+    log(`开始收集 ${selectedIds.length} 个合成${duplicateNote}，输出到：${outputRoot}`);
     const results = await collectAep(state.aep.aepPath, selectedIds, outputRoot, {
       previewTimes: state.aep.previewTimes,
       signal: controller.signal,
@@ -1391,7 +1637,7 @@ async function collectAepSelection() {
     const scan = scanDirectory(outputRoot, { projectName });
     render(scan);
     setView("import");
-    showToast("AEP 收集完成", `${results.length} 个收集包已生成，${previewCount} 张 PNG 已配对；${missingCount ? `${missingCount} 项存在缺失素材，请在预检中处理。` : "现在进入 PNG + ZIP 配对预检。"}`);
+    showToast("AEP 收集完成", `${results.length} 个去重收集包已生成，${previewCount} 张 PNG 已配对；${missingCount ? `${missingCount} 项存在缺失素材，请在预检中处理。` : "现在进入 PNG + ZIP 配对预检。"}`);
   } catch (error) {
     if (state.aep.stopRequested || error.code === "ABORT_ERR") {
       log("已手动停止 AEP 收集。");
@@ -1419,7 +1665,7 @@ function stopAepCollection() {
 }
 
 function setView(view) {
-  const allowed = ["import", "aep", "formal", "history", "diagnostics"];
+  const allowed = ["import", "aep", "formal", "history", "diagnostics", "managed"];
   if (!allowed.includes(view)) return;
   state.activeView = view;
   document.body.dataset.activeView = view;
@@ -1440,6 +1686,7 @@ function setView(view) {
     tab.setAttribute("aria-selected", tab.dataset.view === view ? "true" : "false");
   });
   if (view === "formal") refreshBatches();
+  if (view === "managed") refreshManagedPackages();
 }
 
 function resolvePickedDirectory(files) {
@@ -1590,7 +1837,7 @@ function scanSelectedDirectory() {
   try {
     state.activeView = "import";
     state.importStage = 1;
-    const scan = scanDirectory(state.sourceDir, { projectName: elements.projectName.value.trim() || undefined });
+    const scan = applyManagedDraft(scanDirectory(state.sourceDir, { projectName: elements.projectName.value.trim() || undefined }));
     render(scan);
     setView("import");
     return true;
@@ -1604,6 +1851,33 @@ function scanSelectedDirectory() {
 document.addEventListener("click", (event) => {
   const viewButton = event.target.closest("[data-view]");
   if (viewButton) { setView(viewButton.dataset.view); return; }
+  const managedAction = event.target.closest("[data-managed-action]");
+  if (managedAction) {
+    const action = managedAction.dataset.managedAction;
+    const packageId = managedAction.dataset.managedPackageId || state.managed.selectedPackageId;
+    if (packageId) state.managed.selectedPackageId = packageId;
+    if (action === "refresh") refreshManagedPackages();
+    if (action === "add") { setView("import"); showToast("添加新包装", "请在入库工作台选择新的 PNG + ZIP 配对；确认后会作为该项目下的新包装记录入库。"); }
+    if (action === "update-preview") openManagedPicker("preview", packageId);
+    if (action === "update-source") openManagedPicker("source", packageId);
+    if (action === "new-version") {
+      const pkg = managedPackageById(packageId);
+      if (pkg) {
+        state.managedDraft = { kind: "version", basePackageId: pkg.packageId, projectName: pkg.projectName, version: nextPackageVersion(pkg.version) };
+        elements.projectName.value = pkg.projectName;
+        elements.importMode.value = "new";
+        setView("import");
+        showToast("发布新版本", `已准备 ${pkg.projectName} · ${pkg.packageName} 的 ${state.managedDraft.version}；请选择只包含这一版 PNG + ZIP 的文件夹。`);
+      }
+    }
+    return;
+  }
+  const managedCardElement = event.target.closest("[data-managed-package-id]");
+  if (managedCardElement && !event.target.closest("button")) {
+    state.managed.selectedPackageId = managedCardElement.dataset.managedPackageId;
+    renderManaged();
+    return;
+  }
   const aepFilter = event.target.closest("[data-aep-filter]");
   if (aepFilter) {
     state.aep.filter = aepFilter.dataset.aepFilter || "all";
@@ -1622,7 +1896,7 @@ document.addEventListener("click", (event) => {
   }
   const aepName = event.target.closest("[data-aep-name]");
   if (aepName) {
-    setAepActive(aepName.dataset.aepName);
+    setAepActive(aepName.dataset.aepName, aepName.dataset.aepOccurrence || null);
     renderAepQueue();
     return;
   }
@@ -1633,13 +1907,19 @@ document.addEventListener("click", (event) => {
     if (aepAction.dataset.aepAction === "toggle-check") {
       const comp = aepComposition(state.aep.activeCompId);
       if (comp) {
-        if (state.aep.checkedIds.has(comp.id)) state.aep.checkedIds.delete(comp.id);
-        else state.aep.checkedIds.add(comp.id);
+        aepToggleOccurrence(comp.id, aepCurrentOccurrenceKey(comp.id));
         renderAepTree();
         renderAepInspector();
         renderAepQueue();
       }
     }
+    return;
+  }
+  const duplicateAction = event.target.closest("[data-aep-duplicate-action]");
+  if (duplicateAction) {
+    const action = duplicateAction.dataset.aepDuplicateAction;
+    closeModals();
+    if (action === "continue") collectAepSelection({ confirmDuplicates: true });
     return;
   }
   const aepPreviewZoomAction = event.target.closest("[data-aep-preview-zoom]");
@@ -1763,9 +2043,9 @@ document.addEventListener("change", (event) => {
   const aepCheck = event.target.closest("[data-aep-check]");
   if (aepCheck) {
     const compId = Number(aepCheck.dataset.aepCheck);
-    if (aepCheck.checked) state.aep.checkedIds.add(compId);
-    else state.aep.checkedIds.delete(compId);
-    setAepActive(compId);
+    const occurrenceKey = aepCheck.dataset.aepOccurrence || aepOccurrenceKey([], compId);
+    aepToggleOccurrence(compId, occurrenceKey, aepCheck.checked);
+    setAepActive(compId, occurrenceKey);
     renderAepQueue();
     return;
   }
@@ -1860,7 +2140,8 @@ elements.aepPicker.addEventListener("change", () => {
   const aepPath = file?.path || "";
   state.aep.aepPath = aepPath && path.extname(aepPath).toLocaleLowerCase() === ".aep" ? aepPath : null;
   state.aep.project = null;
-  state.aep.checkedIds.clear();
+  state.aep.checkedOccurrences.clear();
+  state.aep.activeOccurrenceKey = null;
   state.aep.previewFiles = {};
   state.aep.previewTimes = {};
   setAepPreviewZoom(1);
@@ -1878,12 +2159,16 @@ elements.aepOutput.addEventListener("input", updateAepActions);
 elements.aepSearch.addEventListener("input", () => { state.aep.search = elements.aepSearch.value; renderAepTree(); });
 elements.aepExpandBtn.addEventListener("click", () => { state.aep.expandedIds = new Set(aepCompositions().filter((item) => (item.child_ids || []).length).map((item) => item.id)); renderAepTree(); });
 elements.aepCollapseBtn.addEventListener("click", () => { state.aep.expandedIds.clear(); renderAepTree(); });
-elements.aepSelectVisibleBtn.addEventListener("click", () => { aepCompositions().filter(aepMatches).forEach((item) => state.aep.checkedIds.add(item.id)); renderAepTree(); renderAepInspector(); renderAepQueue(); });
-elements.aepDeselectVisibleBtn.addEventListener("click", () => { aepCompositions().filter(aepMatches).forEach((item) => state.aep.checkedIds.delete(item.id)); renderAepTree(); renderAepInspector(); renderAepQueue(); });
-elements.aepClearBtn.addEventListener("click", () => { state.aep.checkedIds.clear(); renderAepTree(); renderAepInspector(); renderAepQueue(); });
+elements.aepSelectVisibleBtn.addEventListener("click", () => { aepVisibleOccurrences().forEach((item) => aepToggleOccurrence(item.compId, item.occurrenceKey, true)); renderAepTree(); renderAepInspector(); renderAepQueue(); });
+elements.aepDeselectVisibleBtn.addEventListener("click", () => { aepVisibleOccurrences().forEach((item) => aepToggleOccurrence(item.compId, item.occurrenceKey, false)); renderAepTree(); renderAepInspector(); renderAepQueue(); });
+elements.aepClearBtn.addEventListener("click", () => { state.aep.checkedOccurrences.clear(); renderAepTree(); renderAepInspector(); renderAepQueue(); });
 elements.aepStopBtn.addEventListener("click", stopAepCollection);
 elements.aepCollectBtn.addEventListener("click", collectAepSelection);
 bindPreviewStageInteractions(elements.aepPreviewStage, state.aep, elements.aepPreviewZoom);
+elements.managedProject?.addEventListener("change", () => { state.managed.project = elements.managedProject.value || "all"; renderManaged(); });
+elements.managedSearch?.addEventListener("input", () => { state.managed.search = elements.managedSearch.value || ""; renderManaged(); });
+elements.managedPreviewPicker?.addEventListener("change", () => applyManagedReplacement("preview", elements.managedPreviewPicker.files?.[0]));
+elements.managedSourcePicker?.addEventListener("change", () => applyManagedReplacement("source", elements.managedSourcePicker.files?.[0]));
 elements.projectName.addEventListener("input", () => { if (state.scan && elements.projectName.value.trim()) state.scan.projectName = elements.projectName.value.trim(); });
 elements.importBtn.addEventListener("click", runImport);
 elements.reloadBatchBtn.addEventListener("click", refreshBatches);

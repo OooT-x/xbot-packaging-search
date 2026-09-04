@@ -59,3 +59,27 @@ test("publishes a deterministic filed event with the bot sync fields", () => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("keeps revision metadata and allows image-only background updates", () => {
+  const event = buildIngestEvent({
+    batchId: "batch-bg",
+    projectName: "变速箱",
+    importMode: "update",
+    filed: [{
+      packageId: "pkg-bg",
+      packageName: "纯色背景",
+      packageType: "背景",
+      previewItemId: "png-new",
+      sourceItemId: "",
+      previewPath: "D:\\library\\preview.png",
+      sourcePath: "",
+      revisionId: "rev-preview-1",
+      replacedItemId: "png-old",
+      replacedKind: "preview",
+    }],
+  });
+  assert.equal(event.details.length, 1);
+  assert.equal(event.details[0].revision_id, "rev-preview-1");
+  assert.equal(event.details[0].replaced_eagle_id, "png-old");
+  assert.equal(event.details[0].replaced_kind, "preview");
+});

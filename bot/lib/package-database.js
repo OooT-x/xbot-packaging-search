@@ -71,12 +71,18 @@ class PackageDatabase {
     for (const name of files) {
       if (applied.has(name)) continue;
       const sql = fs.readFileSync(path.join(this.migrationsDir, name), "utf8");
-      this.transaction(() => {
-        this.db.exec(sql);
-        this.db
-          .prepare("INSERT INTO schema_migrations(name, applied_at) VALUES (?, ?)")
-          .run(name, Date.now());
-      });
+      const requiresForeignKeysOff = name === "004_image_only_backgrounds.sql";
+      if (requiresForeignKeysOff) this.db.exec("PRAGMA foreign_keys = OFF");
+      try {
+        this.transaction(() => {
+          this.db.exec(sql);
+          this.db
+            .prepare("INSERT INTO schema_migrations(name, applied_at) VALUES (?, ?)")
+            .run(name, Date.now());
+        });
+      } finally {
+        if (requiresForeignKeysOff) this.db.exec("PRAGMA foreign_keys = ON");
+      }
     }
   }
 
@@ -313,6 +319,41 @@ class PackageDatabase {
       }
     });
     return this.getBatch(batchId);
+  }
+
+  recordPackageRevision(revision = {}, now = Date.now()) {
+    const revisionId = String(revision.revisionId || revision.revision_id || "").trim();
+    const packageId = String(revision.packageId || revision.package_id || "").trim();
+    if (!revisionId || !packageId) throw new Error("revision_id and package_id are required");
+    this.db.prepare(`
+      INSERT INTO package_revisions(
+        revision_id, package_id, operation, replaced_kind,
+        replaced_eagle_id, new_eagle_id, reason, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(revision_id) DO UPDATE SET
+        package_id = excluded.package_id,
+        operation = excluded.operation,
+        replaced_kind = excluded.replaced_kind,
+        replaced_eagle_id = excluded.replaced_eagle_id,
+        new_eagle_id = excluded.new_eagle_id,
+        reason = excluded.reason
+    `).run(
+      revisionId,
+      packageId,
+      String(revision.operation || "replace"),
+      String(revision.replacedKind || revision.replaced_kind || ""),
+      String(revision.replacedEagleId || revision.replaced_eagle_id || ""),
+      String(revision.newEagleId || revision.new_eagle_id || ""),
+      String(revision.reason || ""),
+      Number(revision.createdAt || revision.created_at || now)
+    );
+    return this.db.prepare("SELECT * FROM package_revisions WHERE revision_id = ?").get(revisionId);
+  }
+
+  listPackageRevisions(packageId) {
+    return this.db.prepare(
+      "SELECT * FROM package_revisions WHERE package_id = ? ORDER BY created_at DESC, revision_id DESC"
+    ).all(String(packageId || "").trim());
   }
 
   markBatchStatus(batchId, status, now = Date.now()) {

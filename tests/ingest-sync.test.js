@@ -60,3 +60,39 @@ test("records a filed batch, retries a failed refresh, and skips completed event
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("records an asset revision after an update event", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "xbot-revision-sync-"));
+  const database = new PackageDatabase(path.join(root, "packaging.sqlite"));
+  const eventFile = path.join(root, "events.jsonl");
+  try {
+    publishIngestEvent({
+      batchId: "batch-rev",
+      projectName: "变速箱",
+      importMode: "update",
+      filed: [{
+        packageId: "pkg-rev",
+        packageName: "背景",
+        packageType: "背景",
+        previewItemId: "png-new",
+        sourceItemId: "zip-new",
+        revisionId: "rev-1",
+        replacedItemId: "png-old",
+        replacedKind: "preview",
+      }],
+    }, { filePath: eventFile });
+    const watcher = new IngestEventWatcher({
+      database,
+      eventFile,
+      refreshCatalog: async () => ({ package_count: 1 }),
+    });
+    assert.equal((await watcher.runOnce())[0].state, "completed");
+    const revisions = database.listPackageRevisions("pkg-rev");
+    assert.equal(revisions.length, 1);
+    assert.equal(revisions[0].replaced_eagle_id, "png-old");
+    assert.equal(revisions[0].new_eagle_id, "png-new");
+  } finally {
+    database.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

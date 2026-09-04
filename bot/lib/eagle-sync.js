@@ -1,8 +1,8 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
-
-const PACKAGE_TYPES = new Set(["信息条", "视频框", "背景", "分镜排版"]);
+const { PACKAGE_TYPE_SET } = require("../../eagle-plugin/lib/package-types");
+const PACKAGE_TYPES = PACKAGE_TYPE_SET;
 
 function normalizeText(value) {
   return String(value || "")
@@ -149,6 +149,7 @@ function buildCatalog(items, libraryPath, aliasConfig = {}) {
     if (!item || item.isDeleted) continue;
     if (!/^(png|zip)$/i.test(String(item.ext || ""))) continue;
     const fields = parseAnnotation(item.annotation);
+    if (!enabledStatus(fields["状态"])) continue;
     const packageId = fields.package_id;
     if (!packageId) continue;
 
@@ -162,14 +163,25 @@ function buildCatalog(items, libraryPath, aliasConfig = {}) {
   for (const [packageId, records] of grouped) {
     const previews = records.filter(({ item }) => String(item.ext).toLowerCase() === "png");
     const sources = records.filter(({ item }) => String(item.ext).toLowerCase() === "zip");
-    if (previews.length !== 1 || sources.length !== 1) {
+    const packageTypeHint = records
+      .map(({ fields }) => fields["包装类型"])
+      .find(Boolean);
+    const imageOnlyBackground =
+      previews.length === 1 &&
+      sources.length === 0 &&
+      packageTypeHint === "背景";
+    if (
+      previews.length !== 1 ||
+      sources.length > 1 ||
+      (sources.length === 0 && !imageOnlyBackground)
+    ) {
       errors.push(`${packageId}: expected one PNG and one ZIP, found ${previews.length}/${sources.length}`);
       continue;
     }
 
     const preview = previews[0];
-    const source = sources[0];
-    const fields = { ...source.fields, ...preview.fields };
+    const source = sources[0] || null;
+    const fields = { ...(source?.fields || {}), ...preview.fields };
     const projectName = fields["项目"];
     const packageName = fields["包装名称"];
     const packageType = fields["包装类型"];
@@ -197,7 +209,7 @@ function buildCatalog(items, libraryPath, aliasConfig = {}) {
         aliases,
       });
 
-      const tags = [...new Set([...(preview.item.tags || []), ...(source.item.tags || [])])];
+      const tags = [...new Set([...(preview.item.tags || []), ...(source?.item.tags || [])])];
       packages.push({
         package_id: packageId,
         project_id: projectId,
@@ -207,15 +219,15 @@ function buildCatalog(items, libraryPath, aliasConfig = {}) {
         version,
         base_package_id: fields.base_package_id || null,
         preview_eagle_id: preview.item.id,
-        source_eagle_id: source.item.id,
+        source_eagle_id: source?.item.id || null,
         preview_path: resolveEagleItemFile(libraryPath, preview.item),
-        source_path: resolveEagleItemFile(libraryPath, source.item),
+        source_path: source ? resolveEagleItemFile(libraryPath, source.item) : null,
         ae_comp_name: fields["AE 合成"] || "",
         dependency_status: dependencyStatus(fields, tags),
         status: "active",
         eagle_modified_at: Math.max(
           Number(preview.item.modifiedAt || preview.item.modificationTime || preview.item.lastModified || 0),
-          Number(source.item.modifiedAt || source.item.modificationTime || source.item.lastModified || 0)
+          Number(source?.item.modifiedAt || source?.item.modificationTime || source?.item.lastModified || 0)
         ),
       });
     } catch (error) {

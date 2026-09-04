@@ -38,6 +38,15 @@ test("treats action or domain words as packaging query signals", () => {
   assert.equal(isPackagingQueryText("我要变速箱的信息条"), true);
   assert.equal(isPackagingQueryText("变速箱小标注"), true);
   assert.equal(isPackagingQueryText("今天天气不错"), false);
+  assert.equal(isPackagingQueryText("找一下这个项目的时间轴"), true);
+  assert.equal(isPackagingQueryText("有没有分Part板和报道"), true);
+});
+
+test("recognizes the extended packaging types and aliases", () => {
+  const { extractPackageType } = require("../bot/lib/package-intent");
+  assert.equal(extractPackageType("时间线"), "时间轴");
+  assert.equal(extractPackageType("分P板"), "分Part板");
+  assert.equal(extractPackageType("报道板"), "报道");
 });
 
 test("recognizes project catalog questions without matching ordinary project talk", () => {
@@ -51,6 +60,15 @@ test("searches project aliases before filtering by package type", () => {
   assert.equal(result.project.project_name, "变速箱");
   assert.equal(result.package_type, "信息条");
   assert.deepEqual(result.candidates.map((item) => item.package_id), ["pkg-label"]);
+});
+
+test("prefers the current derived version unless the user asks for history", () => {
+  const versioned = [
+    { ...packages[1], package_id: "pkg-v01", version: "v01", base_package_id: null, eagle_modified_at: 20 },
+    { ...packages[1], package_id: "pkg-v02", version: "v02", base_package_id: "pkg-v01", eagle_modified_at: 10 },
+  ];
+  assert.deepEqual(searchPackages(versioned, "找变速箱背景").candidates.map((item) => item.package_id), ["pkg-v02"]);
+  assert.deepEqual(searchPackages(versioned, "找变速箱背景 v01").candidates.map((item) => item.package_id).sort(), ["pkg-v01", "pkg-v02"]);
 });
 
 test("parses candidate confirmation from prompt or a replied preview", () => {

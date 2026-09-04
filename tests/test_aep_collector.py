@@ -32,6 +32,12 @@ if str(PACKAGE_ROOT) not in sys.path:
 from xbot_aep_collector import preview as PREVIEW
 from xbot_aep_collector import bridge as BRIDGE
 
+WORKER_PATH = Path(__file__).resolve().parents[1] / "aep-collector" / "worker.py"
+WORKER_SPEC = importlib.util.spec_from_file_location("xbot_aep_worker", WORKER_PATH)
+WORKER = importlib.util.module_from_spec(WORKER_SPEC)
+sys.modules[WORKER_SPEC.name] = WORKER
+WORKER_SPEC.loader.exec_module(WORKER)
+
 
 class SafeFilenameTests(unittest.TestCase):
     def test_replaces_windows_invalid_characters(self):
@@ -401,6 +407,13 @@ class GuiLayoutTests(unittest.TestCase):
 
 
 class PrecompositionCollectionTests(unittest.TestCase):
+    def test_collect_many_deduplicates_composition_ids_in_first_seen_order(self):
+        with mock.patch.object(CORE, "collect_composition", side_effect=lambda _aep, comp_id, _output: comp_id) as collect:
+            result = CORE.collect_many("project.aep", (12, 12, "9", 12, 9), "output")
+
+        self.assertEqual(result, [12, 9])
+        self.assertEqual([call.args[1] for call in collect.call_args_list], [12, 9])
+
     def test_collects_each_direct_precomposition_as_an_independent_item(self):
         target = CORE.CompositionInfo(
             id=1,
@@ -448,6 +461,39 @@ class PrecompositionCollectionTests(unittest.TestCase):
         self.assertEqual(tuple(args[1]), (2, 3))
         self.assertEqual(args[0], "project.aep")
         self.assertEqual(args[2], "output")
+
+
+class WorkerCollectionTests(unittest.TestCase):
+    def test_collect_payload_deduplicates_ids_before_progress_and_collection(self):
+        compositions = tuple(
+            SimpleNamespace(
+                id=item_id,
+                name=name,
+                duration=4.0,
+                frame_rate=25,
+                display_start_frame=0,
+                parent_layer_usages=(),
+            )
+            for item_id, name in ((12, "包装"), (9, "背景"))
+        )
+        fake_result = SimpleNamespace(
+            zip_file="output.zip",
+            warnings=(),
+            preview_error=None,
+            to_dict=lambda: {"composition_id": 12},
+        )
+        progress = []
+        with mock.patch.object(WORKER, "inspect_project", return_value=SimpleNamespace(compositions=compositions)), mock.patch.object(
+            WORKER, "collect_composition", return_value=fake_result
+        ) as collect, mock.patch.object(WORKER, "_preview_metadata", return_value={"source_id": 12, "source_name": "包装", "relation": "self", "time_seconds": 2, "source_layer": None}), mock.patch.object(
+            WORKER, "render_preview", return_value=SimpleNamespace(output_file="preview.png", time=2, frame_number=50, renderer="test"
+            )
+        ), mock.patch.object(WORKER, "attach_collection_preview", return_value=fake_result):
+            result = WORKER.collect_payload("project.aep", [12, 12, 9, 12], "output", progress=progress.append)
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual([call.args[1] for call in collect.call_args_list], [12, 9])
+        self.assertEqual(progress[0], {"command": "collect", "event": "start", "total": 2, "completed": 0})
 
 
 class CollectionArchiveTests(unittest.TestCase):
@@ -662,6 +708,61 @@ class PreviewFrameTests(unittest.TestCase):
             self.assertEqual(run.call_count, 2)
             self.assertEqual(result.renderer, "aerender-tiff-png")
             self.assertIn("已回退 TIFF 中转", result.log)
+            self.assertTrue(PREVIEW._is_complete_png(target))
+
+    def test_aerender_isolates_duplicate_composition_names_by_id(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            project_file = root / "project.aep"
+            aerender = root / "aerender.exe"
+            target = root / "preview.png"
+            project_file.write_bytes(b"source project stays unchanged")
+            aerender.write_bytes(b"exe")
+
+            target_comp = SimpleNamespace(id=90, name="背景")
+            other_comp = SimpleNamespace(id=12, name="背景")
+            saved_projects: list[Path] = []
+
+            class FakeProject:
+                compositions = [target_comp, other_comp]
+
+                def save(self, path):
+                    saved = Path(path)
+                    saved.write_bytes(b"temporary render project")
+                    saved_projects.append(saved)
+
+            fake_py_aep = SimpleNamespace(
+                parse=lambda _path: SimpleNamespace(project=FakeProject())
+            )
+            commands = []
+
+            def fake_run(command, _timeout_seconds):
+                commands.append(command)
+                output_pattern = command[command.index("-output") + 1]
+                rendered = Path(output_pattern.replace("[#####]", "00050"))
+                Image.new("RGBA", (3, 2), (20, 40, 60, 128)).save(rendered, "PNG")
+                return 0, "direct png"
+
+            with mock.patch.object(PREVIEW, "_load_py_aep", return_value=fake_py_aep), mock.patch.object(
+                PREVIEW, "_run_aerender", side_effect=fake_run
+            ):
+                result = PREVIEW.render_preview(
+                    project_file,
+                    "背景",
+                    5,
+                    25,
+                    2,
+                    target,
+                    aerender_path=aerender,
+                    composition_id=90,
+                )
+
+            self.assertEqual(project_file.read_bytes(), b"source project stays unchanged")
+            self.assertEqual(len(saved_projects), 1)
+            command = commands[0]
+            self.assertEqual(Path(command[command.index("-project") + 1]).name, "render-target-90.aep")
+            self.assertEqual(command[command.index("-comp") + 1], "__xbot_preview_comp_90__")
+            self.assertIn("同名合成“背景”", result.log)
             self.assertTrue(PREVIEW._is_complete_png(target))
 
 

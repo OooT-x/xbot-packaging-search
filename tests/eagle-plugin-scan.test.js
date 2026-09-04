@@ -90,15 +90,16 @@ test("marks ambiguous PNG/ZIP pairs as conflicts", () => {
   }
 });
 
-test("keeps an unmatched preview as a conflict", () => {
+test("allows an unmatched background preview as image-only delivery", () => {
   const temp = makeTempDir("lonely");
   try {
     writeFile(temp, "变速箱_背景_黑底_v01.png");
     const result = scanDirectory(temp);
 
     assert.equal(result.packages.length, 1);
-    assert.equal(result.packages[0].state, "blocked");
-    assert.equal(result.stats.conflict, 1);
+    assert.equal(result.packages[0].state, "ready");
+    assert.equal(result.packages[0].sourceOptional, true);
+    assert.equal(result.stats.toImport, 1);
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }
@@ -142,6 +143,38 @@ test("imports exactly the files referenced by a manifest", () => {
       result.files.filter((file) => file.status === "ignore" && /旧版/.test(file.name)).length,
       2
     );
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test("allows a formal manifest to register a PNG-only background", () => {
+  const temp = makeTempDir("manifest-image-only");
+  try {
+    writeFile(temp, "manifest.json", JSON.stringify({
+      manifest_version: 1,
+      packages: [{
+        package_id: "pkg-image-bg-manifest",
+        project_name: "变速箱",
+        package_name: "纯图片背景",
+        package_type: "背景",
+        version: "v01",
+        ae_comp_name: "纯图片背景",
+        preview_file: "变速箱_背景_纯图片背景_v01.png",
+        source_file: "",
+        dependency_status: "complete",
+      }],
+    }));
+    writeFile(temp, "变速箱_背景_纯图片背景_v01.png", "png");
+
+    const result = scanDirectory(temp);
+
+    assert.equal(result.errors.length, 0);
+    assert.equal(result.packages.length, 1);
+    assert.equal(result.packages[0].state, "ready");
+    assert.equal(result.packages[0].source, null);
+    assert.equal(result.packages[0].sourceOptional, true);
+    assert.equal(result.stats.toImport, 1);
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }

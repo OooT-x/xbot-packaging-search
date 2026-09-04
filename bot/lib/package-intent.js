@@ -1,16 +1,14 @@
 const { normalizeText } = require("./eagle-sync");
+const { PACKAGE_TYPE_ALIASES } = require("../../eagle-plugin/lib/package-types");
 
-const TYPE_SYNONYMS = new Map([
-  ["信息条", ["信息条", "人名条", "人物条", "姓名条", "标注条", "小标注", "标注"]],
-  ["视频框", ["视频框", "画面框", "横框", "竖框", "框"]],
-  ["背景", ["背景", "主背景", "过渡背景", "章节背景"]],
-  ["分镜排版", ["分镜排版", "多画面", "双屏", "三屏", "对比排版", "时间线", "排版"]],
-]);
+const TYPE_SYNONYMS = new Map(PACKAGE_TYPE_ALIASES);
+TYPE_SYNONYMS.get("信息条").push("小标注");
+TYPE_SYNONYMS.get("视频框").push("框");
 
 const ACTION_WORDS =
   /(找|查|搜|搜索|检索|看看|来个|发个|发一下|要|需要|想要|有没有|帮忙|帮|给我|想看)/;
 const DOMAIN_WORDS =
-  /(包装|信息条|人名条|人物条|姓名条|标注条|标注|视频框|画面框|横框|竖框|框|背景|分镜|排版|素材|模板)/;
+  /(包装|信息条|人名条|人物条|姓名条|标注条|标注|视频框|画面框|横框|竖框|框|背景|分镜|排版|分part|分p板|报道|时间轴|时间线|素材|模板)/;
 
 function hasPackagingAction(content) {
   return ACTION_WORDS.test(normalizeText(content));
@@ -22,6 +20,22 @@ function hasPackagingDomain(content) {
 
 function isPackagingQueryText(content) {
   return hasPackagingAction(content) || hasPackagingDomain(content);
+}
+
+function isVersionSpecificQuery(content) {
+  const text = normalizeText(content);
+  return /v\d+|旧版|历史版本|全部版本|所有版本/.test(text);
+}
+
+function preferCurrentVersions(packages, content) {
+  if (isVersionSpecificQuery(content)) return packages;
+  const derivedIds = new Set(
+    (packages || [])
+      .map((item) => String(item?.base_package_id || "").trim())
+      .filter(Boolean)
+  );
+  const current = (packages || []).filter((item) => !derivedIds.has(String(item?.package_id || "")));
+  return current.length > 0 ? current : packages;
 }
 
 function isProjectCatalogInquiry(content) {
@@ -80,7 +94,7 @@ function searchPackages(packages, content, limit = 3) {
   if (!project) return { project: null, package_type: packageType, candidates: [] };
 
   const text = normalizeText(content);
-  const candidates = packages
+  const candidates = preferCurrentVersions(packages, content)
     .filter((item) => item.project_id === project.project_id)
     .filter((item) => !packageType || item.package_type === packageType)
     .map((item) => {
@@ -138,6 +152,8 @@ module.exports = {
   hasPackagingDomain,
   isPackagingQueryText,
   isProjectCatalogInquiry,
+  isVersionSpecificQuery,
+  preferCurrentVersions,
   isPotentialConfirmation,
   searchPackages,
 };

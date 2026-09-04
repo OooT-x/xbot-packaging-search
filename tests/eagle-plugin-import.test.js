@@ -161,6 +161,36 @@ test("imports a ready batch directly into the formal Eagle folders", async () =>
   assert.ok(adapter.items.every((item) => item.folders.length === 1));
 });
 
+test("imports an image-only background without creating a source item", async () => {
+  const adapter = new FakeAdapter();
+  const scan = makeScanResult({
+    packages: [{
+      packageId: "pkg-image-bg",
+      packageName: "纯图片背景",
+      packageType: "背景",
+      version: "v01",
+      aeCompName: "纯图片背景",
+      state: "ready",
+      sourceOptional: true,
+      dependencyStatus: "complete",
+      preview: { path: "D:\\source\\变速箱包装\\变速箱_背景_纯图片背景_v01.png" },
+      source: null,
+      fonts: [],
+      effects: [],
+    }],
+  });
+
+  const result = await importFormalBatch(adapter, scan);
+
+  assert.equal(result.filed.length, 1);
+  assert.equal(adapter.items.length, 1);
+  assert.equal(adapter.items[0].ext, "png");
+  assert.match(adapter.items[0].annotation, /源文件：无（仅图片背景）/);
+  assert.match(adapter.items[0].annotation, /配对 PNG：/);
+  assert.equal(result.filed[0].sourceItemId, null);
+  assert.equal(result.filed[0].sourcePath, null);
+});
+
 test("protects direct formal import duplicates and supports an explicit update", async () => {
   const adapter = new FakeAdapter();
   await importFormalBatch(adapter, makeScanResult());

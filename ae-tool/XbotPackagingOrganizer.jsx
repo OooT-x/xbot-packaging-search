@@ -761,7 +761,7 @@
     typeGroup = detailPanel.add("group");
     typeGroup.orientation = "row";
     typeGroup.add("statictext", undefined, "包装类型").preferredSize.width = 76;
-    ui.typeList = typeGroup.add("dropdownlist", undefined, ["请选择", "信息条", "视频框", "背景", "分镜排版"]);
+  ui.typeList = typeGroup.add("dropdownlist", undefined, ["请选择", "信息条", "视频框", "背景", "分镜排版", "分Part板", "报道", "时间轴"]);
     ui.typeList.selection = 0;
     ui.typeList.preferredSize.width = 150;
     typeGroup.add("statictext", undefined, "版本");

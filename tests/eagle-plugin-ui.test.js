@@ -42,7 +42,7 @@ test("production import view exposes preview-first pairing and direct naming", (
   assert.doesNotMatch(html, /写入 00_待入库/);
   assert.match(html, /id="assetModal"/);
   assert.match(html, /class="bottom-bar import-bottom"/);
-  assert.match(html, /AE → Eagle 工作台 · v1\.5\.10/);
+  assert.match(html, /AE → Eagle 工作台 · v1\.6\.0/);
   assert.match(html, /@keyframes view-in \{ from \{ opacity: 0; \} to \{ opacity: 1; \} \}/);
   assert.match(html, /body\[data-active-view="import"\] #view-import \{ padding-bottom: 104px; \}/);
   assert.match(html, /body\[data-active-view="import"\] #view-import \.import-bottom \{ position: fixed/);
@@ -76,10 +76,10 @@ test("production import view exposes preview-first pairing and direct naming", (
   assert.match(pluginJs, /已即时显示/);
   assert.match(pluginJs, /data-package-edit-action="apply"/);
   assert.match(pluginJs, /<strong>预览图<\/strong>/);
-  assert.match(pluginJs, /<strong>打包文件<\/strong>/);
+  assert.match(pluginJs, /打包文件/);
   assert.match(html, /title="支持收集器输出的 PNG、ZIP、manifest/);
   assert.match(pluginJs, /title="点击预览图查看原图"/);
-  assert.match(pluginJs, /title="点击打包文件查看 ZIP 信息"/);
+  assert.match(pluginJs, /点击打包文件查看 ZIP 信息/);
   assert.match(pluginJs, /title="\$\{escapeHtml\(reason\)\}"/);
   assert.doesNotMatch(pluginJs, /<span>点击查看原图<\/span>/);
   assert.doesNotMatch(pluginJs, /<span>点击查看文件信息<\/span>/);
@@ -92,7 +92,7 @@ test("production import view exposes preview-first pairing and direct naming", (
   assert.match(pluginJs, /file\.status = pkg\.state === "ready" \? "to-import" : "conflict"/);
   assert.match(pluginJs, /importFormalBatch/);
   assert.match(pluginJs, /state\.importStage/);
-  assert.equal(manifest.version, "1.5.10");
+  assert.equal(manifest.version, "1.6.0");
 });
 
 test("hosts the AEP collector inside the Eagle plugin and returns to pairing", () => {
@@ -127,7 +127,7 @@ test("hosts the AEP collector inside the Eagle plugin and returns to pairing", (
   assert.match(html, /全选当前<\/button><button[^>]*id="aepDeselectVisibleBtn"[^>]*>取消选择/);
   assert.match(html, /收集并进入配对预检/);
   assert.match(html, /class="aep-toolbar-key root"/);
-  assert.match(html, /ROOT[\s\S]*PRE[\s\S]*勾选仅生成独立交付包/);
+  assert.match(html, /ROOT[\s\S]*PRE[\s\S]*共享引用也可分别勾选[\s\S]*按合成 ID 去重/);
   assert.match(html, /var\(--aep-indent\)/);
   assert.match(html, /id="aepPreviewModal"/);
   assert.match(html, /id="aepPreviewStage"/);
@@ -138,7 +138,7 @@ test("hosts the AEP collector inside the Eagle plugin and returns to pairing", (
   assert.match(pluginJs, /--aep-guide-left:/);
   assert.match(pluginJs, /require\("\.\.\/lib\/aep-worker\.js"\)/);
   assert.match(pluginJs, /function inspectAepProject\(\)/);
-  assert.match(pluginJs, /function collectAepSelection\(\)/);
+  assert.match(pluginJs, /function collectAepSelection\(options = \{\}\)/);
   assert.match(pluginJs, /function stopAepCollection\(\)/);
   assert.match(pluginJs, /function handleAepCollectionProgress\(progress\)/);
   assert.match(pluginJs, /onProgress: handleAepCollectionProgress/);
@@ -149,7 +149,7 @@ test("hosts the AEP collector inside the Eagle plugin and returns to pairing", (
   assert.match(pluginJs, /controller\.abort\(\)/);
   assert.match(pluginJs, /scanDirectory\(outputRoot, \{ projectName \}\)/);
   assert.match(pluginJs, /setView\("import"\)/);
-  assert.match(pluginJs, /const allowed = \["import", "aep", "formal", "history", "diagnostics"\]/);
+  assert.match(pluginJs, /const allowed = \["import", "aep", "formal", "history", "diagnostics", "managed"\]/);
   assert.match(pluginJs, /function resolveDroppedDirectory\(dataTransfer\)/);
   assert.match(pluginJs, /function normalizeDroppedPath\(value\)/);
   assert.match(pluginJs, /function droppedPathCandidates\(dataTransfer\)/);
@@ -158,7 +158,16 @@ test("hosts the AEP collector inside the Eagle plugin and returns to pairing", (
   assert.match(pluginJs, /松开鼠标后自动读取文件夹并开始扫描/);
   assert.match(pluginJs, /aepStatCompositions/);
   assert.match(pluginJs, /aepDeselectVisibleBtn\.disabled/);
-  assert.match(pluginJs, /aepCompositions\(\)\.filter\(aepMatches\)\.forEach\(\(item\) => state\.aep\.checkedIds\.delete\(item\.id\)\)/);
+  assert.match(pluginJs, /aepVisibleOccurrences\(\)\.forEach\(\(item\) => aepToggleOccurrence\(item\.compId, item\.occurrenceKey, false\)\)/);
+  assert.match(pluginJs, /checkedOccurrences: new Map\(\)/);
+  assert.match(pluginJs, /data-aep-occurrence=/);
+  assert.match(pluginJs, /function aepSelectionSnapshot\(\)/);
+  assert.match(pluginJs, /function openAepDuplicateSelectionModal\(selection\)/);
+  assert.match(pluginJs, /confirmDuplicates/);
+  assert.match(pluginJs, /const children = expanded\s+\?/);
+  assert.doesNotMatch(pluginJs, /\$\{isReference \? "disabled" : ""\}/);
+  assert.match(html, /id="aepDuplicateModal"/);
+  assert.match(html, /data-aep-duplicate-action="continue"/);
   assert.match(pluginJs, /function scanSelectedDirectory\(\)/);
   assert.match(pluginJs, /elements\.scanBtn\.addEventListener\("click", scanSelectedDirectory\)/);
   assert.match(pluginJs, /function setAepPreviewZoom\(value, anchor = null\)/);
@@ -169,6 +178,21 @@ test("hosts the AEP collector inside the Eagle plugin and returns to pairing", (
   assert.match(pluginJs, /setPointerCapture\(event\.pointerId\)/);
   assert.match(pluginJs, /event\.stopPropagation\(\)/);
   assert.equal((pluginJs.match(/dropZone: document\.getElementById\("dropZone"\)/g) || []).length, 1);
+});
+
+test("exposes the formal packaging maintenance workspace", () => {
+  const html = fs.readFileSync(htmlPath, "utf8");
+  const pluginJs = fs.readFileSync(pluginJsPath, "utf8");
+  assert.match(html, /data-view="managed"[^>]*><strong>已入库管理<\/strong>/);
+  assert.match(html, /id="view-managed" hidden/);
+  assert.match(html, /id="managedRows"/);
+  assert.match(html, /id="managedPreviewPicker"/);
+  assert.match(html, /id="managedSourcePicker"/);
+  assert.match(html, /03_历史版本/);
+  assert.match(pluginJs, /function refreshManagedPackages\(\)/);
+  assert.match(pluginJs, /replaceFormalAsset/);
+  assert.match(pluginJs, /state\.managedDraft/);
+  assert.match(pluginJs, /basePackageId: pkg\.packageId/);
 });
 
 test("ships an interactive preview-first PNG and ZIP pairing prototype", () => {

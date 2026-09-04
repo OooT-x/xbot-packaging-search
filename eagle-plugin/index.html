@@ -347,6 +347,8 @@
       .rename-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 16px; }
       .rename-actions .button-row { display: flex; gap: 7px; }
       .duplicate-options { display: grid; gap: 7px; margin-top: 15px; }
+      .aep-duplicate-summary > p { margin: 0; color: var(--ink-soft); font-size: 11px; line-height: 1.55; }
+      .aep-duplicate-summary .duplicate-options { margin-top: 12px; }
       .duplicate-choice { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); padding: 11px; text-align: left; cursor: pointer; }
       .duplicate-choice:hover { border-color: color-mix(in srgb, var(--blue) 56%, var(--line)); background: var(--blue-soft); }
       .duplicate-choice strong { display: block; font-size: 11px; }
@@ -576,7 +578,7 @@
       .aep-tree-row::after { display: none; }
       .aep-tree-row:hover { background: var(--panel-muted); }
       .aep-tree-row.selected { border-color: color-mix(in srgb, var(--blue) 32%, var(--line)); background: var(--blue-soft); }
-      .aep-tree-row.reference { opacity: .62; }
+      .aep-tree-row.reference { opacity: .86; }
       .aep-tree-row[data-depth="0"] { margin-top: 4px; border-top-color: color-mix(in srgb, var(--green) 30%, var(--line)); background: color-mix(in srgb, var(--green-soft) 34%, var(--panel)); }
       .aep-tree-row[data-depth="0"] + .aep-tree-row[data-depth="0"] { margin-top: 8px; }
       .aep-tree-row:not([data-depth="0"])::before { display: block; left: var(--aep-guide-left); top: -7px; bottom: -7px; border-left: 1px solid color-mix(in srgb, var(--blue) 24%, var(--line)); }
@@ -767,15 +769,49 @@
         .aep-preview-toolbar { align-items: flex-start; flex-direction: column; }
         .aep-preview-zoom-actions { align-self: flex-end; }
       }
+      .managed-shell { display:grid; grid-template-columns:210px minmax(0,1fr) 310px; min-height:510px; margin:0 20px 20px; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--panel); }
+      .managed-side, .managed-inspector { padding:16px; background:var(--panel-soft); }
+      .managed-side { border-right:1px solid var(--line); }
+      .managed-inspector { border-left:1px solid var(--line); }
+      .managed-side .field-label { display:block; margin-top:14px; }
+      .managed-side-note { margin-top:20px; padding-top:14px; border-top:1px solid var(--line); color:var(--ink-soft); font-size:10px; line-height:1.6; }
+      .managed-main { min-width:0; padding:16px; }
+      .managed-toolbar { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding-bottom:12px; border-bottom:1px solid var(--line); }
+      .managed-toolbar h2 { margin:0; font-size:15px; }
+      .managed-toolbar p { margin:4px 0 0; color:var(--ink-soft); font-size:10px; }
+      .managed-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:10px; padding-top:12px; align-content:start; }
+      .managed-card { display:grid; grid-template-columns:86px minmax(0,1fr); gap:10px; padding:10px; border:1px solid var(--line); border-radius:10px; background:var(--panel-strong); cursor:pointer; transition:border-color .16s ease, transform .16s ease; }
+      .managed-card:hover, .managed-card.selected { border-color:var(--blue); transform:translateY(-1px); }
+      .managed-card-thumb { width:86px; height:70px; border-radius:7px; overflow:hidden; background:var(--canvas); display:grid; place-items:center; color:var(--ink-faint); font:10px var(--font-mono); }
+      .managed-card-thumb img { width:100%; height:100%; object-fit:contain; }
+      .managed-card h3 { margin:0; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .managed-card-meta { margin-top:5px; color:var(--ink-soft); font-size:10px; line-height:1.45; }
+      .managed-card-files { display:flex; gap:4px; margin-top:7px; flex-wrap:wrap; }
+      .managed-card-files span { padding:2px 4px; border-radius:4px; background:var(--blue-soft); color:var(--blue); font:9px var(--font-mono); }
+      .managed-inspector .empty-card { margin:0; }
+      .managed-inspector-head { display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
+      .managed-inspector-head h2 { margin:0; font-size:15px; }
+      .managed-inspector-head p { margin:4px 0 0; color:var(--ink-soft); font-size:10px; }
+      .managed-preview { margin-top:13px; height:170px; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:var(--canvas); display:grid; place-items:center; }
+      .managed-preview img { width:100%; height:100%; object-fit:contain; }
+      .managed-detail-list { display:grid; gap:7px; margin-top:13px; }
+      .managed-detail-row { display:flex; justify-content:space-between; gap:8px; font-size:10px; }
+      .managed-detail-row span { color:var(--ink-soft); }
+      .managed-detail-row strong { text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .managed-actions { display:grid; gap:7px; margin-top:16px; }
+      .managed-actions button { width:100%; }
+      .managed-history-note { margin-top:12px; padding:9px; border-radius:7px; background:var(--blue-soft); color:var(--ink-soft); font-size:9px; line-height:1.55; }
+      @media (max-width: 980px) { .managed-shell { grid-template-columns:190px minmax(0,1fr); } .managed-inspector { grid-column:1 / -1; border-top:1px solid var(--line); border-left:0; } }
+      @media (max-width: 680px) { .managed-shell { grid-template-columns:1fr; margin:0 12px 16px; } .managed-side { border-right:0; border-bottom:1px solid var(--line); } .managed-inspector { grid-column:auto; border-top:1px solid var(--line); } .managed-toolbar { display:block; } .managed-toolbar > span { display:inline-block; margin-top:8px; } }
     </style>
   </head>
   <body data-theme="light" data-active-view="import">
     <div class="app">
       <header class="topbar">
-        <div class="brand"><img src="logo.png" alt="X.bot" /><div><strong>X.bot 包装素材收集与入库助手</strong><span>AE → Eagle 工作台 · v1.5.10</span></div></div>
+        <div class="brand"><img src="logo.png" alt="X.bot" /><div><strong>X.bot 包装素材收集与入库助手</strong><span>AE → Eagle 工作台 · v1.6.0</span></div></div>
         <div class="top-actions"><div class="api-state"><span class="api-dot" id="apiDot"></span><span id="apiState">正在检测 Eagle API…</span></div><button class="quiet-btn utility-btn" type="button" data-view="formal">历史待入库</button><button class="quiet-btn utility-btn" type="button" data-view="history">批次记录</button><button class="quiet-btn utility-btn" type="button" data-view="diagnostics">诊断</button><button class="icon-btn" type="button" data-action="toast" data-title="帮助" data-message="AEP 收集会在本机 Worker 中离线解析工程，在副本目录生成 PNG、ZIP 与 manifest，然后回到配对预检并直接写入 Eagle。">?</button><button class="icon-btn" type="button" data-action="toggle-theme" aria-label="切换主题">◐</button></div>
       </header>
-      <nav class="main-tabs" aria-label="主工作区"><button class="main-tab" type="button" data-view="aep" aria-selected="false"><strong>AEP 收集</strong><span>结构 · 预览 · Worker</span></button><button class="main-tab active" type="button" data-view="import" aria-selected="true"><strong>入库工作台</strong><span>PNG + ZIP · Eagle</span></button></nav>
+      <nav class="main-tabs" aria-label="主工作区"><button class="main-tab" type="button" data-view="aep" aria-selected="false"><strong>AEP 收集</strong><span>结构 · 预览 · Worker</span></button><button class="main-tab active" type="button" data-view="import" aria-selected="true"><strong>入库工作台</strong><span>PNG + ZIP · Eagle</span></button><button class="main-tab" type="button" data-view="managed" aria-selected="false"><strong>已入库管理</strong><span>更新 · 版本 · 新增</span></button></nav>
       <div class="workflow-steps" aria-label="入库流程">
         <button class="workflow-step active" type="button" data-view="import" data-workflow-step="1" title="读取包装交付物"><span>1</span><div><strong>选择文件夹</strong></div></button>
         <button class="workflow-step" type="button" data-view="import" data-workflow-step="2" title="确认 PNG 与 ZIP 配对，并管理项目名称"><span>2</span><div><strong>确认配对与命名</strong></div></button>
@@ -808,7 +844,7 @@
                 <div class="aep-field"><label class="field-label" for="aepSearch">搜索合成</label><input class="text-input" id="aepSearch" type="search" placeholder="名称、尺寸或角色" /></div>
                 <div class="aep-filter-list" id="aepFilters"><button class="aep-filter active" type="button" data-aep-filter="all">全部合成</button><button class="aep-filter" type="button" data-aep-filter="candidate">推荐交付</button><button class="aep-filter" type="button" data-aep-filter="root">顶层合成</button><button class="aep-filter" type="button" data-aep-filter="child">直属预合成</button><button class="aep-filter" type="button" data-aep-filter="warning">需要复核</button></div>
               </aside>
-              <main class="aep-tree-panel"><div class="aep-tree-toolbar" title="勾选需要独立交付的合成"><div class="aep-tree-toolbar-copy"><h2>合成结构浏览器</h2><p><span class="aep-toolbar-key root">ROOT</span>根合成 <span class="aep-toolbar-key child">PRE</span>直属预合成 · 勾选仅生成独立交付包</p></div><div class="aep-tree-actions"><button class="quiet-btn" id="aepExpandBtn" type="button" disabled>展开</button><button class="quiet-btn" id="aepCollapseBtn" type="button" disabled>收起</button><button class="quiet-btn" id="aepSelectVisibleBtn" type="button" disabled>全选当前</button><button class="quiet-btn" id="aepDeselectVisibleBtn" type="button" disabled>取消选择</button></div></div><div class="aep-tree-head"><span>层级 / 合成名称</span><span>尺寸</span><span>时长</span><span>状态</span></div><div class="aep-tree-list" id="aepTree"><div class="aep-empty">先选择一个 AEP 工程，再读取离线合成结构。</div></div></main>
+              <main class="aep-tree-panel"><div class="aep-tree-toolbar" title="勾选需要独立交付的合成"><div class="aep-tree-toolbar-copy"><h2>合成结构浏览器</h2><p><span class="aep-toolbar-key root">ROOT</span>根合成 <span class="aep-toolbar-key child">PRE</span>直属预合成 · 共享引用也可分别勾选，收集时按合成 ID 去重</p></div><div class="aep-tree-actions"><button class="quiet-btn" id="aepExpandBtn" type="button" disabled>展开</button><button class="quiet-btn" id="aepCollapseBtn" type="button" disabled>收起</button><button class="quiet-btn" id="aepSelectVisibleBtn" type="button" disabled>全选当前</button><button class="quiet-btn" id="aepDeselectVisibleBtn" type="button" disabled>取消选择</button></div></div><div class="aep-tree-head"><span>层级 / 合成名称</span><span>尺寸</span><span>时长</span><span>状态</span></div><div class="aep-tree-list" id="aepTree"><div class="aep-empty">先选择一个 AEP 工程，再读取离线合成结构。</div></div></main>
               <aside class="aep-inspector" id="aepInspector"><div class="aep-inspector-title">合成检查器</div><div class="aep-empty">点击左侧合成名称查看尺寸、父级、直属预合成和预览来源。</div></aside>
             </div>
           </div>
@@ -830,6 +866,16 @@
 
       <section class="workspace-view" id="view-history" hidden><div class="screen-head"><div><div class="eyebrow">History / 03</div><h1>批次记录</h1><p>每一次直接入库、历史批次归位和 Bot 同步都保留在可追溯的批次摘要中。</p></div></div><div class="import-main" style="margin:0 20px 20px;border:1px solid var(--line);border-radius:12px;"><div class="package-grid"><div class="package-card"><div class="package-thumb thumb-green"></div><div class="card-copy"><div class="card-title-row"><span class="card-title">阿宝包装 · 最近批次</span><span class="status-badge status-ready">已完成</span></div><div class="card-meta">6 条记录 · bot 索引同步完成</div></div></div><div class="package-card"><div class="package-thumb thumb-blue"></div><div class="card-copy"><div class="card-title-row"><span class="card-title">变速箱包装 · 已归位</span><span class="status-badge status-ready">已完成</span></div><div class="card-meta">3 对素材 · 历史批次兼容处理</div></div></div></div></div></section>
       <section class="workspace-view" id="view-diagnostics" hidden><div class="screen-head"><div><div class="eyebrow">System / 04</div><h1>系统诊断</h1><p>在正式操作前确认 Eagle、目录和批量命名所需的基础环境。</p></div></div><div class="import-main" style="margin:0 20px 20px;border:1px solid var(--line);border-radius:12px;"><div class="check-list"><div class="check-row"><span>Eagle Plugin API</span><strong class="check-ok" id="diagApi">检测中</strong></div><div class="check-row"><span>当前活动库</span><strong>由 Eagle 提供</strong></div><div class="check-row"><span>正式目录结构</span><strong class="check-ok">按需创建</strong></div><div class="check-row"><span>命名校验</span><strong class="check-ok">已启用</strong></div><div class="check-row"><span>Bot 同步事件</span><strong class="check-warn">依赖运行根目录</strong></div></div></div></section>
+      <section class="workspace-view" id="view-managed" hidden>
+        <div class="screen-head"><div><div class="eyebrow">Library / 05</div><h1>管理已入库包装</h1><p>更新预览图或 ZIP 会保留旧素材并归档到 03_历史版本；设计内容变化请发布新版本。</p></div><div class="head-actions"><button class="quiet-btn" type="button" data-managed-action="refresh">刷新正式素材</button><button class="primary-btn" type="button" data-managed-action="add">添加新包装</button></div></div>
+        <div class="managed-shell">
+          <aside class="managed-side"><div class="side-title">正式包装 <small id="managedCount">0 项</small></div><label class="field-label" for="managedProject">项目</label><select class="select-input" id="managedProject"><option value="all">全部项目</option></select><label class="field-label" for="managedSearch">搜索</label><input class="text-input" id="managedSearch" type="search" placeholder="包装名称、类型或版本" /><div class="managed-side-note">同一包装的预览图与 ZIP 使用稳定 package_id 关联。替换动作先写入新素材，确认后才切换当前指针；旧 item 保留在 03_历史版本。</div></aside>
+          <main class="managed-main"><div class="managed-toolbar"><div><h2>当前正式素材</h2><p id="managedSummary">正在读取 Eagle 正式目录…</p></div><span class="status-badge status-ready">只显示启用记录</span></div><div class="managed-grid" id="managedRows"><div class="empty-card">正在读取正式 PNG + ZIP 配对…</div></div></main>
+          <aside class="managed-inspector" id="managedInspector"><div class="empty-card">选择一条包装，查看当前版本并执行更新。</div></aside>
+        </div>
+        <input id="managedPreviewPicker" type="file" accept=".png,image/png" hidden /><input id="managedSourcePicker" type="file" accept=".zip,application/zip" hidden />
+        <details class="log-drawer"><summary>维护运行记录</summary><div id="managedLog">等待读取正式素材…</div></details>
+      </section>
     </div>
 
     <div class="modal-backdrop" id="assetModal" role="dialog" aria-modal="true" aria-labelledby="assetTitle"><div class="modal asset-modal"><div class="modal-head"><div><h2 id="assetTitle">资产详情</h2><p class="modal-sub" id="assetSub">查看文件信息</p></div><button class="icon-btn" type="button" data-close-modal aria-label="关闭">×</button></div><div id="assetBody"></div></div></div>
@@ -837,6 +883,8 @@
     <div class="modal-backdrop" id="aepPreviewModal" role="dialog" aria-modal="true" aria-labelledby="aepPreviewTitle"><div class="modal aep-preview-modal"><div class="modal-head"><div><h2 id="aepPreviewTitle">预览图大图</h2><p class="modal-sub" id="aepPreviewSub">滚轮缩放查看代表帧</p></div><button class="icon-btn" type="button" data-close-modal aria-label="关闭大图预览">×</button></div><div class="aep-preview-toolbar"><span class="aep-preview-toolbar-copy">鼠标滚轮缩放 · 当前合成代表帧</span><div class="aep-preview-zoom-actions"><button class="quiet-btn" type="button" data-aep-preview-zoom="out" aria-label="缩小预览图">−</button><span class="aep-preview-zoom-readout" id="aepPreviewZoom">100%</span><button class="quiet-btn" type="button" data-aep-preview-zoom="reset">适应</button><button class="quiet-btn" type="button" data-aep-preview-zoom="in" aria-label="放大预览图">＋</button></div></div><div class="aep-preview-stage" id="aepPreviewStage" tabindex="0" aria-label="预览图大图，可用鼠标滚轮缩放"><img id="aepPreviewImage" alt="" /></div><div class="aep-preview-help">滚动鼠标滚轮调整比例，点击右上角关闭</div></div></div>
 
     <div class="modal-backdrop" id="duplicateModal" role="dialog" aria-modal="true" aria-labelledby="duplicateTitle"><div class="modal" style="max-width:520px;"><div class="modal-head"><div><h2 id="duplicateTitle">检测到已入库包装</h2><p class="modal-sub" id="duplicateSub">请选择处理方式，系统不会静默生成重复素材。</p></div><button class="icon-btn" type="button" data-close-modal aria-label="关闭">×</button></div><div class="duplicate-options"><button class="duplicate-choice" type="button" data-duplicate-mode="reuse"><div><strong>复用已有记录</strong><span>不新增重复文件，沿用已有配对关系</span></div><span class="status-badge status-ready">安全</span></button><button class="duplicate-choice" type="button" data-duplicate-mode="update"><div><strong>更新已有记录</strong><span>补齐变化内容，保留原 batch_id</span></div><span class="status-badge status-review">更新</span></button><button class="duplicate-choice" type="button" data-duplicate-mode="new"><div><strong>新建独立批次</strong><span>保留为新版本，生成独立 batch_id</span></div><span class="status-badge status-muted">新建</span></button></div></div></div>
+
+    <div class="modal-backdrop" id="aepDuplicateModal" role="dialog" aria-modal="true" aria-labelledby="aepDuplicateTitle"><div class="modal" style="max-width:560px;"><div class="modal-head"><div><h2 id="aepDuplicateTitle">检测到重复层级选择</h2><p class="modal-sub">同一个 AE 合成可以在多个父级下出现，但收集结果按合成 ID 去重。</p></div><button class="icon-btn" type="button" data-close-modal aria-label="关闭">×</button></div><div class="aep-duplicate-summary" id="aepDuplicateSummary"></div><div class="rename-actions"><button class="quiet-btn" type="button" data-close-modal>返回检查</button><button class="primary-btn" type="button" data-aep-duplicate-action="continue">去重并继续收集</button></div></div></div>
 
     <div class="modal-backdrop" id="renameModal" role="dialog" aria-modal="true" aria-labelledby="renameTitle"><div class="modal"><div class="modal-head"><div><h2 id="renameTitle">批量规范命名</h2><p class="modal-sub">先用规则生成，再逐条修改。只改本批次素材名称，不改原工程、不改变稳定配对。</p></div><button class="icon-btn" type="button" data-close-modal aria-label="关闭">×</button></div><div class="rename-fields"><div><label class="field-label" for="previewTemplate">预览图命名模板</label><input class="text-input" id="previewTemplate" type="text" value="{项目}_{类型}_{包装}_{版本}" /></div><div><label class="field-label" for="sourceTemplate">源文件命名模板</label><input class="text-input" id="sourceTemplate" type="text" value="{项目}_{包装}_{版本}" /></div></div><div class="token-bank"><span>插入字段</span><button class="token-chip" type="button" data-token="{项目}">{项目}</button><button class="token-chip" type="button" data-token="{包装}">{包装}</button><button class="token-chip" type="button" data-token="{类型}">{类型}</button><button class="token-chip" type="button" data-token="{版本}">{版本}</button><button class="token-chip" type="button" data-token="{合成}">{合成}</button></div><div class="rename-note"><span aria-hidden="true">i</span><span><strong>默认规则与项目文档一致：</strong>预览图包含项目、类型、包装名称和版本；源文件包含项目、包装名称和版本。扩展名由文件类型保留。</span></div><div class="rename-table-wrap" style="overflow:auto;"><div class="rename-table" id="renameRows"></div></div><div class="rename-footer"><span id="renameSummary">等待生成名称</span><span class="rename-error" id="renameError"></span></div><div class="rename-actions"><button class="quiet-btn" type="button" data-action="reset-rename">恢复默认规则</button><div class="button-row"><button class="quiet-btn" type="button" data-action="validate-rename">校验名称</button><button class="quiet-btn" type="button" data-action="apply-rename">应用规则并预览</button><button class="primary-btn" type="button" data-action="confirm-rename">确认命名并继续</button></div></div></div></div>
 

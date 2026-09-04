@@ -81,6 +81,33 @@ test("builds one active package from a paired PNG and ZIP", () => {
   }
 });
 
+test("indexes an image-only background without a source ZIP", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "xbot-catalog-image-only-"));
+  try {
+    const annotation = [
+      "项目：埃安",
+      "package_id：pkg-image-bg",
+      "包装名称：纯图片背景",
+      "包装类型：背景",
+      "版本：v01",
+      "AE 合成：纯图片背景",
+      "源文件：无（仅图片背景）",
+      "状态：启用",
+    ].join("\n");
+    const catalog = buildCatalog(
+      [makeItem(temp, "preview-image-bg", "png", annotation, ["埃安", "背景"])],
+      temp
+    );
+
+    assert.deepEqual(catalog.errors, []);
+    assert.equal(catalog.packages.length, 1);
+    assert.equal(catalog.packages[0].source_eagle_id, null);
+    assert.equal(catalog.packages[0].source_path, null);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
 test("reads and syncs an Eagle library from disk without the API", async () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "xbot-disk-lib-"));
   try {

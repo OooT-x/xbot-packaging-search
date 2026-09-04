@@ -117,6 +117,99 @@ def find_aerender() -> Path:
     return candidates[0]
 
 
+def _load_py_aep():
+    """Load py-aep through the collector's common dependency gate.
+
+    Keep this small wrapper in this module so the name-isolation path stays
+    directly testable without requiring a real AEP fixture.
+    """
+
+    from .core import _load_py_aep as load_py_aep
+
+    return load_py_aep()
+
+
+def _unique_render_name(existing_names: Iterable[str], composition_id: int) -> str:
+    """Return a temporary composition name that cannot collide in AE.
+
+    ``aerender -comp`` selects by name.  The selected composition ID is the
+    authoritative identity everywhere else in this project, so an ambiguous
+    name must be isolated before invoking aerender.
+    """
+
+    used = {str(name).casefold() for name in existing_names}
+    base = f"__xbot_preview_comp_{int(composition_id)}__"
+    candidate = base
+    suffix = 2
+    while candidate.casefold() in used:
+        candidate = f"{base}{suffix}"
+        suffix += 1
+    return candidate
+
+
+def _prepare_render_target(
+    project_path: Path,
+    comp_name: str,
+    composition_id: int | None,
+    temp_root: Path,
+) -> tuple[Path, str, str]:
+    """Return the AEP and name that aerender should use for one composition.
+
+    AEP composition IDs are stable, but aerender accepts only a name.  When
+    an input project has duplicate names, save a short-lived project copy with
+    only the requested composition renamed to a unique token.  The original
+    AEP remains untouched and every layer reference still resolves by ID.
+    """
+
+    if composition_id is None:
+        return project_path, comp_name, ""
+
+    py_aep = _load_py_aep()
+    try:
+        app = py_aep.parse(str(project_path))
+        compositions = list(app.project.compositions)
+    except Exception as exc:
+        raise PreviewError(f"无法解析预览工程以定位合成 ID {composition_id}：{exc}") from exc
+
+    target = next(
+        (item for item in compositions if int(getattr(item, "id", -1)) == int(composition_id)),
+        None,
+    )
+    if target is None:
+        raise PreviewError(f"预览工程中找不到合成 ID：{composition_id}")
+
+    target_name = str(target.name)
+    same_name = [
+        item
+        for item in compositions
+        if str(getattr(item, "name", "")).casefold() == target_name.casefold()
+    ]
+    if len(same_name) <= 1:
+        return project_path, target_name, ""
+
+    unique_name = _unique_render_name(
+        (str(getattr(item, "name", "")) for item in compositions),
+        int(composition_id),
+    )
+    temporary_project = temp_root / f"render-target-{int(composition_id)}.aep"
+    try:
+        target.name = unique_name
+        app.project.save(str(temporary_project))
+    except Exception as exc:
+        raise PreviewError(
+            f"无法为同名合成“{target_name}”（ID {composition_id}）创建临时渲染工程：{exc}"
+        ) from exc
+    if not temporary_project.is_file() or temporary_project.stat().st_size <= 0:
+        raise PreviewError(
+            f"同名合成“{target_name}”（ID {composition_id}）的临时渲染工程未生成。"
+        )
+    return (
+        temporary_project,
+        unique_name,
+        f"检测到同名合成“{target_name}”，已用临时工程按 ID {composition_id} 定位渲染。",
+    )
+
+
 def _png_template_candidates() -> tuple[str, ...]:
     configured = os.environ.get(PNG_PREVIEW_TEMPLATE_ENV, "").strip()
     values = [configured] if configured else []
@@ -353,6 +446,7 @@ def render_preview(
     display_start_frame: int = 0,
     aerender_path: str | Path | None = None,
     timeout_seconds: int = DEFAULT_RENDER_TIMEOUT_SECONDS,
+    composition_id: int | None = None,
 ) -> PreviewRenderResult:
     project = Path(aep_path).expanduser().resolve()
     if not project.is_file() or project.suffix.lower() != ".aep":
@@ -374,6 +468,12 @@ def render_preview(
 
     with tempfile.TemporaryDirectory(prefix="xbot-aep-preview-") as temp_dir:
         temp_root = Path(temp_dir)
+        render_project, render_comp_name, identity_note = _prepare_render_target(
+            project,
+            comp_name,
+            composition_id,
+            temp_root,
+        )
         partial = target.with_name(f".{target.name}.partial")
         partial.unlink(missing_ok=True)
         renderer = "aerender-png"
@@ -381,8 +481,8 @@ def render_preview(
             try:
                 rendered, template_name, log = _render_png(
                     aerender,
-                    project,
-                    comp_name,
+                    render_project,
+                    render_comp_name,
                     selection.frame_number,
                     temp_root,
                     _png_template_candidates(),
@@ -394,8 +494,8 @@ def render_preview(
             except DirectPngUnavailable as direct_error:
                 rendered, template_name, fallback_log = _render_tiff(
                     aerender,
-                    project,
-                    comp_name,
+                    render_project,
+                    render_comp_name,
                     selection.frame_number,
                     temp_root,
                     _tiff_template_candidates(),
@@ -410,6 +510,9 @@ def render_preview(
             partial.replace(target)
         finally:
             partial.unlink(missing_ok=True)
+
+    if identity_note:
+        log = f"{identity_note}\n{log}".strip()
 
     return PreviewRenderResult(
         output_file=str(target),

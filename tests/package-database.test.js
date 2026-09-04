@@ -23,6 +23,8 @@ test("migrates batches and batch details tables", () => {
       "001_initial.sql",
       "002_batches.sql",
       "003_batch_sync_events.sql",
+      "004_image_only_backgrounds.sql",
+      "005_package_revisions.sql",
     ]);
     assert.equal(database.db.prepare("SELECT COUNT(*) AS count FROM batches").get().count, 0);
     assert.equal(
