@@ -71,7 +71,7 @@
       .workspace-view { display: block; flex: 1; min-height: 0; }
       .workspace-view[hidden] { display: none !important; }
       .workspace-view.active { animation: view-in 180ms ease-out both; }
-      @keyframes view-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+      @keyframes view-in { from { opacity: 0; } to { opacity: 1; } }
       .screen-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; padding: 22px 20px 15px; }
       .eyebrow { color: var(--blue); font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
       h1, h2, h3, p { margin: 0; }
@@ -455,6 +455,8 @@
       #view-import .file-pill, #view-import .match-badge, #view-import .status-badge { border-color: rgba(32,36,43,.22); }
       #view-import .pair-edit-panel { border: 2px solid #20242b; border-radius: 12px; background: rgba(219,231,255,.86); }
       .bottom-bar { background: #ffffff; border-top: 2px solid #20242b; }
+      body[data-active-view="import"] #view-import { padding-bottom: 104px; }
+      body[data-active-view="import"] #view-import .import-bottom { position: fixed; left: 20px; right: 20px; bottom: 14px; z-index: 24; margin: 0; border: 2px solid #20242b; border-radius: 14px; box-shadow: 0 8px 0 rgba(32,36,43,.14), 0 18px 34px rgba(32,36,43,.12); }
       .primary-btn { background: #20242b; border-color: #20242b; box-shadow: 0 4px 0 rgba(32,36,43,.2); }
       .primary-btn:hover { background: #4b7ff2; border-color: #4b7ff2; }
       .quiet-btn:hover, .icon-btn:hover { background: #f0f3f8; border-color: #20242b; }
@@ -501,6 +503,7 @@
       [data-theme="dark"] #view-import .status-badge { border-color: var(--line-strong); }
       [data-theme="dark"] #view-import .pair-edit-panel { border-color: var(--line-strong); background: color-mix(in srgb, var(--blue-soft) 85%, var(--panel-strong)); }
       [data-theme="dark"] .bottom-bar { background: var(--panel-strong); border-top-color: var(--line-strong); }
+      body[data-theme="dark"][data-active-view="import"] #view-import .import-bottom { border-color: var(--line-strong); box-shadow: 0 8px 0 rgba(0,0,0,.2), 0 18px 34px rgba(0,0,0,.24); }
       [data-theme="dark"] .primary-btn { background: var(--blue); border-color: var(--blue); box-shadow: 0 4px 0 rgba(0,0,0,.2); color: #fff; }
       [data-theme="dark"] .primary-btn:hover { background: var(--blue-deep); border-color: var(--blue-deep); }
       [data-theme="dark"] .quiet-btn:hover,
@@ -515,6 +518,7 @@
       @media (max-width: 680px) {
         .workflow-step { min-height: 48px; padding: 8px 10px; }
         #view-import .pair-card { box-shadow: 0 7px 0 rgba(32,36,43,.08); }
+        body[data-active-view="import"] #view-import .import-bottom { left: 10px; right: 10px; bottom: 10px; }
       }
       /* Eagle-hosted AEP composition collection workspace */
       #view-aep { padding-bottom: 0; }
@@ -701,7 +705,7 @@
   <body data-theme="light" data-active-view="import">
     <div class="app">
       <header class="topbar">
-        <div class="brand"><img src="logo.png" alt="X.bot" /><div><strong>X.bot 包装素材收集与入库助手</strong><span>AE → Eagle 工作台 · v1.5.1</span></div></div>
+        <div class="brand"><img src="logo.png" alt="X.bot" /><div><strong>X.bot 包装素材收集与入库助手</strong><span>AE → Eagle 工作台 · v1.5.5</span></div></div>
         <div class="top-actions"><div class="api-state"><span class="api-dot" id="apiDot"></span><span id="apiState">正在检测 Eagle API…</span></div><button class="quiet-btn utility-btn" type="button" data-view="formal">历史待入库</button><button class="quiet-btn utility-btn" type="button" data-view="history">批次记录</button><button class="quiet-btn utility-btn" type="button" data-view="diagnostics">诊断</button><button class="icon-btn" type="button" data-action="toast" data-title="帮助" data-message="AEP 收集会在本机 Worker 中离线解析工程，在副本目录生成 PNG、ZIP 与 manifest，然后回到配对预检并直接写入 Eagle。">?</button><button class="icon-btn" type="button" data-action="toggle-theme" aria-label="切换主题">◐</button></div>
       </header>
       <nav class="main-tabs" aria-label="主工作区"><button class="main-tab" type="button" data-view="aep" aria-selected="false"><strong>AEP 收集</strong><span>结构 · 预览 · Worker</span></button><button class="main-tab active" type="button" data-view="import" aria-selected="true"><strong>入库工作台</strong><span>PNG + ZIP · Eagle</span></button></nav>
@@ -719,7 +723,7 @@
           <div class="metrics"><div class="metric"><span>将导入</span><strong id="statToImport">0</strong></div><div class="metric"><span>仅校验</span><strong id="statValidate">0</strong></div><div class="metric"><span>忽略</span><strong id="statIgnore">0</strong></div><div class="metric"><span>冲突</span><strong id="statConflict">0</strong></div></div>
            <div class="section-head"><h2>包装配对预检</h2><span id="batchInfo">等待选择文件夹…</span></div><div class="package-grid" id="packageRows"><div class="empty-card" style="grid-column:1/-1;border:1px dashed var(--line-strong);border-radius:9px;padding:24px;text-align:center;color:var(--ink-faint);">选择一个项目包装文件夹后，这里会显示 PNG 与 ZIP 的对应关系。</div></div>
           <details class="details-drawer"><summary>查看全部扫描文件</summary><div class="file-detail-list" id="fileRows"></div></details>
-         </div><div class="bottom-bar"><div class="bottom-copy">确认后直接写入 <strong>01_预览图</strong> / <strong>02_AE源文件</strong>，不经过待入库。</div><div class="bottom-actions"><button class="primary-btn" id="importBtn" type="button" disabled>直接入库 Eagle</button></div></div></div>
+          </div><div class="bottom-bar import-bottom"><div class="bottom-copy">确认后直接写入 <strong>01_预览图</strong> / <strong>02_AE源文件</strong>，不经过待入库。</div><div class="bottom-actions"><button class="primary-btn" id="importBtn" type="button" disabled>直接入库 Eagle</button></div></div></div>
         <details class="log-drawer"><summary>运行记录</summary><div id="log">等待选择文件夹…</div></details>
       </section>
 
