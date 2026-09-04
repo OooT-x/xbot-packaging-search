@@ -79,6 +79,30 @@ function formatFileSize(bytes) {
   return `${mb.toFixed(mb >= 10 ? 1 : 2)}MB`;
 }
 
+function availableProjectNames(packages) {
+  return [
+    ...new Set(
+      (packages || [])
+        .map((item) => String(item?.project_name || "").trim())
+        .filter(Boolean)
+    ),
+  ].sort((a, b) => a.localeCompare(b, "zh-CN"));
+}
+
+function missingProjectPrompt(packages) {
+  const projectNames = availableProjectNames(packages);
+  if (projectNames.length === 0) {
+    return "我暂时没有读取到可用的包装项目，请稍后再试。";
+  }
+  return [
+    "我暂时没在 Eagle 库里匹配到这个项目。",
+    "",
+    `目前可查的项目有：${projectNames.join("、")}`,
+    "",
+    `你可以这样发：@X.bot 找${projectNames[0]}的包装。`,
+  ].join("\n");
+}
+
 function generateProactiveSuggestion(result) {
   if (!result?.project || !result?.candidates?.length) return null;
   const allTypes = new Set();
@@ -155,6 +179,17 @@ class PackagingService {
       return true;
     }
 
+    try {
+      await this.refreshCatalog(false);
+    } catch (error) {
+      await this.transport.replyText(
+        event.message_id,
+        "Eagle 素材库暂时不可用，我现在拿不到包装索引。请确认 Eagle 已启动后再试。",
+        `package-query-${event.event_id || event.message_id}-eagle-unavailable`
+      );
+      return true;
+    }
+
     const packages = this.database.listActivePackages();
     let effectiveContent = event.content;
     if (aiHint) {
@@ -169,7 +204,7 @@ class PackagingService {
         if (!hasAction || !hasDomain) return false;
         await this.transport.replyText(
           event.message_id,
-          "你是要找包装素材吧？先告诉我项目名，例如：@X.bot 找变速箱项目的信息条。",
+          missingProjectPrompt(packages),
           `package-query-${event.event_id || event.message_id}-missing-project`
         );
         return true;
@@ -177,22 +212,11 @@ class PackagingService {
       if (!hasAction && !hasDomain) return false;
     }
 
-    try {
-      await this.refreshCatalog(false);
-    } catch (error) {
-      await this.transport.replyText(
-        event.message_id,
-        "Eagle 素材库暂时不可用，我现在拿不到包装索引。请确认 Eagle 已启动后再试。",
-        `package-query-${event.event_id || event.message_id}-eagle-unavailable`
-      );
-      return true;
-    }
-
     const result = searchPackages(packages, effectiveContent, 3);
     if (!result.project) {
       await this.transport.replyText(
         event.message_id,
-        "先告诉我项目名，例如：@X.bot 找变速箱项目的信息条。",
+        missingProjectPrompt(packages),
         `package-query-${event.event_id || event.message_id}-missing-project`
       );
       return true;
@@ -492,4 +516,10 @@ class PackagingService {
   }
 }
 
-module.exports = { PackagingService, queryPrompt, safeMessageId };
+module.exports = {
+  PackagingService,
+  availableProjectNames,
+  missingProjectPrompt,
+  queryPrompt,
+  safeMessageId,
+};

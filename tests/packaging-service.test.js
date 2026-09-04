@@ -332,6 +332,35 @@ test("triggers a query with natural wording like 我要", async () => {
   }
 });
 
+test("lists available projects when a packaging request names an unknown project", async () => {
+  const app = fixture();
+  try {
+    const result = await app.service.tryHandleQuery(
+      {
+        type: "im.message.receive_v1",
+        event_id: "event-unknown-project",
+        message_id: "om_unknown_project",
+        message_type: "text",
+        chat_id: "oc_chat",
+        sender_id: "ou_requester",
+        content: "@X.bot 给我openai的包装",
+      },
+      { mentioned: true }
+    );
+
+    assert.equal(result, true);
+    const replies = app.calls.filter((call) => call.kind === "text");
+    assert.equal(replies.length, 1);
+    assert.match(replies[0].text, /没在 Eagle 库里匹配到/);
+    assert.match(replies[0].text, /目前可查的项目有：变速箱/);
+    assert.match(replies[0].text, /@X\.bot 找变速箱的包装/);
+    assert.equal(app.calls.filter((call) => call.kind === "post").length, 0);
+    assert.equal(app.database.getQueryByRootMessage("om_unknown_project") ?? null, null);
+  } finally {
+    app.close();
+  }
+});
+
 test("accepts rich-text post replies when they reference a candidate message", async () => {
   const app = fixture();
   try {
