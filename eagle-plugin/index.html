@@ -537,18 +537,27 @@
       .aep-tree-actions { display: flex; gap: 5px; }
       .aep-tree-actions button { padding: 6px 8px; font-size: 10px; }
       .aep-tree-head { display: grid; grid-template-columns: minmax(0, 1fr) 72px 60px 72px; gap: 8px; padding: 8px 14px; color: var(--ink-faint); font: 9px var(--font-mono); border-bottom: 1px solid var(--line); }
-      .aep-tree-list { flex: 1; min-height: 300px; overflow: auto; padding: 7px; }
-      .aep-tree-row { display: grid; grid-template-columns: 18px 20px minmax(0, 1fr) 72px 60px 72px; gap: 5px; align-items: center; min-height: 34px; padding: 4px 7px; border: 1px solid transparent; border-radius: 7px; color: var(--ink-soft); font-size: 10px; }
+      .aep-tree-list { flex: 1; min-height: 300px; overflow: auto; padding: 8px 10px 18px; }
+      .aep-tree-row { --aep-depth: 0; --aep-indent: 0px; --aep-guide-left: 0px; position: relative; display: grid; grid-template-columns: 18px 20px minmax(0, 1fr) 72px 60px 72px; gap: 5px; align-items: center; min-height: 34px; padding: 4px 7px 4px calc(7px + var(--aep-indent)); border: 1px solid transparent; border-radius: 7px; color: var(--ink-soft); font-size: 10px; }
+      .aep-tree-row::before, .aep-tree-row::after { content: ""; position: absolute; pointer-events: none; }
+      .aep-tree-row::before { display: none; }
+      .aep-tree-row::after { display: none; }
       .aep-tree-row:hover { background: var(--panel-muted); }
       .aep-tree-row.selected { border-color: color-mix(in srgb, var(--blue) 32%, var(--line)); background: var(--blue-soft); }
       .aep-tree-row.reference { opacity: .62; }
-      .aep-tree-row[data-depth="1"] { padding-left: 24px; }
-      .aep-tree-row[data-depth="2"] { padding-left: 40px; }
-      .aep-tree-row[data-depth="3"] { padding-left: 56px; }
+      .aep-tree-row[data-depth="0"] { margin-top: 4px; border-top-color: color-mix(in srgb, var(--green) 30%, var(--line)); background: color-mix(in srgb, var(--green-soft) 34%, var(--panel)); }
+      .aep-tree-row[data-depth="0"] + .aep-tree-row[data-depth="0"] { margin-top: 8px; }
+      .aep-tree-row:not([data-depth="0"])::before { display: block; left: var(--aep-guide-left); top: -7px; bottom: -7px; border-left: 1px solid color-mix(in srgb, var(--blue) 24%, var(--line)); }
+      .aep-tree-row:not([data-depth="0"])::after { display: block; left: var(--aep-guide-left); top: 50%; width: 22px; border-top: 1px solid color-mix(in srgb, var(--blue) 32%, var(--line)); }
+      .aep-tree-row > * { position: relative; z-index: 1; }
       .aep-tree-expander { width: 18px; border: 0; background: transparent; color: var(--ink-faint); cursor: pointer; }
       .aep-tree-check { width: 14px; height: 14px; accent-color: var(--blue); cursor: pointer; }
       .aep-tree-name { min-width: 0; overflow: hidden; color: var(--ink); text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
-      .aep-tree-name strong { font-weight: 700; }
+      .aep-tree-name-line { display: flex; min-width: 0; align-items: center; gap: 6px; }
+      .aep-tree-name strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+      .aep-tree-kind { display: inline-flex; align-items: center; justify-content: center; flex: none; min-width: 27px; height: 16px; padding: 0 4px; border: 1px solid color-mix(in srgb, var(--blue) 30%, var(--line)); border-radius: 4px; background: var(--blue-soft); color: var(--blue-deep); font: 8px var(--font-mono); letter-spacing: .03em; }
+      .aep-tree-kind.root { border-color: color-mix(in srgb, var(--green) 30%, var(--line)); background: var(--green-soft); color: var(--green); }
+      .aep-tree-kind.shared { border-color: color-mix(in srgb, var(--amber) 34%, var(--line)); background: var(--amber-soft); color: var(--amber); }
       .aep-tree-name small, .aep-tree-meta { overflow: hidden; color: var(--ink-faint); font: 9px var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
       .aep-tree-status { justify-self: start; padding: 3px 5px; border-radius: 4px; background: var(--panel-muted); color: var(--ink-faint); font-size: 9px; white-space: nowrap; }
       .aep-tree-status.candidate { background: var(--green-soft); color: var(--green); }
@@ -598,15 +607,25 @@
       #view-aep .aep-tree-panel { background: #ffffff; }
       #view-aep .aep-inspector { padding: 16px; border-left: 2px solid #20242b; background: #fff1c9; }
       #view-aep .aep-side-title, #view-aep .aep-inspector-title { color: #20242b; font-size: 13px; }
-      #view-aep .aep-tree-toolbar { padding: 14px; border-bottom: 2px solid rgba(32,36,43,.2); }
+      #view-aep .aep-tree-toolbar { align-items: flex-start; padding: 14px; border-bottom: 2px solid rgba(32,36,43,.2); }
+      #view-aep .aep-tree-toolbar-copy { min-width: 0; flex: 1; }
       #view-aep .aep-tree-toolbar h2 { color: #20242b; font-size: 16px; }
-      #view-aep .aep-tree-toolbar p { color: #586273; font-size: 11px; }
+      #view-aep .aep-tree-toolbar p { margin-top: 5px; overflow: hidden; color: #586273; font-size: 10px; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
+      #view-aep .aep-toolbar-key { display: inline-flex; align-items: center; min-height: 16px; margin-right: 3px; padding: 0 4px; border: 1px solid #b8c9f5; border-radius: 4px; background: #edf2ff; color: #2457bd; font: 8px var(--font-mono); font-weight: 800; letter-spacing: .03em; vertical-align: 1px; }
+      #view-aep .aep-toolbar-key.root { border-color: #b3d7c5; background: #e5f6ed; color: #287457; }
+      #view-aep .aep-toolbar-key.child { margin-left: 7px; }
       #view-aep .aep-tree-actions button { border: 2px solid #20242b; border-radius: 8px; background: #ffffff; color: #20242b; font-weight: 700; }
       #view-aep .aep-tree-head { padding: 9px 14px; border-bottom: 2px solid rgba(32,36,43,.2); color: #707783; font-size: 10px; }
-      #view-aep .aep-tree-row { min-height: 42px; padding: 5px 8px; border-radius: 10px; color: #586273; font-size: 11px; }
+      #view-aep .aep-tree-list { padding: 10px 12px 20px; }
+      #view-aep .aep-tree-row { min-height: 46px; padding: 7px 8px 7px calc(8px + var(--aep-indent)); border-radius: 10px; color: #586273; font-size: 11px; }
+      #view-aep .aep-tree-row[data-depth="0"] { border-left: 3px solid #287457; }
+      #view-aep .aep-tree-row:not([data-depth="0"])::before { border-left-color: rgba(75,127,242,.38); }
+      #view-aep .aep-tree-row:not([data-depth="0"])::after { border-top-color: rgba(75,127,242,.5); }
       #view-aep .aep-tree-row:hover { background: #f0f3f8; }
       #view-aep .aep-tree-row.selected { border-color: #4b7ff2; background: #dbe7ff; }
       #view-aep .aep-tree-name { color: #20242b; }
+      #view-aep .aep-tree-name small { display: block; margin-top: 2px; }
+      #view-aep .aep-tree-kind { min-width: 30px; height: 18px; }
       #view-aep .aep-tree-status { border-radius: 99px; }
       #view-aep .aep-filter { border: 1px solid transparent; border-radius: 8px; color: #586273; font-size: 11px; }
       #view-aep .aep-filter:hover, #view-aep .aep-filter.active { background: #dbe7ff; color: #2457bd; }
@@ -636,6 +655,8 @@
       body[data-theme="dark"] #view-aep .aep-tree-toolbar,
       body[data-theme="dark"] #view-aep .aep-tree-head { border-color: var(--line-strong); }
       body[data-theme="dark"] #view-aep .aep-tree-toolbar p { color: var(--ink-soft); }
+      body[data-theme="dark"] #view-aep .aep-toolbar-key { border-color: color-mix(in srgb, var(--blue) 48%, var(--line-strong)); background: var(--blue-soft); color: var(--blue-deep); }
+      body[data-theme="dark"] #view-aep .aep-toolbar-key.root { border-color: color-mix(in srgb, var(--green) 48%, var(--line-strong)); background: var(--green-soft); color: var(--green); }
       body[data-theme="dark"] #view-aep .aep-tree-actions button { border-color: var(--line-strong); background: var(--panel); color: var(--ink); }
       body[data-theme="dark"] #view-aep .aep-tree-row:hover { background: var(--panel-muted); }
       body[data-theme="dark"] #view-aep .aep-tree-row.selected,
@@ -660,6 +681,10 @@
         #view-aep .aep-shell { grid-template-columns: 1fr; }
         #view-aep .aep-side { border-right: 0; border-bottom: 2px solid #20242b; }
         #view-aep .aep-inspector { grid-column: auto; border-top: 0; border-left: 0; }
+        #view-aep .aep-tree-row { grid-template-columns: 18px 20px minmax(0, 1fr); }
+        #view-aep .aep-tree-toolbar { display: block; }
+        #view-aep .aep-tree-actions { margin-top: 10px; }
+        #view-aep .aep-tree-toolbar p { white-space: normal; }
         body[data-active-view="aep"] #view-aep .aep-bottom { left: 10px; right: 10px; bottom: 10px; }
         body[data-theme="dark"] #view-aep .aep-side { border-bottom-color: var(--line-strong); }
       }
@@ -704,7 +729,7 @@
                 <div class="aep-field"><label class="field-label" for="aepSearch">搜索合成</label><input class="text-input" id="aepSearch" type="search" placeholder="名称、尺寸或角色" /></div>
                 <div class="aep-filter-list" id="aepFilters"><button class="aep-filter active" type="button" data-aep-filter="all">全部合成</button><button class="aep-filter" type="button" data-aep-filter="candidate">推荐交付</button><button class="aep-filter" type="button" data-aep-filter="root">顶层合成</button><button class="aep-filter" type="button" data-aep-filter="child">直属预合成</button><button class="aep-filter" type="button" data-aep-filter="warning">需要复核</button></div>
               </aside>
-              <main class="aep-tree-panel"><div class="aep-tree-toolbar" title="勾选需要独立交付的合成"><div><h2>合成结构浏览器</h2></div><div class="aep-tree-actions"><button class="quiet-btn" id="aepExpandBtn" type="button" disabled>展开</button><button class="quiet-btn" id="aepCollapseBtn" type="button" disabled>收起</button><button class="quiet-btn" id="aepSelectVisibleBtn" type="button" disabled>全选当前</button></div></div><div class="aep-tree-head"><span>名称 / 角色</span><span>尺寸</span><span>时长</span><span>状态</span></div><div class="aep-tree-list" id="aepTree"><div class="aep-empty">先选择一个 AEP 工程，再读取离线合成结构。</div></div></main>
+              <main class="aep-tree-panel"><div class="aep-tree-toolbar" title="勾选需要独立交付的合成"><div class="aep-tree-toolbar-copy"><h2>合成结构浏览器</h2><p><span class="aep-toolbar-key root">ROOT</span>根合成 <span class="aep-toolbar-key child">PRE</span>直属预合成 · 勾选仅生成独立交付包</p></div><div class="aep-tree-actions"><button class="quiet-btn" id="aepExpandBtn" type="button" disabled>展开</button><button class="quiet-btn" id="aepCollapseBtn" type="button" disabled>收起</button><button class="quiet-btn" id="aepSelectVisibleBtn" type="button" disabled>全选当前</button></div></div><div class="aep-tree-head"><span>层级 / 合成名称</span><span>尺寸</span><span>时长</span><span>状态</span></div><div class="aep-tree-list" id="aepTree"><div class="aep-empty">先选择一个 AEP 工程，再读取离线合成结构。</div></div></main>
               <aside class="aep-inspector" id="aepInspector"><div class="aep-inspector-title">合成检查器</div><div class="aep-empty">点击左侧合成名称查看尺寸、父级、直属预合成和预览来源。</div></aside>
             </div>
           </div>

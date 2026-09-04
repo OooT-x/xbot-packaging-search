@@ -966,12 +966,15 @@ function aepRenderFilters() {
 function aepTreeBranch(comp, depth, trail, seen) {
   if (!aepMatches(comp) && !aepHasVisibleDescendant(comp.id, trail)) return "";
   const isReference = seen.has(comp.id) || trail.has(comp.id);
+  const depthValue = Math.min(Number(depth) || 0, 8);
+  const indent = depthValue * 30;
+  const guideLeft = depthValue > 0 ? 16 + ((depthValue - 1) * 30) : 0;
   const nextTrail = new Set(trail).add(comp.id);
   seen.add(comp.id);
   const children = (comp.child_ids || [])
     .map((childId) => aepComposition(childId))
     .filter(Boolean)
-    .map((child) => aepTreeBranch(child, Math.min(depth + 1, 3), nextTrail, seen))
+    .map((child) => aepTreeBranch(child, depthValue + 1, nextTrail, seen))
     .join("");
   const hasChildren = Boolean(children) || (comp.child_ids || []).length > 0;
   const expanded = state.aep.expandedIds.has(comp.id) && !isReference;
@@ -979,10 +982,13 @@ function aepTreeBranch(comp, depth, trail, seen) {
   const selected = Number(state.aep.activeCompId) === Number(comp.id);
   const checked = state.aep.checkedIds.has(comp.id);
   const role = comp.role || ((comp.parent_ids || []).length ? "预合成" : "顶层合成");
-  return `<div class="aep-tree-row ${selected ? "selected" : ""} ${isReference ? "reference" : ""}" data-aep-id="${escapeHtml(comp.id)}" data-depth="${depth}">
+  const levelLabel = depthValue === 0 ? "根合成" : isReference ? "共享引用" : "直属预合成";
+  const levelKey = depthValue === 0 ? "ROOT" : isReference ? "LINK" : "PRE";
+  const levelClass = depthValue === 0 ? "root" : isReference ? "shared" : "child";
+  return `<div class="aep-tree-row ${selected ? "selected" : ""} ${isReference ? "reference" : ""}" data-aep-id="${escapeHtml(comp.id)}" data-depth="${depthValue}" role="treeitem" aria-level="${depthValue + 1}" style="--aep-depth:${depthValue};--aep-indent:${indent}px;--aep-guide-left:${guideLeft}px">
     <button class="aep-tree-expander" type="button" data-aep-expander="${escapeHtml(comp.id)}" aria-label="${expanded ? "收起" : "展开"}" ${hasChildren && !isReference ? "" : "disabled"}>${hasChildren && !isReference ? (expanded ? "⌄" : "›") : "·"}</button>
     <input class="aep-tree-check" type="checkbox" data-aep-check="${escapeHtml(comp.id)}" ${checked ? "checked" : ""} ${isReference ? "disabled" : ""} aria-label="选择 ${escapeHtml(comp.name)}" />
-    <div class="aep-tree-name" data-aep-name="${escapeHtml(comp.id)}"><strong>${escapeHtml(comp.name)}</strong><small>${escapeHtml(isReference ? "共享引用" : role)}</small></div>
+    <div class="aep-tree-name" data-aep-name="${escapeHtml(comp.id)}"><span class="aep-tree-name-line"><span class="aep-tree-kind ${levelClass}">${levelKey}</span><strong>${escapeHtml(comp.name)}</strong></span><small>${escapeHtml(isReference ? "共享引用" : `${levelLabel} · ${role}`)}</small></div>
     <span class="aep-tree-meta">${escapeHtml(`${comp.width}×${comp.height}`)}</span><span class="aep-tree-meta">${escapeHtml(`${Number(comp.duration || 0).toFixed(2)}s`)}</span><span class="aep-tree-status ${status.tone}">${escapeHtml(status.label)}</span>
   </div>${expanded ? children : ""}`;
 }

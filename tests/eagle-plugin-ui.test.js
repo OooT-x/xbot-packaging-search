@@ -100,6 +100,12 @@ test("hosts the AEP collector inside the Eagle plugin and returns to pairing", (
   assert.match(html, /id="aepTree"/);
   assert.match(html, /id="aepCollectBtn"/);
   assert.match(html, /收集并进入配对预检/);
+  assert.match(html, /class="aep-toolbar-key root"/);
+  assert.match(html, /ROOT[\s\S]*PRE[\s\S]*勾选仅生成独立交付包/);
+  assert.match(html, /var\(--aep-indent\)/);
+  assert.match(pluginJs, /class="aep-tree-kind \$\{levelClass\}"/);
+  assert.match(pluginJs, /aria-level="\$\{depthValue \+ 1\}"/);
+  assert.match(pluginJs, /--aep-guide-left:/);
   assert.match(pluginJs, /require\("\.\.\/lib\/aep-worker\.js"\)/);
   assert.match(pluginJs, /function inspectAepProject\(\)/);
   assert.match(pluginJs, /function collectAepSelection\(\)/);

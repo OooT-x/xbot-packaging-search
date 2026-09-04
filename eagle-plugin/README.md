@@ -17,7 +17,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\aep-collector\build.ps1
 在 Eagle 开发者插件窗口中打开本目录，点击顶部“AEP 收集”：
 
 1. 选择 AEP，读取合成结构。
-2. 在结构树中查看父级/直属预合成，必要时生成单合成预览。
+2. 在结构树中通过 `ROOT` / `PRE` / `LINK` 标识、缩进和连接线查看根合成、直属预合成与共享引用，必要时生成单合成预览。
 3. 勾选独立交付对象，指定新输出目录，开始收集。
 4. 收集完成后自动进入 PNG + ZIP 配对预检；确认项目、包装名称和重复策略后，才通过 Eagle 官方 Plugin API 写入正式目录。
 
