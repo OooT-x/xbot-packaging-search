@@ -45,6 +45,29 @@ function parseWorkerOutput(stdout, stderr) {
   }
 }
 
+function terminateWorkerProcess(child) {
+  if (!child) return;
+  if (process.platform === "win32" && child.pid) {
+    try {
+      const killer = spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], {
+        windowsHide: true,
+        stdio: "ignore",
+      });
+      killer.unref?.();
+      return;
+    } catch (_error) {
+      // Fall back to the child handle if taskkill is unavailable.
+    }
+  }
+  try { child.kill(); } catch (_error) { /* best effort */ }
+}
+
+function workerAbortError() {
+  const error = new Error("AEP Worker 操作已取消。");
+  error.code = "ABORT_ERR";
+  return error;
+}
+
 function runAepWorker(args, options = {}) {
   const workerPath = resolveWorkerPath(options.workerPath);
   const spawnProcess = options.spawnImpl || spawn;
@@ -55,12 +78,18 @@ function runAepWorker(args, options = {}) {
     let settled = false;
     let timer = null;
     let child;
+    let abortHandler = null;
     const finish = (callback, value) => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
+      if (options.signal && abortHandler) options.signal.removeEventListener?.("abort", abortHandler);
       callback(value);
     };
+    if (options.signal?.aborted) {
+      finish(reject, workerAbortError());
+      return;
+    }
     try {
       child = spawnProcess(workerPath, args, {
         windowsHide: true,
@@ -74,7 +103,7 @@ function runAepWorker(args, options = {}) {
       const next = `${target}${chunk.toString()}`;
       if (Buffer.byteLength(next, "utf8") > MAX_OUTPUT_BYTES) {
         finish(reject, new Error("AEP Worker 输出过大，已中止本次操作。"));
-        try { child.kill(); } catch (_error) { /* best effort */ }
+        terminateWorkerProcess(child);
         return target;
       }
       return next;
@@ -105,8 +134,14 @@ function runAepWorker(args, options = {}) {
         finish(reject, error);
       }
     });
+    abortHandler = () => {
+      terminateWorkerProcess(child);
+      finish(reject, workerAbortError());
+    };
+    options.signal?.addEventListener?.("abort", abortHandler, { once: true });
+    if (options.signal?.aborted) abortHandler();
     timer = setTimeout(() => {
-      try { child.kill(); } catch (_error) { /* best effort */ }
+      terminateWorkerProcess(child);
       finish(reject, new Error(`AEP Worker 超过 ${Math.round(timeoutMs / 60000)} 分钟仍未完成，已终止。`));
     }, timeoutMs);
   });

@@ -78,6 +78,26 @@ test("deduplicates selected composition IDs and uses the collect protocol", asyn
   fs.rmSync(fixture.root, { recursive: true, force: true });
 });
 
+test("cancels a running Worker through AbortSignal", async () => {
+  const fixture = workerFixture();
+  const controller = new AbortController();
+  const child = new EventEmitter();
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  let killed = false;
+  child.kill = () => { killed = true; };
+  const pending = runAepWorker(["collect", "demo.aep"], {
+    workerPath: fixture.executable,
+    signal: controller.signal,
+    spawnImpl: () => child,
+  });
+
+  controller.abort();
+  await assert.rejects(pending, (error) => error.code === "ABORT_ERR");
+  assert.equal(killed, true);
+  fs.rmSync(fixture.root, { recursive: true, force: true });
+});
+
 test("preview protocol writes to an isolated preview cache and reports Worker failures", async () => {
   const fixture = workerFixture();
   const result = await previewAep("C:\\projects\\demo.aep", 21, {

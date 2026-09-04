@@ -64,6 +64,8 @@ const state = {
     previewDrag: null,
     previewBusy: false,
     collecting: false,
+    collectAbortController: null,
+    stopRequested: false,
   },
 };
 
@@ -150,6 +152,7 @@ const elements = {
   aepSelectionSummary: document.getElementById("aepSelectionSummary"),
   aepCollectionSummary: document.getElementById("aepCollectionSummary"),
   aepClearBtn: document.getElementById("aepClearBtn"),
+  aepStopBtn: document.getElementById("aepStopBtn"),
   aepCollectBtn: document.getElementById("aepCollectBtn"),
   aepLog: document.getElementById("aepLog"),
 };
@@ -1074,6 +1077,8 @@ function updateAepActions() {
   elements.aepSelectVisibleBtn.disabled = !hasProject || state.aep.collecting;
   elements.aepDeselectVisibleBtn.disabled = !hasProject || !compositions.some((item) => aepMatches(item) && state.aep.checkedIds.has(item.id)) || state.aep.collecting;
   elements.aepClearBtn.disabled = !checkedCount || state.aep.collecting;
+  elements.aepStopBtn.hidden = !state.aep.collectAbortController;
+  elements.aepStopBtn.disabled = !state.aep.collectAbortController || state.aep.stopRequested;
   elements.aepCollectBtn.disabled = !hasProject || !checkedCount || !String(elements.aepOutput.value || "").trim() || state.aep.collecting;
   elements.aepStatCompositions.textContent = String(compositions.length);
   elements.aepStatCandidates.textContent = String(candidateCount);
@@ -1318,12 +1323,16 @@ async function collectAepSelection() {
     showToast("还不能开始收集", "请选择 AEP、至少一个合成，并填写输出目录。", "error");
     return;
   }
+  const controller = new AbortController();
+  state.aep.collectAbortController = controller;
+  state.aep.stopRequested = false;
   try {
     setAepBusy(true, `正在收集 ${selectedIds.length} 个合成…`);
     elements.aepCollectBtn.textContent = "收集中…";
     log(`开始收集 ${selectedIds.length} 个合成，输出到：${outputRoot}`);
     const results = await collectAep(state.aep.aepPath, selectedIds, outputRoot, {
       previewTimes: state.aep.previewTimes,
+      signal: controller.signal,
     });
     const previewCount = results.filter((item) => item.preview_file).length;
     const missingCount = results.filter((item) => (item.missing_files || []).length).length;
@@ -1337,12 +1346,28 @@ async function collectAepSelection() {
     setView("import");
     showToast("AEP 收集完成", `${results.length} 个收集包已生成，${previewCount} 张 PNG 已配对；${missingCount ? `${missingCount} 项存在缺失素材，请在预检中处理。` : "现在进入 PNG + ZIP 配对预检。"}`);
   } catch (error) {
-    log(`AEP 收集失败：${error.message}`);
-    showToast("AEP 收集失败", error.message, "error");
+    if (state.aep.stopRequested || error.code === "ABORT_ERR") {
+      log("已手动停止 AEP 收集。");
+      showToast("收集已停止", "当前收集任务已取消，已生成的文件不会自动进入配对预检。", "normal");
+    } else {
+      log(`AEP 收集失败：${error.message}`);
+      showToast("AEP 收集失败", error.message, "error");
+    }
   } finally {
+    state.aep.collectAbortController = null;
+    state.aep.stopRequested = false;
     elements.aepCollectBtn.textContent = "收集并进入配对预检";
     setAepBusy(false, "Worker 就绪");
   }
+}
+
+function stopAepCollection() {
+  const controller = state.aep.collectAbortController;
+  if (!state.aep.collecting || !controller) return;
+  state.aep.stopRequested = true;
+  elements.aepStopBtn.disabled = true;
+  elements.aepStopBtn.textContent = "正在停止…";
+  controller.abort();
 }
 
 function setView(view) {
@@ -1808,6 +1833,7 @@ elements.aepCollapseBtn.addEventListener("click", () => { state.aep.expandedIds.
 elements.aepSelectVisibleBtn.addEventListener("click", () => { aepCompositions().filter(aepMatches).forEach((item) => state.aep.checkedIds.add(item.id)); renderAepTree(); renderAepInspector(); renderAepQueue(); });
 elements.aepDeselectVisibleBtn.addEventListener("click", () => { aepCompositions().filter(aepMatches).forEach((item) => state.aep.checkedIds.delete(item.id)); renderAepTree(); renderAepInspector(); renderAepQueue(); });
 elements.aepClearBtn.addEventListener("click", () => { state.aep.checkedIds.clear(); renderAepTree(); renderAepInspector(); renderAepQueue(); });
+elements.aepStopBtn.addEventListener("click", stopAepCollection);
 elements.aepCollectBtn.addEventListener("click", collectAepSelection);
 bindPreviewStageInteractions(elements.aepPreviewStage, state.aep, elements.aepPreviewZoom);
 elements.projectName.addEventListener("input", () => { if (state.scan && elements.projectName.value.trim()) state.scan.projectName = elements.projectName.value.trim(); });
