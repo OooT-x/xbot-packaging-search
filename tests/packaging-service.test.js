@@ -351,11 +351,54 @@ test("lists available projects when a packaging request names an unknown project
     assert.equal(result, true);
     const replies = app.calls.filter((call) => call.kind === "text");
     assert.equal(replies.length, 1);
-    assert.match(replies[0].text, /没在 Eagle 库里匹配到/);
-    assert.match(replies[0].text, /目前可查的项目有：变速箱/);
-    assert.match(replies[0].text, /@X\.bot 找变速箱的包装/);
+    assert.match(replies[0].text, /项目暂时不在我这边的包装库里/);
+    assert.match(replies[0].text, /现在能直接查到的是：变速箱/);
+    assert.match(replies[0].text, /@X\.bot 看看变速箱的包装/);
     assert.equal(app.calls.filter((call) => call.kind === "post").length, 0);
     assert.equal(app.database.getQueryByRootMessage("om_unknown_project") ?? null, null);
+  } finally {
+    app.close();
+  }
+});
+
+test("answers a project catalog question when it replies to the missing-project prompt", async () => {
+  const app = fixture();
+  try {
+    assert.equal(
+      await app.service.tryHandleQuery(
+        {
+          type: "im.message.receive_v1",
+          event_id: "event-catalog-seed",
+          message_id: "om_catalog_seed",
+          message_type: "text",
+          chat_id: "oc_chat",
+          sender_id: "ou_requester",
+          content: "@X.bot 给我openai的包装",
+        },
+        { mentioned: true }
+      ),
+      true
+    );
+
+    const missingProjectReply = app.calls.find((call) => call.kind === "text");
+    assert.ok(missingProjectReply);
+    app.replyTargets.set("om_catalog_followup", missingProjectReply.message_id);
+
+    assert.equal(
+      await app.service.tryHandleConfirmation({
+        message_id: "om_catalog_followup",
+        message_type: "text",
+        chat_id: "oc_chat",
+        sender_id: "ou_requester",
+        content: "你有哪些项目",
+      }),
+      true
+    );
+
+    const replies = app.calls.filter((call) => call.kind === "text");
+    assert.equal(replies.length, 2);
+    assert.match(replies[1].text, /有，目前我这边能直接查到：变速箱/);
+    assert.match(replies[1].text, /挑一个项目名发我就行/);
   } finally {
     app.close();
   }

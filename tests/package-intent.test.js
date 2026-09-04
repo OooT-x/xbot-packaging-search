@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const {
   confirmationIntent,
   isPackagingQueryText,
+  isProjectCatalogInquiry,
   searchPackages,
 } = require("../bot/lib/package-intent");
 
@@ -37,6 +38,12 @@ test("treats action or domain words as packaging query signals", () => {
   assert.equal(isPackagingQueryText("我要变速箱的信息条"), true);
   assert.equal(isPackagingQueryText("变速箱小标注"), true);
   assert.equal(isPackagingQueryText("今天天气不错"), false);
+});
+
+test("recognizes project catalog questions without matching ordinary project talk", () => {
+  assert.equal(isProjectCatalogInquiry("你有哪些项目"), true);
+  assert.equal(isProjectCatalogInquiry("目前库里能查哪些项目"), true);
+  assert.equal(isProjectCatalogInquiry("项目进度怎么样"), false);
 });
 
 test("searches project aliases before filtering by package type", () => {

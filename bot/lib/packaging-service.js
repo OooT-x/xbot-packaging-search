@@ -7,6 +7,7 @@ const {
   hasPackagingAction,
   hasPackagingDomain,
   isPackagingQueryText,
+  isProjectCatalogInquiry,
   isPotentialConfirmation,
   searchPackages,
 } = require("./package-intent");
@@ -92,14 +93,26 @@ function availableProjectNames(packages) {
 function missingProjectPrompt(packages) {
   const projectNames = availableProjectNames(packages);
   if (projectNames.length === 0) {
-    return "我暂时没有读取到可用的包装项目，请稍后再试。";
+    return "我这边暂时还没有可查的包装项目，等库里的素材准备好再来找我。";
   }
   return [
-    "我暂时没在 Eagle 库里匹配到这个项目。",
+    "这个项目暂时不在我这边的包装库里。",
     "",
-    `目前可查的项目有：${projectNames.join("、")}`,
+    `现在能直接查到的是：${projectNames.join("、")}。`,
     "",
-    `你可以这样发：@X.bot 找${projectNames[0]}的包装。`,
+    `你挑一个项目名发我就行，比如：@X.bot 看看${projectNames[0]}的包装。`,
+  ].join("\n");
+}
+
+function projectCatalogPrompt(packages) {
+  const projectNames = availableProjectNames(packages);
+  if (projectNames.length === 0) {
+    return "我这边暂时还没有可查的包装项目，等库里的素材准备好再来找我。";
+  }
+  return [
+    `有，目前我这边能直接查到：${projectNames.join("、")}。`,
+    "",
+    `你挑一个项目名发我就行；群里带上 @X.bot，比如：@X.bot 看看${projectNames[0]}的包装。`,
   ].join("\n");
 }
 
@@ -165,6 +178,9 @@ class PackagingService {
   async tryHandleQuery(event, options = {}) {
     const aiHint = options.aiHint || null;
     if (!options.mentioned) return false;
+    if (isProjectCatalogInquiry(event.content)) {
+      return await this.handleProjectCatalogInquiry(event);
+    }
     if (!isPackagingQueryText(event.content) && !aiHint) return false;
 
     const existing = this.database.getQueryByRootMessage(event.message_id);
@@ -314,7 +330,10 @@ class PackagingService {
   async handleConfirmation(event, options = {}) {
     if (!["text", "post"].includes(event.message_type)) return false;
     const content = String(event.content || "").trim();
-    if (!isPotentialConfirmation(content) && !hasPackagingDomain(content)) return false;
+    const catalogInquiry = isProjectCatalogInquiry(content);
+    if (!isPotentialConfirmation(content) && !hasPackagingDomain(content) && !catalogInquiry) {
+      return false;
+    }
 
     if (options.mentioned) {
       const project = findProject(this.database.listActivePackages(), content);
@@ -337,7 +356,10 @@ class PackagingService {
     if (!replyTo) return false;
 
     const query = this.database.findQueryByReplyMessage(event.chat_id, replyTo);
-    if (!query) return false;
+    if (!query) {
+      if (!catalogInquiry) return false;
+      return await this.handleProjectCatalogInquiry(event);
+    }
 
     if (event.sender_id !== query.requester_id) {
       await this.transport.replyText(
@@ -514,12 +536,34 @@ class PackagingService {
     );
     return await this.startQueryFromResult(event, result);
   }
+
+  async handleProjectCatalogInquiry(event) {
+    try {
+      await this.refreshCatalog(false);
+    } catch (error) {
+      await this.transport.replyText(
+        event.message_id,
+        "我这边暂时拿不到包装库，等我恢复后再给你列。",
+        `package-query-${event.event_id || event.message_id}-catalog-unavailable`
+      );
+      return true;
+    }
+
+    const packages = this.database.listActivePackages();
+    await this.transport.replyText(
+      event.message_id,
+      projectCatalogPrompt(packages),
+      `package-query-${event.event_id || event.message_id}-project-catalog`
+    );
+    return true;
+  }
 }
 
 module.exports = {
   PackagingService,
   availableProjectNames,
   missingProjectPrompt,
+  projectCatalogPrompt,
   queryPrompt,
   safeMessageId,
 };

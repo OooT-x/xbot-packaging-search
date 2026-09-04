@@ -24,6 +24,17 @@ function isPackagingQueryText(content) {
   return hasPackagingAction(content) || hasPackagingDomain(content);
 }
 
+function isProjectCatalogInquiry(content) {
+  const text = normalizeText(content);
+  if (!text) return false;
+  if (/项目(?:有哪些|哪些|有啥|有什么|有些什么|哪几个|多少|可查|能查|支持)/.test(text)) {
+    return !/项目(?:有哪些|哪些|有啥|有什么|有些什么)(?:问题|进度|任务|内容|细节|流程)/.test(text);
+  }
+  return /(?:有哪些|哪一些|哪些|有啥|有什么|有些什么|哪几个|多少个|几个|可查|能查|支持|现有|当前|目前|库里|库中|里面).{0,8}项目(?:名|列表|清单)?/.test(
+    text
+  );
+}
+
 function extractPackageType(content) {
   const text = normalizeText(content);
   for (const [type, synonyms] of TYPE_SYNONYMS) {
@@ -126,6 +137,7 @@ module.exports = {
   hasPackagingAction,
   hasPackagingDomain,
   isPackagingQueryText,
+  isProjectCatalogInquiry,
   isPotentialConfirmation,
   searchPackages,
 };
