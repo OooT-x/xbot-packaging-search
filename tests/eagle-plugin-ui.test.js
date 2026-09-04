@@ -42,7 +42,7 @@ test("production import view exposes preview-first pairing and direct naming", (
   assert.doesNotMatch(html, /写入 00_待入库/);
   assert.match(html, /id="assetModal"/);
   assert.match(html, /class="bottom-bar import-bottom"/);
-  assert.match(html, /AE → Eagle 工作台 · v1\.5\.5/);
+  assert.match(html, /AE → Eagle 工作台 · v1\.5\.6/);
   assert.match(html, /@keyframes view-in \{ from \{ opacity: 0; \} to \{ opacity: 1; \} \}/);
   assert.match(html, /body\[data-active-view="import"\] #view-import \{ padding-bottom: 104px; \}/);
   assert.match(html, /body\[data-active-view="import"\] #view-import \.import-bottom \{ position: fixed/);
@@ -87,7 +87,7 @@ test("production import view exposes preview-first pairing and direct naming", (
   assert.match(pluginJs, /file\.status = pkg\.state === "ready" \? "to-import" : "conflict"/);
   assert.match(pluginJs, /importFormalBatch/);
   assert.match(pluginJs, /state\.importStage/);
-  assert.equal(manifest.version, "1.5.5");
+  assert.equal(manifest.version, "1.5.6");
 });
 
 test("hosts the AEP collector inside the Eagle plugin and returns to pairing", () => {
@@ -117,6 +117,10 @@ test("hosts the AEP collector inside the Eagle plugin and returns to pairing", (
   assert.match(html, /class="aep-toolbar-key root"/);
   assert.match(html, /ROOT[\s\S]*PRE[\s\S]*勾选仅生成独立交付包/);
   assert.match(html, /var\(--aep-indent\)/);
+  assert.match(html, /id="aepPreviewModal"/);
+  assert.match(html, /id="aepPreviewStage"/);
+  assert.match(html, /data-aep-preview-zoom="reset"/);
+  assert.match(html, /touch-action: none/);
   assert.match(pluginJs, /class="aep-tree-kind \$\{levelClass\}"/);
   assert.match(pluginJs, /aria-level="\$\{depthValue \+ 1\}"/);
   assert.match(pluginJs, /--aep-guide-left:/);
@@ -135,6 +139,13 @@ test("hosts the AEP collector inside the Eagle plugin and returns to pairing", (
   assert.match(pluginJs, /aepStatCompositions/);
   assert.match(pluginJs, /function scanSelectedDirectory\(\)/);
   assert.match(pluginJs, /elements\.scanBtn\.addEventListener\("click", scanSelectedDirectory\)/);
+  assert.match(pluginJs, /function setAepPreviewZoom\(value, anchor = null\)/);
+  assert.match(pluginJs, /function openAepPreviewModal\(\)/);
+  assert.match(pluginJs, /data-aep-action="open-preview"/);
+  assert.match(pluginJs, /addEventListener\("pointerdown"/);
+  assert.match(pluginJs, /addEventListener\("pointermove"/);
+  assert.match(pluginJs, /setPointerCapture\(event\.pointerId\)/);
+  assert.match(pluginJs, /event\.stopPropagation\(\)/);
   assert.equal((pluginJs.match(/dropZone: document\.getElementById\("dropZone"\)/g) || []).length, 1);
 });
 

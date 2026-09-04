@@ -297,6 +297,20 @@
       .asset-detail-row:last-child { border-bottom: 0; }
       .asset-detail-row span { color: var(--ink-faint); font-size: 9px; }
       .asset-detail-row strong { min-width: 0; overflow: hidden; color: var(--ink-soft); font-size: 9px; font-weight: 650; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+      .aep-preview-modal { width: min(1120px, 100%); height: min(760px, calc(100vh - 28px)); max-height: calc(100vh - 28px); display: flex; flex-direction: column; padding: 14px; }
+      .aep-preview-modal .modal-head { flex: none; }
+      .aep-preview-modal .modal-head h2 { font-size: 17px; }
+      .aep-preview-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; }
+      .aep-preview-toolbar-copy { color: var(--ink-faint); font-size: 10px; }
+      .aep-preview-zoom-actions { display: flex; align-items: center; gap: 5px; }
+      .aep-preview-zoom-actions button { min-width: 30px; min-height: 28px; padding: 0 7px; }
+      .aep-preview-zoom-readout { min-width: 52px; color: var(--ink-soft); font: 10px var(--font-mono); text-align: center; }
+      .aep-preview-stage { flex: 1; min-height: 0; display: grid; place-items: center; margin-top: 10px; overflow: hidden; overscroll-behavior: none; border: 1px solid var(--line); border-radius: 10px; background-color: var(--panel-muted); background-image: linear-gradient(45deg, color-mix(in srgb, var(--line) 60%, transparent) 25%, transparent 25%), linear-gradient(-45deg, color-mix(in srgb, var(--line) 60%, transparent) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, color-mix(in srgb, var(--line) 60%, transparent) 75%), linear-gradient(-45deg, transparent 75%, color-mix(in srgb, var(--line) 60%, transparent) 75%); background-position: 0 0, 0 8px, 8px -8px, -8px 0; background-size: 16px 16px; cursor: grab; touch-action: none; }
+      .aep-preview-stage.is-zoomed { cursor: grab; }
+      .aep-preview-stage.is-dragging { cursor: grabbing; }
+      .aep-preview-stage img { display: block; width: 100%; height: 100%; object-fit: contain; transform: translate3d(var(--aep-preview-pan-x, 0px), var(--aep-preview-pan-y, 0px), 0) scale(var(--aep-preview-scale, 1)); transform-origin: center; transition: transform 100ms ease-out; user-select: none; pointer-events: none; }
+      .aep-preview-stage.is-dragging img { transition: none; }
+      .aep-preview-help { flex: none; margin-top: 8px; color: var(--ink-faint); font-size: 9px; text-align: center; }
       .rename-fields { display: grid; grid-template-columns: 1.2fr 1.2fr; gap: 8px; margin-top: 15px; }
       .token-bank { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-top: 9px; }
       .token-bank > span { color: var(--ink-faint); font-size: 9px; margin-right: 2px; }
@@ -700,12 +714,53 @@
         body[data-active-view="aep"] #view-aep .aep-bottom { left: 10px; right: 10px; bottom: 10px; }
         body[data-theme="dark"] #view-aep .aep-side { border-bottom-color: var(--line-strong); }
       }
+
+      /* Compact AEP hierarchy: setup first, one focused structure workspace second. */
+      #view-aep .aep-setup { padding: 12px 14px 14px; }
+      #view-aep .aep-drop-card { min-height: 60px; padding: 11px 13px; }
+      #view-aep .aep-output-row { margin-top: 10px; gap: 10px; }
+      #view-aep .aep-metrics { margin-top: 10px; }
+      #view-aep .aep-metrics .metric { display: grid; grid-template-columns: 1fr auto; align-items: center; min-height: 46px; padding: 8px 10px; }
+      #view-aep .aep-metrics .metric strong { margin-top: 0; font-size: 18px; }
+      #view-aep .aep-section-head { align-items: end; margin: 16px 0 8px; }
+      #view-aep .aep-section-head h2 { font-size: 15px; }
+      #view-aep .aep-section-head p { margin-top: 3px; color: #586273; font-size: 10px; }
+      #view-aep .aep-shell { grid-template-columns: 190px minmax(0, 1fr) 320px; min-height: 430px; }
+      #view-aep .aep-side, #view-aep .aep-inspector { padding: 14px; }
+      #view-aep .aep-tree-toolbar { padding: 11px 13px; }
+      #view-aep .aep-tree-toolbar p { margin-top: 3px; font-size: 9px; }
+      #view-aep .aep-tree-head { padding: 7px 12px; }
+      #view-aep .aep-tree-list { min-height: 250px; padding: 7px 10px 14px; }
+      #view-aep .aep-inspector-title { font-size: 13px; }
+      #view-aep .aep-inspector-card { margin-top: 10px; padding-top: 10px; }
+      #view-aep .aep-preview-box { position: relative; height: 225px; min-height: 225px; }
+      #view-aep .aep-preview-trigger { display: block; width: 100%; height: 100%; padding: 0; border: 0; background: transparent; cursor: zoom-in; }
+      #view-aep .aep-preview-box img { width: 100%; height: 100%; max-width: none; max-height: none; object-fit: contain; }
+      #view-aep .aep-preview-hint { position: absolute; right: 8px; bottom: 7px; padding: 2px 5px; border-radius: 4px; background: rgba(255,255,255,.78); color: #586273; font: 8px var(--font-mono); pointer-events: none; }
+      body[data-theme="dark"] #view-aep .aep-section-head p { color: var(--ink-soft); }
+      body[data-theme="dark"] #view-aep .aep-preview-hint { background: rgba(20,23,22,.76); color: var(--ink-soft); }
+      @media (max-width: 980px) {
+        #view-aep .aep-shell { grid-template-columns: 190px minmax(0, 1fr); }
+        #view-aep .aep-inspector { grid-column: 1 / -1; border-top: 2px solid #20242b; border-left: 0; }
+        body[data-theme="dark"] #view-aep .aep-inspector { border-top-color: var(--line-strong); }
+      }
+      @media (max-width: 680px) {
+        #view-aep .aep-metrics .metric { display: block; min-height: 0; }
+        #view-aep .aep-metrics .metric strong { margin-top: 3px; }
+        #view-aep .aep-section-head { display: block; }
+        #view-aep .aep-section-head > span { display: block; margin-top: 4px; }
+        #view-aep .aep-shell { min-height: 0; }
+        #view-aep .aep-preview-box { height: 210px; min-height: 210px; }
+        .aep-preview-modal { height: min(680px, calc(100vh - 22px)); max-height: calc(100vh - 22px); padding: 12px; }
+        .aep-preview-toolbar { align-items: flex-start; flex-direction: column; }
+        .aep-preview-zoom-actions { align-self: flex-end; }
+      }
     </style>
   </head>
   <body data-theme="light" data-active-view="import">
     <div class="app">
       <header class="topbar">
-        <div class="brand"><img src="logo.png" alt="X.bot" /><div><strong>X.bot 包装素材收集与入库助手</strong><span>AE → Eagle 工作台 · v1.5.5</span></div></div>
+        <div class="brand"><img src="logo.png" alt="X.bot" /><div><strong>X.bot 包装素材收集与入库助手</strong><span>AE → Eagle 工作台 · v1.5.6</span></div></div>
         <div class="top-actions"><div class="api-state"><span class="api-dot" id="apiDot"></span><span id="apiState">正在检测 Eagle API…</span></div><button class="quiet-btn utility-btn" type="button" data-view="formal">历史待入库</button><button class="quiet-btn utility-btn" type="button" data-view="history">批次记录</button><button class="quiet-btn utility-btn" type="button" data-view="diagnostics">诊断</button><button class="icon-btn" type="button" data-action="toast" data-title="帮助" data-message="AEP 收集会在本机 Worker 中离线解析工程，在副本目录生成 PNG、ZIP 与 manifest，然后回到配对预检并直接写入 Eagle。">?</button><button class="icon-btn" type="button" data-action="toggle-theme" aria-label="切换主题">◐</button></div>
       </header>
       <nav class="main-tabs" aria-label="主工作区"><button class="main-tab" type="button" data-view="aep" aria-selected="false"><strong>AEP 收集</strong><span>结构 · 预览 · Worker</span></button><button class="main-tab active" type="button" data-view="import" aria-selected="true"><strong>入库工作台</strong><span>PNG + ZIP · Eagle</span></button></nav>
@@ -734,7 +789,7 @@
             <div class="drop-card aep-drop-card"><div class="drop-copy"><div class="drop-mark aep-drop-mark">AE</div><div><strong>选择 AEP 工程</strong><span id="aepFileLabel">尚未选择 .aep</span></div></div><div class="drop-actions"><label class="folder-input aep-file-action">选择 AEP<input id="aepPicker" type="file" accept=".aep,application/octet-stream" /></label><button class="primary-btn" id="aepInspectBtn" type="button" disabled>读取合成结构</button></div></div>
             <div class="aep-output-row"><div><label class="field-label" for="aepOutput">收集输出目录</label><input class="text-input" id="aepOutput" type="text" placeholder="默认写到 AEP 同级目录" /></div><button class="quiet-btn" id="aepDefaultOutputBtn" type="button" disabled>恢复默认输出目录</button></div>
             <div class="metrics aep-metrics"><div class="metric"><span>合成总数</span><strong id="aepStatCompositions">0</strong></div><div class="metric"><span>推荐交付</span><strong id="aepStatCandidates">0</strong></div><div class="metric"><span>已选收集</span><strong id="aepStatSelected">0</strong></div><div class="metric"><span>需要复核</span><strong id="aepStatWarnings">0</strong></div></div>
-            <div class="section-head aep-section-head"><h2>合成结构与收集队列</h2><span id="aepTreeSummary">选择 AEP 后显示 parent / child 关系</span></div>
+            <div class="section-head aep-section-head"><div><h2>选择交付合成</h2><p>先从结构树选择对象，再生成代表帧和独立收集包。</p></div><span id="aepTreeSummary">选择 AEP 后显示 parent / child 关系</span></div>
             <div class="aep-shell">
               <aside class="aep-side">
                 <div class="aep-side-title" title="点击合成名称查看详情；勾选框加入独立收集队列">结构筛选 <small id="aepWorkerState">Worker 待命</small></div>
@@ -766,6 +821,8 @@
     </div>
 
     <div class="modal-backdrop" id="assetModal" role="dialog" aria-modal="true" aria-labelledby="assetTitle"><div class="modal asset-modal"><div class="modal-head"><div><h2 id="assetTitle">资产详情</h2><p class="modal-sub" id="assetSub">查看文件信息</p></div><button class="icon-btn" type="button" data-close-modal aria-label="关闭">×</button></div><div id="assetBody"></div></div></div>
+
+    <div class="modal-backdrop" id="aepPreviewModal" role="dialog" aria-modal="true" aria-labelledby="aepPreviewTitle"><div class="modal aep-preview-modal"><div class="modal-head"><div><h2 id="aepPreviewTitle">预览图大图</h2><p class="modal-sub" id="aepPreviewSub">滚轮缩放查看代表帧</p></div><button class="icon-btn" type="button" data-close-modal aria-label="关闭大图预览">×</button></div><div class="aep-preview-toolbar"><span class="aep-preview-toolbar-copy">鼠标滚轮缩放 · 当前合成代表帧</span><div class="aep-preview-zoom-actions"><button class="quiet-btn" type="button" data-aep-preview-zoom="out" aria-label="缩小预览图">−</button><span class="aep-preview-zoom-readout" id="aepPreviewZoom">100%</span><button class="quiet-btn" type="button" data-aep-preview-zoom="reset">适应</button><button class="quiet-btn" type="button" data-aep-preview-zoom="in" aria-label="放大预览图">＋</button></div></div><div class="aep-preview-stage" id="aepPreviewStage" tabindex="0" aria-label="预览图大图，可用鼠标滚轮缩放"><img id="aepPreviewImage" alt="" /></div><div class="aep-preview-help">滚动鼠标滚轮调整比例，点击右上角关闭</div></div></div>
 
     <div class="modal-backdrop" id="duplicateModal" role="dialog" aria-modal="true" aria-labelledby="duplicateTitle"><div class="modal" style="max-width:520px;"><div class="modal-head"><div><h2 id="duplicateTitle">检测到已入库包装</h2><p class="modal-sub" id="duplicateSub">请选择处理方式，系统不会静默生成重复素材。</p></div><button class="icon-btn" type="button" data-close-modal aria-label="关闭">×</button></div><div class="duplicate-options"><button class="duplicate-choice" type="button" data-duplicate-mode="reuse"><div><strong>复用已有记录</strong><span>不新增重复文件，沿用已有配对关系</span></div><span class="status-badge status-ready">安全</span></button><button class="duplicate-choice" type="button" data-duplicate-mode="update"><div><strong>更新已有记录</strong><span>补齐变化内容，保留原 batch_id</span></div><span class="status-badge status-review">更新</span></button><button class="duplicate-choice" type="button" data-duplicate-mode="new"><div><strong>新建独立批次</strong><span>保留为新版本，生成独立 batch_id</span></div><span class="status-badge status-muted">新建</span></button></div></div></div>
 

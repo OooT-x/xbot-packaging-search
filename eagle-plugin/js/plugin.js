@@ -52,6 +52,10 @@ const state = {
     search: "",
     previewFiles: {},
     previewTimes: {},
+    previewZoom: 1,
+    previewPanX: 0,
+    previewPanY: 0,
+    previewDrag: null,
     previewBusy: false,
     collecting: false,
   },
@@ -126,6 +130,12 @@ const elements = {
   aepStatSelected: document.getElementById("aepStatSelected"),
   aepStatWarnings: document.getElementById("aepStatWarnings"),
   aepInspector: document.getElementById("aepInspector"),
+  aepPreviewModal: document.getElementById("aepPreviewModal"),
+  aepPreviewTitle: document.getElementById("aepPreviewTitle"),
+  aepPreviewSub: document.getElementById("aepPreviewSub"),
+  aepPreviewStage: document.getElementById("aepPreviewStage"),
+  aepPreviewImage: document.getElementById("aepPreviewImage"),
+  aepPreviewZoom: document.getElementById("aepPreviewZoom"),
   aepWorkerState: document.getElementById("aepWorkerState"),
   aepExpandBtn: document.getElementById("aepExpandBtn"),
   aepCollapseBtn: document.getElementById("aepCollapseBtn"),
@@ -175,7 +185,11 @@ function showToast(title, message, kind = "normal") {
 }
 
 function openModal(element) { element.classList.add("open"); }
-function closeModals() { document.querySelectorAll(".modal-backdrop").forEach((modal) => modal.classList.remove("open")); }
+function closeModals() {
+  document.querySelectorAll(".modal-backdrop").forEach((modal) => modal.classList.remove("open"));
+  state.aep.previewDrag = null;
+  elements.aepPreviewStage?.classList.remove("is-dragging");
+}
 
 function statusClass(status) {
   if (status === "ready" || status === "to-import") return "status-ready";
@@ -1082,7 +1096,7 @@ function renderAepInspector() {
   const preview = state.aep.previewFiles[comp.id];
   const previewTime = state.aep.previewTimes[comp.id] ?? recommendation.time_seconds ?? 2;
   const previewMarkup = preview?.preview_file
-    ? `<img src="${escapeHtml(fileUrl(preview.preview_file))}" alt="${escapeHtml(comp.name)} 预览" />`
+    ? `<button class="aep-preview-trigger" type="button" data-aep-action="open-preview" aria-label="打开${escapeHtml(comp.name)}预览大图"><img src="${escapeHtml(fileUrl(preview.preview_file))}" alt="${escapeHtml(comp.name)} 预览" /></button><span class="aep-preview-hint">点击查看大图 · 滚轮缩放</span>`
     : `<div class="aep-preview-empty">尚未生成预览<br /><span>默认取 ${escapeHtml(Number(recommendation.time_seconds || 0).toFixed(2))} 秒 · 帧 ${escapeHtml(recommendation.frame || 0)}</span></div>`;
   const parentNames = (comp.parent_names || []).join("、") || "无（顶层合成）";
   const childNames = (comp.child_names || []).join("、") || "无直属预合成";
@@ -1091,6 +1105,53 @@ function renderAepInspector() {
     <div class="aep-inspector-card"><h3>Composition facts</h3><div class="aep-detail-grid"><div><span>尺寸</span><strong>${escapeHtml(`${comp.width} × ${comp.height}`)}</strong></div><div><span>时长 / 帧率</span><strong>${escapeHtml(`${Number(comp.duration || 0).toFixed(2)}s · ${comp.frame_rate}fps`)}</strong></div><div><span>合成 ID</span><strong>${escapeHtml(comp.id)}</strong></div><div><span>父级数量</span><strong>${escapeHtml((comp.parent_ids || []).length)}</strong></div></div></div>
     <div class="aep-inspector-card"><h3>关系与取景</h3><div class="aep-detail-grid"><div><span>父级合成</span><strong title="${escapeHtml(parentNames)}">${escapeHtml(parentNames)}</strong></div><div><span>直属预合成</span><strong title="${escapeHtml(childNames)}">${escapeHtml(childNames)}</strong></div><div><span>预览来源</span><strong title="${escapeHtml(recommendation.reason || "")}">${escapeHtml(recommendation.source_name || comp.name)}</strong></div><div><span>默认时间</span><strong>${escapeHtml(`${Number(recommendation.time_seconds || 0).toFixed(2)}s · 帧 ${recommendation.frame || 0}`)}</strong></div></div></div>
     <div class="aep-inspector-card"><h3>收集状态</h3><div class="aep-detail-grid"><div><span>独立交付</span><strong>${state.aep.checkedIds.has(comp.id) ? "已加入队列" : "未选择"}</strong></div><div><span>子合成</span><strong>${escapeHtml((comp.child_ids || []).length)} 个依赖</strong></div></div></div>`;
+}
+
+function setAepPreviewZoom(value, anchor = null) {
+  const currentZoom = state.aep.previewZoom || 1;
+  const zoom = Math.min(8, Math.max(0.25, Number(value) || 1));
+  if (anchor && elements.aepPreviewStage && currentZoom > 0) {
+    const rect = elements.aepPreviewStage.getBoundingClientRect();
+    if (rect.width && rect.height) {
+      const anchorX = anchor.clientX - rect.left - rect.width / 2;
+      const anchorY = anchor.clientY - rect.top - rect.height / 2;
+      const ratio = zoom / currentZoom;
+      state.aep.previewPanX = anchorX - (anchorX - state.aep.previewPanX) * ratio;
+      state.aep.previewPanY = anchorY - (anchorY - state.aep.previewPanY) * ratio;
+    }
+  }
+  if (zoom <= 1.01) {
+    state.aep.previewPanX = 0;
+    state.aep.previewPanY = 0;
+  }
+  state.aep.previewZoom = zoom;
+  if (elements.aepPreviewStage) {
+    elements.aepPreviewStage.style.setProperty("--aep-preview-scale", zoom.toFixed(3));
+    elements.aepPreviewStage.style.setProperty("--aep-preview-pan-x", `${state.aep.previewPanX.toFixed(1)}px`);
+    elements.aepPreviewStage.style.setProperty("--aep-preview-pan-y", `${state.aep.previewPanY.toFixed(1)}px`);
+    elements.aepPreviewStage.classList.toggle("is-zoomed", zoom > 1.01 || Math.abs(state.aep.previewPanX) > 0.5 || Math.abs(state.aep.previewPanY) > 0.5);
+  }
+  if (elements.aepPreviewZoom) elements.aepPreviewZoom.textContent = `${Math.round(zoom * 100)}%`;
+}
+
+function openAepPreviewModal() {
+  const comp = aepComposition(state.aep.activeCompId);
+  const preview = comp && state.aep.previewFiles[comp.id];
+  if (!comp || !preview?.preview_file) {
+    showToast("暂无预览图", "请先点击“生成预览”，再打开预览大图。", "error");
+    return;
+  }
+  elements.aepPreviewTitle.textContent = `${comp.name} · 预览大图`;
+  elements.aepPreviewSub.textContent = `${comp.width} × ${comp.height} · ${Number(preview.preview_time || 0).toFixed(2)} 秒 · ${preview.preview_source_name || comp.name}`;
+  elements.aepPreviewImage.src = fileUrl(preview.preview_file);
+  elements.aepPreviewImage.alt = `${comp.name} 预览大图`;
+  state.aep.previewPanX = 0;
+  state.aep.previewPanY = 0;
+  state.aep.previewDrag = null;
+  elements.aepPreviewStage?.classList.remove("is-dragging");
+  setAepPreviewZoom(1);
+  openModal(elements.aepPreviewModal);
+  elements.aepPreviewStage?.focus({ preventScroll: true });
 }
 
 function renderAepQueue() {
@@ -1422,6 +1483,7 @@ document.addEventListener("click", (event) => {
   const aepAction = event.target.closest("[data-aep-action]");
   if (aepAction) {
     if (aepAction.dataset.aepAction === "preview") previewAepComposition();
+    if (aepAction.dataset.aepAction === "open-preview") openAepPreviewModal();
     if (aepAction.dataset.aepAction === "toggle-check") {
       const comp = aepComposition(state.aep.activeCompId);
       if (comp) {
@@ -1432,6 +1494,14 @@ document.addEventListener("click", (event) => {
         renderAepQueue();
       }
     }
+    return;
+  }
+  const aepPreviewZoomAction = event.target.closest("[data-aep-preview-zoom]");
+  if (aepPreviewZoomAction) {
+    const action = aepPreviewZoomAction.dataset.aepPreviewZoom;
+    if (action === "in") setAepPreviewZoom(state.aep.previewZoom * 1.25);
+    if (action === "out") setAepPreviewZoom(state.aep.previewZoom * 0.8);
+    if (action === "reset") setAepPreviewZoom(1);
     return;
   }
   const packageCard = event.target.closest(".package-card[data-package-id]");
@@ -1635,6 +1705,7 @@ elements.aepPicker.addEventListener("change", () => {
   state.aep.checkedIds.clear();
   state.aep.previewFiles = {};
   state.aep.previewTimes = {};
+  setAepPreviewZoom(1);
   elements.aepFileLabel.textContent = state.aep.aepPath ? path.basename(state.aep.aepPath) : "无法读取 AEP 本地路径";
   elements.aepOutput.value = defaultAepOutput();
   renderAepTree();
@@ -1652,6 +1723,48 @@ elements.aepCollapseBtn.addEventListener("click", () => { state.aep.expandedIds.
 elements.aepSelectVisibleBtn.addEventListener("click", () => { aepCompositions().filter(aepMatches).forEach((item) => state.aep.checkedIds.add(item.id)); renderAepTree(); renderAepInspector(); renderAepQueue(); });
 elements.aepClearBtn.addEventListener("click", () => { state.aep.checkedIds.clear(); renderAepTree(); renderAepInspector(); renderAepQueue(); });
 elements.aepCollectBtn.addEventListener("click", collectAepSelection);
+elements.aepPreviewStage.addEventListener("wheel", (event) => {
+  if (!elements.aepPreviewModal.classList.contains("open")) return;
+  event.preventDefault();
+  event.stopPropagation();
+  setAepPreviewZoom(state.aep.previewZoom * Math.exp(-event.deltaY * 0.0015), event);
+}, { passive: false });
+elements.aepPreviewStage.addEventListener("pointerdown", (event) => {
+  if (!elements.aepPreviewModal.classList.contains("open") || event.button !== 0 || state.aep.previewZoom <= 1.01) return;
+  event.preventDefault();
+  elements.aepPreviewStage.setPointerCapture(event.pointerId);
+  state.aep.previewDrag = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    panX: state.aep.previewPanX,
+    panY: state.aep.previewPanY,
+  };
+  elements.aepPreviewStage.classList.add("is-dragging");
+});
+elements.aepPreviewStage.addEventListener("pointermove", (event) => {
+  const drag = state.aep.previewDrag;
+  if (!drag || drag.pointerId !== event.pointerId) return;
+  event.preventDefault();
+  state.aep.previewPanX = drag.panX + event.clientX - drag.startX;
+  state.aep.previewPanY = drag.panY + event.clientY - drag.startY;
+  setAepPreviewZoom(state.aep.previewZoom);
+});
+const endAepPreviewDrag = (event) => {
+  const drag = state.aep.previewDrag;
+  if (!drag || drag.pointerId !== event.pointerId) return;
+  if (elements.aepPreviewStage.hasPointerCapture(event.pointerId)) elements.aepPreviewStage.releasePointerCapture(event.pointerId);
+  state.aep.previewDrag = null;
+  elements.aepPreviewStage.classList.remove("is-dragging");
+};
+elements.aepPreviewStage.addEventListener("pointerup", endAepPreviewDrag);
+elements.aepPreviewStage.addEventListener("pointercancel", endAepPreviewDrag);
+elements.aepPreviewStage.addEventListener("dblclick", (event) => {
+  if (!elements.aepPreviewModal.classList.contains("open")) return;
+  event.preventDefault();
+  const nextZoom = state.aep.previewZoom > 1.01 ? 1 : 2;
+  setAepPreviewZoom(nextZoom, nextZoom > 1 ? event : null);
+});
 elements.projectName.addEventListener("input", () => { if (state.scan && elements.projectName.value.trim()) state.scan.projectName = elements.projectName.value.trim(); });
 elements.importBtn.addEventListener("click", runImport);
 elements.reloadBatchBtn.addEventListener("click", refreshBatches);
