@@ -1211,8 +1211,16 @@ async function importFormalBatch(adapter, scanResult, options = {}) {
         .join("、")}`
     );
   }
+  const sourceOptionalForPackage = (pkg) => {
+    const sourcePath = String(pkg.sourcePath || pkg.source?.path || "").trim();
+    return Boolean(
+      pkg.sourceOptional ||
+      pkg.source_optional ||
+      (!sourcePath && String(pkg.packageType || "").trim() === "背景")
+    );
+  };
   const missingSources = readyPackages.filter(
-    (pkg) => !String(pkg.sourcePath || pkg.source?.path || "").trim() && !pkg.sourceOptional
+    (pkg) => !String(pkg.sourcePath || pkg.source?.path || "").trim() && !sourceOptionalForPackage(pkg)
   );
   if (missingSources.length) {
     throw new Error(
@@ -1271,7 +1279,7 @@ async function importFormalBatch(adapter, scanResult, options = {}) {
     batchId,
     previewPath: pkg.previewPath || pkg.preview?.path,
     sourcePath: pkg.sourcePath || pkg.source?.path,
-    sourceOptional: Boolean(pkg.sourceOptional),
+    sourceOptional: sourceOptionalForPackage(pkg),
   }));
   validateFormalItemNames(metadataPairs, options);
   await ensureProjectTagGroups(adapter, [projectName]);

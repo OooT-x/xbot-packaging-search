@@ -682,6 +682,7 @@ function refreshScanDerivedState() {
       pkg.source_optional ||
       (!sourcePath && String(pkg.packageType || "").trim() === "背景")
     );
+    pkg.sourceOptional = sourceOptional;
     if (!previewPath) pairErrors.push("缺少配对 PNG");
     if (!sourcePath && !sourceOptional) pairErrors.push("缺少配对 ZIP");
     if (sourceOptional && String(pkg.packageType || "").trim() !== "背景") {

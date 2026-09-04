@@ -42,7 +42,7 @@ test("production import view exposes preview-first pairing and direct naming", (
   assert.doesNotMatch(html, /写入 00_待入库/);
   assert.match(html, /id="assetModal"/);
   assert.match(html, /class="bottom-bar import-bottom"/);
-  assert.match(html, /AE → Eagle 工作台 · v1\.6\.1/);
+  assert.match(html, /AE → Eagle 工作台 · v1\.6\.2/);
   assert.match(html, /@keyframes view-in \{ from \{ opacity: 0; \} to \{ opacity: 1; \} \}/);
   assert.match(html, /body\[data-active-view="import"\] #view-import \{ padding-bottom: 104px; \}/);
   assert.match(html, /body\[data-active-view="import"\] #view-import \.import-bottom \{ position: fixed/);
@@ -90,9 +90,10 @@ test("production import view exposes preview-first pairing and direct naming", (
   assert.match(pluginJs, /function applyPackageMatch\(packageId, panel, kind = "preview"\)/);
   assert.match(pluginJs, /function refreshScanDerivedState\(\)/);
   assert.match(pluginJs, /file\.status = pkg\.state === "ready" \? "to-import" : "conflict"/);
+  assert.match(pluginJs, /pkg\.sourceOptional = sourceOptional/);
   assert.match(pluginJs, /importFormalBatch/);
   assert.match(pluginJs, /state\.importStage/);
-  assert.equal(manifest.version, "1.6.1");
+  assert.equal(manifest.version, "1.6.2");
 });
 
 test("hosts the AEP collector inside the Eagle plugin and returns to pairing", () => {

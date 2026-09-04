@@ -191,6 +191,31 @@ test("imports an image-only background without creating a source item", async ()
   assert.equal(result.filed[0].sourcePath, null);
 });
 
+test("imports a PNG-only background when the optional-source flag was lost", async () => {
+  const adapter = new FakeAdapter();
+  const scan = makeScanResult({
+    packages: [{
+      packageId: "pkg-image-bg-without-flag",
+      packageName: "无标志图片背景",
+      packageType: "背景",
+      version: "v01",
+      aeCompName: "无标志图片背景",
+      state: "ready",
+      dependencyStatus: "complete",
+      preview: { path: "D:\\source\\变速箱包装\\变速箱_背景_无标志图片背景_v01.png" },
+      source: null,
+      fonts: [],
+      effects: [],
+    }],
+  });
+
+  const result = await importFormalBatch(adapter, scan);
+
+  assert.equal(result.filed.length, 1);
+  assert.equal(adapter.items.length, 1);
+  assert.equal(result.filed[0].sourceItemId, null);
+});
+
 test("protects direct formal import duplicates and supports an explicit update", async () => {
   const adapter = new FakeAdapter();
   await importFormalBatch(adapter, makeScanResult());
