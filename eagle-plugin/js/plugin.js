@@ -202,7 +202,8 @@ function badge(status) {
 }
 
 function packageTone(pkg) {
-  const text = `${pkg.packageType || ""}${pkg.packageName || ""}`;
+  const explicitType = String(pkg.packageType || "").trim();
+  const text = explicitType || String(pkg.packageName || "");
   if (/视频/.test(text)) return "thumb-blue";
   if (/信息|人名|标注/.test(text)) return "thumb-amber";
   if (/背景/.test(text)) return "thumb-green";
@@ -211,6 +212,20 @@ function packageTone(pkg) {
 
 function pairCardTone(pkg) {
   return packageTone(pkg).replace("thumb-", "pair-tone-");
+}
+
+const PACKAGE_TYPE_ORDER = new Map(KNOWN_PACKAGE_TYPES.map((type, index) => [type, index]));
+
+function packageTypeRank(pkg) {
+  const type = String(pkg.packageType || "").trim();
+  return PACKAGE_TYPE_ORDER.get(type) ?? KNOWN_PACKAGE_TYPES.length;
+}
+
+function sortPackages(packages) {
+  return packages
+    .map((pkg, index) => ({ pkg, index }))
+    .sort((left, right) => packageTypeRank(left.pkg) - packageTypeRank(right.pkg) || left.index - right.index)
+    .map(({ pkg }) => pkg);
 }
 
 function scanFileAt(scan, filePath) {
@@ -531,7 +546,7 @@ function render(scan) {
   elements.statConflict.textContent = String(scan.stats?.conflict ?? 0);
   elements.batchInfo.textContent = `batch_id：${scan.batchId || "待生成"}`;
   elements.projectName.value = scan.projectName || elements.projectName.value;
-  const packages = scan.packages || [];
+  const packages = sortPackages(scan.packages || []);
   elements.packageRows.innerHTML = packages.length
     ? packages.map(packageCard).join("")
     : `<div class="empty-card" style="grid-column:1/-1;border:1px dashed var(--line-strong);border-radius:9px;padding:24px;text-align:center;color:var(--ink-faint);">没有识别到可审核的包装记录。</div>`;

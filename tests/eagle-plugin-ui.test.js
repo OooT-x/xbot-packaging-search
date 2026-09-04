@@ -44,6 +44,9 @@ test("production import view exposes preview-first pairing and direct naming", (
   assert.match(pluginJs, /data-package-name=/);
   assert.match(pluginJs, /data-package-type=/);
   assert.match(pluginJs, /function packageTypeEditor\(pkg\)/);
+  assert.match(pluginJs, /const explicitType = String\(pkg\.packageType \|\| ""\)\.trim\(\);/);
+  assert.match(pluginJs, /function sortPackages\(packages\)/);
+  assert.match(pluginJs, /const packages = sortPackages\(scan\.packages \|\| \[\]\)/);
   assert.match(pluginJs, /包装类型已更新/);
   assert.match(pluginJs, /缺少包装类型，请先选择/);
   assert.match(pluginJs, /KNOWN_PACKAGE_TYPES\.includes\(String\(pkg\.packageType \|\| \"\"\)\.trim\(\)\)/);
@@ -78,7 +81,7 @@ test("production import view exposes preview-first pairing and direct naming", (
   assert.match(pluginJs, /file\.status = pkg\.state === "ready" \? "to-import" : "conflict"/);
   assert.match(pluginJs, /importFormalBatch/);
   assert.match(pluginJs, /state\.importStage/);
-  assert.equal(manifest.version, "1.5.2");
+  assert.equal(manifest.version, "1.5.3");
 });
 
 test("hosts the AEP collector inside the Eagle plugin and returns to pairing", () => {
