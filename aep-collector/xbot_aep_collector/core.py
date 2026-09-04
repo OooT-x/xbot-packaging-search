@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
+import subprocess
+import tempfile
 import uuid
 import zipfile
 from dataclasses import asdict, dataclass, replace
@@ -67,6 +70,8 @@ WINDOWS_RESERVED_NAMES = {
 VIDEO_FRAME_NAME = re.compile(r"(?:视频框|横屏框|竖屏框|画面框|视频画框)")
 DISPLAY_COMPOSITION_NAME = re.compile(r"(?:包装|展示|主合成|总合成|成片|预览)")
 BACKGROUND_COMPOSITION_NAME = re.compile(r"(?:背景|底图|底板)")
+FFMPEG_PATH_ENV = "XBOT_FFMPEG_PATH"
+VIDEO_FRAME_TIMEOUT_SECONDS = 120
 
 
 class CollectorError(RuntimeError):
@@ -423,6 +428,168 @@ def _category_for(path: Path) -> str:
     return "Other"
 
 
+def _find_ffmpeg() -> Path:
+    """Find a local ffmpeg executable used for video first-frame extraction."""
+
+    configured = str(os.environ.get(FFMPEG_PATH_ENV, "")).strip().strip('"')
+    if configured:
+        candidate = Path(configured).expanduser()
+        if candidate.is_file():
+            return candidate.resolve()
+        raise CollectorError(f"{FFMPEG_PATH_ENV} 指向的文件不存在：{candidate}")
+
+    from shutil import which
+
+    path_value = which("ffmpeg")
+    if path_value:
+        return Path(path_value).resolve()
+
+    # Adobe CEP extensions commonly ship a private ffmpeg binary.  Keep these
+    # locations as fallbacks so a normal AE installation works without adding
+    # a separate runtime dependency to the collector.
+    candidates: list[Path] = []
+    program_files = [
+        value
+        for value in (
+            os.environ.get("ProgramFiles"),
+            os.environ.get("ProgramW6432"),
+            os.environ.get("ProgramFiles(x86)"),
+        )
+        if value
+    ]
+    for root in program_files:
+        adobe_cep = Path(root) / "Common Files" / "Adobe" / "CEP" / "extensions"
+        candidates.extend(adobe_cep.glob("*/bin/Win/ffmpeg.exe"))
+        candidates.extend(adobe_cep.glob("*/.bin/ffmpeg.exe"))
+    for root in program_files:
+        candidates.append(Path(root) / "Red Giant" / "Trapcode Suite" / "Tools" / "ffmpeg.exe")
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.resolve()
+    raise CollectorError(
+        "视频框包含视频，但找不到 ffmpeg.exe，无法提取首帧。请安装/配置 ffmpeg，或设置 "
+        f"{FFMPEG_PATH_ENV}。"
+    )
+
+
+def _is_complete_png(path: Path) -> bool:
+    try:
+        if not path.is_file() or path.stat().st_size < 20:
+            return False
+        with path.open("rb") as stream:
+            if stream.read(8) != b"\x89PNG\r\n\x1a\n":
+                return False
+            stream.seek(-12, 2)
+            return stream.read(12) == b"\x00\x00\x00\x00IEND\xaeB`\x82"
+    except OSError:
+        return False
+
+
+def _extract_video_first_frame(video_path: Path, output_path: Path) -> None:
+    """Decode frame zero to a PNG without putting the source video in assets."""
+
+    ffmpeg = _find_ffmpeg()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    command = [
+        str(ffmpeg),
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        str(video_path),
+        "-frames:v",
+        "1",
+        "-an",
+        "-f",
+        "image2",
+        str(output_path),
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=VIDEO_FRAME_TIMEOUT_SECONDS,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise CollectorError(f"视频首帧提取失败：{video_path.name}（{exc}）") from exc
+    if completed.returncode != 0 or not _is_complete_png(output_path):
+        output_path.unlink(missing_ok=True)
+        detail = "\n".join(
+            value.strip() for value in (completed.stdout, completed.stderr) if value.strip()
+        )
+        suffix = f"：{detail[-1000:]}" if detail else "。"
+        raise CollectorError(f"视频首帧提取失败：{video_path.name}{suffix}")
+
+
+def _video_frame_footage_ids(compositions: Iterable[Any]) -> set[int]:
+    """Return video footage IDs contained by video-frame compositions."""
+
+    ids: set[int] = set()
+    for comp in compositions:
+        if not VIDEO_FRAME_NAME.search(str(getattr(comp, "name", ""))):
+            continue
+        _nested_comps, nested_footage = _walk_dependencies(comp)
+        for source in nested_footage.values():
+            raw_file = getattr(source, "file", None)
+            if raw_file and Path(str(raw_file)).suffix.lower() in VIDEO_EXTENSIONS:
+                ids.add(int(source.id))
+    return ids
+
+
+def _copy_video_as_first_frame(
+    footage: Any,
+    assets_root: Path,
+    missing: list[str],
+    warnings: list[str],
+    replacements: list[dict[str, Any]],
+) -> tuple[int, int]:
+    raw_file = getattr(footage, "file", None)
+    if not raw_file:
+        return 0, 0
+
+    source_path = Path(str(raw_file))
+    if not source_path.is_file():
+        missing.append(str(source_path))
+        return 0, 0
+
+    original_name = str(getattr(footage, "name", source_path.name))
+    images_root = assets_root / "Images"
+    images_root.mkdir(parents=True, exist_ok=True)
+    destination = _unique_destination(
+        images_root,
+        source_path.with_suffix(".png"),
+        int(footage.id),
+    )
+    with tempfile.TemporaryDirectory(prefix="xbot-video-frame-") as temp_dir:
+        temporary_frame = Path(temp_dir) / "first-frame.png"
+        _extract_video_first_frame(source_path, temporary_frame)
+        shutil.copy2(temporary_frame, destination)
+
+    try:
+        footage.replace(str(destination))
+        footage.name = original_name
+    except Exception as exc:
+        destination.unlink(missing_ok=True)
+        raise CollectorError(f"视频“{original_name}”首帧已生成，但无法替换工程素材：{exc}") from exc
+
+    size = destination.stat().st_size
+    replacements.append(
+        {
+            "footage_id": int(footage.id),
+            "original_file": str(source_path),
+            "replacement_file": str(destination.relative_to(assets_root.parent)),
+            "frame": 0,
+        }
+    )
+    warnings.append(f"视频框视频“{original_name}”已替换为首帧 PNG，原视频未打包。")
+    return 1, size
+
+
 def _unique_destination(folder: Path, source: Path, item_id: int) -> Path:
     target = folder / safe_filename(source.name)
     if not target.exists():
@@ -626,11 +793,22 @@ def collect_composition(
     warnings: list[str] = []
     copied_file_count = 0
     copied_bytes = 0
+    video_frame_replacements: list[dict[str, Any]] = []
     try:
         comps, footage = _walk_dependencies(root_comp)
         assets_root = final_directory / "素材"
+        video_frame_ids = _video_frame_footage_ids(comps.values())
         for item in footage.values():
-            count, size = _copy_and_relink_footage(item, assets_root, missing, warnings)
+            if int(item.id) in video_frame_ids:
+                count, size = _copy_video_as_first_frame(
+                    item,
+                    assets_root,
+                    missing,
+                    warnings,
+                    video_frame_replacements,
+                )
+            else:
+                count, size = _copy_and_relink_footage(item, assets_root, missing, warnings)
             copied_file_count += count
             copied_bytes += size
 
@@ -668,6 +846,7 @@ def collect_composition(
             ],
             "copied_file_count": copied_file_count,
             "copied_bytes": copied_bytes,
+            "video_frame_replacements": video_frame_replacements,
             "missing_files": missing,
             "warnings": warnings,
             "dependency_status": "阻止入库" if missing else ("警告" if warnings else "完整"),

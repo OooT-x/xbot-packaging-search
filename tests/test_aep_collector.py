@@ -50,6 +50,83 @@ class SafeFilenameTests(unittest.TestCase):
         self.assertEqual(CORE.safe_filename("   "), "未命名")
 
 
+class VideoFramePackagingTests(unittest.TestCase):
+    def test_video_frame_compositions_mark_only_video_footage(self):
+        class FootageItem:
+            def __init__(self, item_id, file):
+                self.id = item_id
+                self.file = file
+
+        class Layer:
+            def __init__(self, source):
+                self.source = source
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            video = FootageItem(7, str(Path(temp_dir) / "clip.mp4"))
+            image = FootageItem(8, str(Path(temp_dir) / "still.png"))
+            video_comp = SimpleNamespace(id=101, name="横屏视频框", layers=[Layer(video), Layer(image)])
+            ordinary_comp = SimpleNamespace(id=102, name="包装", layers=[Layer(video)])
+
+            self.assertEqual(CORE._video_frame_footage_ids([video_comp, ordinary_comp]), {7})
+
+    def test_extract_first_frame_uses_ffmpeg_and_validates_png(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "clip.mp4"
+            target = Path(temp_dir) / "first-frame.png"
+            source.write_bytes(b"video")
+
+            def fake_run(command, **_kwargs):
+                Image.new("RGBA", (2, 2), (1, 2, 3, 255)).save(target)
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+            with mock.patch.object(CORE, "_find_ffmpeg", return_value=Path(temp_dir) / "ffmpeg.exe"):
+                with mock.patch.object(CORE.subprocess, "run", side_effect=fake_run) as run:
+                    CORE._extract_video_first_frame(source, target)
+
+            command = run.call_args.args[0]
+            self.assertIn("-frames:v", command)
+            self.assertEqual(command[command.index("-frames:v") + 1], "1")
+            self.assertTrue(target.is_file())
+
+    def test_video_footage_is_replaced_by_png_and_original_is_not_copied(self):
+        class FootageItem:
+            def __init__(self, item_id, file):
+                self.id = item_id
+                self.file = str(file)
+                self.name = "片头视频"
+                self.replaced_with = None
+
+            def replace(self, file):
+                self.replaced_with = str(file)
+                self.file = str(file)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "clip.mp4"
+            source.write_bytes(b"video")
+            footage = FootageItem(12, source)
+            assets = root / "素材"
+            warnings = []
+            missing = []
+            replacements = []
+
+            def fake_extract(_source, output):
+                Image.new("RGBA", (2, 2), (20, 30, 40, 255)).save(output)
+
+            with mock.patch.object(CORE, "_extract_video_first_frame", side_effect=fake_extract):
+                count, size = CORE._copy_video_as_first_frame(
+                    footage, assets, missing, warnings, replacements
+                )
+
+            self.assertEqual(count, 1)
+            self.assertGreater(size, 0)
+            self.assertEqual(missing, [])
+            self.assertTrue(footage.replaced_with.endswith("clip.png"))
+            self.assertFalse((assets / "Video" / "clip.mp4").exists())
+            self.assertTrue(Path(footage.replaced_with).is_file())
+            self.assertEqual(replacements[0]["frame"], 0)
+
+
 class CompositionInfoTests(unittest.TestCase):
     def test_inspection_records_parent_layer_timing_for_precomposition(self):
         class CompItem:
