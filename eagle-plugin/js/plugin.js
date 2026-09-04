@@ -146,6 +146,7 @@ const elements = {
   aepExpandBtn: document.getElementById("aepExpandBtn"),
   aepCollapseBtn: document.getElementById("aepCollapseBtn"),
   aepSelectVisibleBtn: document.getElementById("aepSelectVisibleBtn"),
+  aepDeselectVisibleBtn: document.getElementById("aepDeselectVisibleBtn"),
   aepSelectionSummary: document.getElementById("aepSelectionSummary"),
   aepCollectionSummary: document.getElementById("aepCollectionSummary"),
   aepClearBtn: document.getElementById("aepClearBtn"),
@@ -1071,6 +1072,7 @@ function updateAepActions() {
   elements.aepExpandBtn.disabled = !hasProject || state.aep.collecting;
   elements.aepCollapseBtn.disabled = !hasProject || state.aep.collecting;
   elements.aepSelectVisibleBtn.disabled = !hasProject || state.aep.collecting;
+  elements.aepDeselectVisibleBtn.disabled = !hasProject || !compositions.some((item) => aepMatches(item) && state.aep.checkedIds.has(item.id)) || state.aep.collecting;
   elements.aepClearBtn.disabled = !checkedCount || state.aep.collecting;
   elements.aepCollectBtn.disabled = !hasProject || !checkedCount || !String(elements.aepOutput.value || "").trim() || state.aep.collecting;
   elements.aepStatCompositions.textContent = String(compositions.length);
@@ -1804,6 +1806,7 @@ elements.aepSearch.addEventListener("input", () => { state.aep.search = elements
 elements.aepExpandBtn.addEventListener("click", () => { state.aep.expandedIds = new Set(aepCompositions().filter((item) => (item.child_ids || []).length).map((item) => item.id)); renderAepTree(); });
 elements.aepCollapseBtn.addEventListener("click", () => { state.aep.expandedIds.clear(); renderAepTree(); });
 elements.aepSelectVisibleBtn.addEventListener("click", () => { aepCompositions().filter(aepMatches).forEach((item) => state.aep.checkedIds.add(item.id)); renderAepTree(); renderAepInspector(); renderAepQueue(); });
+elements.aepDeselectVisibleBtn.addEventListener("click", () => { aepCompositions().filter(aepMatches).forEach((item) => state.aep.checkedIds.delete(item.id)); renderAepTree(); renderAepInspector(); renderAepQueue(); });
 elements.aepClearBtn.addEventListener("click", () => { state.aep.checkedIds.clear(); renderAepTree(); renderAepInspector(); renderAepQueue(); });
 elements.aepCollectBtn.addEventListener("click", collectAepSelection);
 bindPreviewStageInteractions(elements.aepPreviewStage, state.aep, elements.aepPreviewZoom);
