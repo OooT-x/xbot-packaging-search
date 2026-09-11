@@ -26,10 +26,34 @@ const {
   replaceFormalAsset,
 } = require("../lib/managed-assets.js");
 
+const MANAGED_CARD_SIZE_KEY = "xbot.managedCardSize";
+const MANAGED_CARD_SIZES = new Set(["compact", "medium", "large"]);
+const IMPORT_CARD_SIZE_KEY = "xbot.importCardSize";
+const IMPORT_CARD_SIZES = new Set(["compact", "medium", "large"]);
+
+function savedManagedCardSize() {
+  try {
+    const value = window.localStorage.getItem(MANAGED_CARD_SIZE_KEY);
+    return MANAGED_CARD_SIZES.has(value) ? value : "medium";
+  } catch (_) {
+    return "medium";
+  }
+}
+
+function savedImportCardSize() {
+  try {
+    const value = window.localStorage.getItem(IMPORT_CARD_SIZE_KEY);
+    return IMPORT_CARD_SIZES.has(value) ? value : "medium";
+  } catch (_) {
+    return "medium";
+  }
+}
+
 const state = {
   activeView: "home",
   navigationHistory: [],
   importStage: 1,
+  importCardSize: savedImportCardSize(),
   importResult: null,
   sourceDir: null,
   scan: null,
@@ -53,6 +77,7 @@ const state = {
     project: "all",
     search: "",
     selectedPackageId: null,
+    cardSize: savedManagedCardSize(),
     loading: false,
   },
   assetPreview: {
@@ -87,6 +112,7 @@ const state = {
     collecting: false,
     collectAbortController: null,
     stopRequested: false,
+    pendingMissingCollection: null,
     collectionProgress: { total: 0, completed: 0, index: 0, compositionId: null, compositionName: "", phase: "" },
   },
 };
@@ -113,6 +139,7 @@ const elements = {
   importBtn: document.getElementById("importBtn"),
   importMode: document.getElementById("importMode"),
   batchInfo: document.getElementById("batchInfo"),
+  packageSelectionSummary: document.getElementById("packageSelectionSummary"),
   statToImport: document.getElementById("statToImport"),
   statValidate: document.getElementById("statValidate"),
   statIgnore: document.getElementById("statIgnore"),
@@ -179,6 +206,9 @@ const elements = {
   aepPreviewModal: document.getElementById("aepPreviewModal"),
   aepDuplicateModal: document.getElementById("aepDuplicateModal"),
   aepDuplicateSummary: document.getElementById("aepDuplicateSummary"),
+  aepMissingModal: document.getElementById("aepMissingModal"),
+  aepMissingSummary: document.getElementById("aepMissingSummary"),
+  aepMissingList: document.getElementById("aepMissingList"),
   aepPreviewTitle: document.getElementById("aepPreviewTitle"),
   aepPreviewSub: document.getElementById("aepPreviewSub"),
   aepPreviewStage: document.getElementById("aepPreviewStage"),
@@ -285,6 +315,42 @@ function managedVisiblePackages() {
   });
 }
 
+function setManagedCardSize(size, options = {}) {
+  const nextSize = MANAGED_CARD_SIZES.has(size) ? size : "medium";
+  state.managed.cardSize = nextSize;
+  if (elements.managedRows) elements.managedRows.dataset.cardSize = nextSize;
+  document.querySelectorAll("[data-managed-card-size]").forEach((button) => {
+    const active = button.dataset.managedCardSize === nextSize;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+  if (options.persist !== false) {
+    try {
+      window.localStorage.setItem(MANAGED_CARD_SIZE_KEY, nextSize);
+    } catch (_) {
+      // The layout still works when Eagle storage is unavailable.
+    }
+  }
+}
+
+function setImportCardSize(size, options = {}) {
+  const nextSize = IMPORT_CARD_SIZES.has(size) ? size : "medium";
+  state.importCardSize = nextSize;
+  if (elements.packageRows) elements.packageRows.dataset.cardSize = nextSize;
+  document.querySelectorAll("[data-import-card-size]").forEach((button) => {
+    const active = button.dataset.importCardSize === nextSize;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+  if (options.persist !== false) {
+    try {
+      window.localStorage.setItem(IMPORT_CARD_SIZE_KEY, nextSize);
+    } catch (_) {
+      // The layout still works when Eagle storage is unavailable.
+    }
+  }
+}
+
 function managedCard(pkg) {
   const previewPath = pkg.preview?.filePath || pkg.preview?.filepath || "";
   const preview = previewPath
@@ -330,6 +396,7 @@ function openManagedPreviewModal(packageId) {
 
 function renderManaged() {
   const visible = managedVisiblePackages();
+  setManagedCardSize(state.managed.cardSize, { persist: false });
   const projects = [...new Set(state.managed.packages.map((pkg) => pkg.projectName).filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-CN"));
   if (elements.managedProject) {
     const current = state.managed.project;
@@ -588,12 +655,13 @@ function openAssetModal(kind, packageId) {
     assetDetailRow("版本", pkg.version || "v01"),
   ];
   if (kind === "source") {
-    details.push(assetDetailRow("依赖状态", pkg.dependencyStatus === "blocked" ? "存在缺失素材，阻止入库" : pkg.dependencyStatus === "warning" ? "依赖存在警告" : "依赖完整"));
+    details.push(assetDetailRow("依赖状态", pkg.dependencyStatus === "blocked" ? (pkg.riskAccepted ? "存在缺失素材，已确认风险入库" : "存在缺失素材，等待风险确认") : pkg.dependencyStatus === "warning" ? "依赖存在警告" : "依赖完整"));
     details.push(assetDetailRow("manifest", relativeScanPath(pkg.manifestPath), true));
     details.push(assetDetailRow("AE Report", pkg.reportFiles?.join("、") || (pkg.reportStatus === "absent" ? "未提供" : "未能读取"), true));
     if (pkg.fonts?.length) details.push(assetDetailRow("Report 字体", pkg.fonts.join("、")));
     if (pkg.effects?.length) details.push(assetDetailRow("Report 效果/插件", pkg.effects.join("、")));
     if (pkg.missingFootage?.length) details.push(assetDetailRow("Report 缺失素材", pkg.missingFootage.join("、")));
+    if (pkg.missingFiles?.length) details.push(assetDetailRow("收集缺失素材", pkg.missingFiles.join("、")));
   }
   elements.assetTitle.textContent = kind === "preview" ? "预览图原图" : "打包文件信息";
   elements.assetSub.textContent = `${pkg.projectName || "未命名项目"} · ${pkg.packageName || "未命名包装"} · ${label}`;
@@ -647,12 +715,31 @@ function beginScanState(scan) {
       state: pkg.state,
       errors: [...(pkg.errors || [])],
       warnings: [...(pkg.warnings || [])],
+      missingFiles: [...(pkg.missingFiles || pkg.missingFootage || [])],
+      dependencyStatus: pkg.dependencyStatus || "",
+      riskOverrideEligible: Boolean(pkg.riskOverrideEligible),
     }])
   );
   state.editingPackageId = null;
   state.editingPackageKind = null;
   state.pendingPackageEdit = null;
   state.selectedPackageId = scan.packages?.[0]?.packageId || null;
+}
+
+function packageMissingFiles(pkg) {
+  return [...new Set([
+    ...(pkg?.missingFiles || []),
+    ...(pkg?.missingFootage || []),
+  ].map((value) => String(value || "").trim()).filter(Boolean))];
+}
+
+function packageRiskReason(pkg) {
+  const missingFiles = packageMissingFiles(pkg);
+  if (missingFiles.length) return `依赖缺失：${missingFiles.join("、")}`;
+  if (String(pkg?.dependencyStatus || "") === "blocked" || isHardBlockedPackage(pkg)) {
+    return "收集记录标记为阻止入库，但 manifest 没有提供具体缺失文件。";
+  }
+  return "";
 }
 
 function isHardBlockedPackage(pkg) {
@@ -709,10 +796,21 @@ function refreshScanDerivedState() {
         pairErrors.push(`${kind === "preview" ? "PNG" : "ZIP"} 被多个包装记录选择`);
       }
     }
-    if (isHardBlockedPackage(pkg)) pairErrors.push("manifest 标记为阻止入库");
+    const riskFiles = packageMissingFiles(pkg);
+    pkg.missingFiles = riskFiles;
+    pkg.riskOverrideEligible = Boolean(riskFiles.length && isHardBlockedPackage(pkg));
+    const riskReason = packageRiskReason(pkg);
+    pkg.riskReason = riskReason;
+    if (isHardBlockedPackage(pkg) && !pkg.riskOverrideEligible) {
+      pairErrors.push("manifest 标记为阻止入库");
+    } else if (pkg.riskOverrideEligible && !pkg.riskAccepted) {
+      pairErrors.push("发现缺失素材，确认风险后可入库");
+    }
+    if (typeof pkg.selectedForImport !== "boolean") pkg.selectedForImport = pairErrors.length === 0;
     pkg.matchError = pairErrors[0] || "";
     pkg.state = pairErrors.length > 0 ? "blocked" : "ready";
     pkg.errors = pairErrors;
+    if (pkg.state !== "ready" && !pkg.riskAccepted) pkg.selectedForImport = false;
   }
 
   for (const file of state.scan.files || []) {
@@ -725,8 +823,15 @@ function refreshScanDerivedState() {
       const file = scanFileAt(state.scan, currentPath);
       if (!file) continue;
       file.packageId = pkg.packageId;
-      file.status = pkg.state === "ready" ? "to-import" : "conflict";
-      file.note = pkg.state === "ready" ? "" : pkg.matchError || "需要处理配对关系";
+      if (pkg.state === "ready") {
+        file.status = pkg.state === "ready" ? "to-import" : "conflict";
+        if (pkg.selectedForImport === false) file.status = "validate-only";
+      } else {
+        file.status = "conflict";
+      }
+      file.note = pkg.state === "ready"
+        ? (pkg.selectedForImport === false ? "用户未选择入库" : "")
+        : pkg.matchError || "需要处理配对关系";
     }
   }
   state.scan.stats = {
@@ -742,7 +847,10 @@ function pairStatusBadge(pkg) {
   if (hasPendingPackageEdit(pkg)) {
     return `${stateBadge}<span class="match-badge match-pending">待应用</span>`;
   }
-  if (pkg.state === "blocked") return stateBadge;
+  if (pkg.state === "blocked") {
+    return `${stateBadge}${pkg.riskOverrideEligible ? '<span class="match-badge match-risk">需确认风险</span>' : ""}`;
+  }
+  if (pkg.riskAccepted) return `${stateBadge}<span class="match-badge match-risk">风险入库</span>`;
   const label = pkg.manualMatch ? "已修改" : "自动匹配";
   const className = pkg.manualMatch ? "match-badge match-manual" : "match-badge match-auto";
   return `${stateBadge}<span class="${className}">${label}</span>`;
@@ -770,10 +878,16 @@ function packageCard(pkg) {
     pkg.fonts?.length ? `字体：${pkg.fonts.join("、")}` : "",
     pkg.effects?.length ? `效果/插件：${pkg.effects.join("、")}` : "",
     pkg.missingFootage?.length ? `缺失素材：${pkg.missingFootage.join("、")}` : "",
+    pkg.missingFiles?.length ? `收集缺失文件：${pkg.missingFiles.join("、")}` : "",
   ].filter(Boolean).join("\n");
+  const riskReason = packageRiskReason(pkg);
   const reason = [hasPendingPackageEdit(pkg)
     ? `已预览新的${state.pendingPackageEdit.kind === "preview" ? " PNG" : " ZIP"}，点击应用后生效`
-    : pkg.matchError || (pkg.manualMatch ? "用户已覆盖自动匹配" : "manifest / 文件名规则自动匹配"), reportFacts].filter(Boolean).join("\n");
+    : pkg.matchError || (pkg.manualMatch ? "用户已覆盖自动匹配" : "manifest / 文件名规则自动匹配"), riskReason, reportFacts].filter(Boolean).join("\n");
+  const riskNote = pkg.riskOverrideEligible
+    ? `<div class="pair-reason pair-risk-note"><strong>${pkg.riskAccepted ? "风险入库已确认" : "缺失素材，可选择风险入库"}</strong><span>${escapeHtml(riskReason)}。入库后工程可能继续报错；补齐素材后可在“维护已入库包装”中替换 ZIP 并重新发布。</span></div>`
+    : (pkg.state === "blocked" ? `<div class="pair-reason pair-block-note"><strong>无法入库</strong><span>${escapeHtml(pkg.matchError || "请先修复配对关系")}</span></div>` : "");
+  const selection = `<label class="package-select"><input type="checkbox" data-package-select="${escapeHtml(pkg.packageId || "")}" ${pkg.selectedForImport ? "checked" : ""} ${pkg.state === "blocked" && !pkg.riskOverrideEligible ? "disabled" : ""} /><span>${pkg.riskAccepted ? "风险入库" : "选择入库"}</span></label>`;
   const reportBadge = pkg.reportStatus === "parsed" ? "REPORT ✓" : pkg.reportStatus === "absent" ? "REPORT —" : "REPORT !";
   const editPanel = editing
     ? `<div class="pair-edit-panel" data-package-edit-panel="${escapeHtml(pkg.packageId || "")}">
@@ -790,12 +904,13 @@ function packageCard(pkg) {
       <div class="pair-connector" aria-hidden="true">↔</div>
       <div class="pair-asset asset-card" title="${sourceOptional ? "仅图片背景，没有对应工程 ZIP" : "点击打包文件查看 ZIP 信息"}" data-asset-action="source" data-package-id="${escapeHtml(pkg.packageId || "")}"><div class="pair-asset-head"><strong>${sourceOptional ? "工程文件" : "打包文件"}</strong><span>${sourceOptional ? "无 ZIP" : "ZIP"}</span></div><div class="source-asset ${sourcePath ? "" : "empty"}" role="button" tabindex="0" aria-label="${sourceOptional ? "查看仅图片背景说明" : `查看${escapeHtml(pkg.packageName || "包装")}打包文件信息`}"><div class="zip-mark">${sourceOptional ? "图片" : "ZIP"}</div></div><div class="pair-file-name" title="${escapeHtml(packageFileName(sourceFile))}">${sourceOptional ? "仅图片背景，无工程 ZIP" : escapeHtml(packageFileName(sourceFile))}</div><div class="asset-card-footer"><button class="asset-change-btn" type="button" data-package-edit-kind="source" ${sourceOptional ? "disabled title=\"仅图片背景不需要更换 ZIP\"" : ""}>${sourceOptional ? "无 ZIP" : sourceChangeLabel}</button></div></div>
     </div>
-    <div class="pair-copy" title="${escapeHtml(reason)}"><div class="card-title-row"><input class="package-name-input ${pkg.nameEdited ? "edited" : ""}" data-package-name="${escapeHtml(pkg.packageId || "")}" value="${escapeHtml(pkg.packageName || "")}" placeholder="包装名称" aria-label="${escapeHtml(pkg.packageName || "包装")} 名称" /> <div class="pair-badges">${pairStatusBadge(pkg)}</div></div>
-      <div class="card-meta"><span>${escapeHtml(pkg.projectName || "未命名项目")}</span> · ${packageTypeEditor(pkg)} · ${escapeHtml(pkg.version || "v01")} · 合成 ${escapeHtml(pkg.aeCompName || "未记录合成")}</div>
+    <div class="pair-copy" title="${escapeHtml(reason)}"><div class="card-title-row">${selection}<input class="package-name-input ${pkg.nameEdited ? "edited" : ""}" data-package-name="${escapeHtml(pkg.packageId || "")}" value="${escapeHtml(pkg.packageName || "")}" placeholder="包装名称" aria-label="${escapeHtml(pkg.packageName || "包装")} 名称" /> <div class="pair-badges">${pairStatusBadge(pkg)}</div></div>
+      <div class="card-meta-grid"><div class="card-meta-item"><b>项目</b><span>${escapeHtml(pkg.projectName || "未命名项目")}</span></div><div class="card-meta-item"><b>类型</b>${packageTypeEditor(pkg)}</div><div class="card-meta-item"><b>版本</b><span>${escapeHtml(pkg.version || "v01")}</span></div><div class="card-meta-item"><b>合成</b><span>${escapeHtml(pkg.aeCompName || "未记录合成")}</span></div></div>
       <div class="card-files"><span class="file-pill">${previewPath ? "PNG ✓" : "PNG —"}</span><span class="file-pill">${sourcePath ? "ZIP ✓" : "ZIP —"}</span><span class="file-pill">${pkg.manifestPath ? "META ✓" : "META —"}</span><span class="file-pill">${reportBadge}</span><span class="file-pill mono">${escapeHtml(pkg.packageId || "待生成")}</span></div>
       <div class="pair-targets"><div class="pair-target"><span>PNG 入库</span><strong>01_预览图 / ${escapeHtml(packageType)}</strong></div><div class="pair-target"><span>${sourceOptional ? "源文件" : "ZIP 入库"}</span><strong>${sourceOptional ? "仅图片背景，不创建源文件记录" : `02_AE源文件 / ${escapeHtml(packageType)}`}</strong></div></div>
+      ${riskNote}
     </div>
-    <div class="pair-facts"><span>配对来源</span><strong>${hasPendingPackageEdit(pkg) ? "待应用" : pkg.manualMatch ? "用户选择" : "自动规则"}</strong><span>预览尺寸</span><strong>${escapeHtml(previewFile?.dimensions || pkg.preview?.dimensions || "PNG 文件")}</strong><span>导入状态</span><strong class="${pkg.state === "ready" ? "check-ok" : "check-bad"}">${escapeHtml(statusLabel(pkg.state))}</strong></div>
+    <div class="pair-facts"><div class="pair-fact"><span>配对来源</span><strong>${hasPendingPackageEdit(pkg) ? "待应用" : pkg.manualMatch ? "用户选择" : "自动规则"}</strong></div><div class="pair-fact"><span>预览尺寸</span><strong>${escapeHtml(previewFile?.dimensions || pkg.preview?.dimensions || "PNG 文件")}</strong></div><div class="pair-fact"><span>导入状态</span><strong class="${pkg.state === "ready" ? "check-ok" : "check-bad"}">${escapeHtml(statusLabel(pkg.state))}</strong></div></div>
     ${editPanel}
   </article>`;
 }
@@ -805,6 +920,7 @@ function render(scan) {
   state.scan = scan;
   state.importStage = 2;
   refreshScanDerivedState();
+  setImportCardSize(state.importCardSize, { persist: false });
   elements.statToImport.textContent = String(scan.stats?.toImport ?? 0);
   elements.statValidate.textContent = String(scan.stats?.validateOnly ?? 0);
   elements.statIgnore.textContent = String(scan.stats?.ignore ?? 0);
@@ -816,10 +932,13 @@ function render(scan) {
     ? packages.map(packageCard).join("")
     : `<div class="empty-card" style="grid-column:1/-1;border:1px dashed var(--line-strong);border-radius:9px;padding:24px;text-align:center;color:var(--ink-faint);">没有识别到可审核的包装记录。</div>`;
   elements.fileRows.innerHTML = (scan.files || []).map((file) => `<div class="file-detail-row"><span title="${escapeHtml(file.relative)}">${escapeHtml(file.relative)}</span><span>${escapeHtml(file.kind || "-")}</span>${badge(file.status)}<span title="${escapeHtml(file.note || "")}">${escapeHtml(file.note || "")}</span></div>`).join("") || `<div class="file-detail-row"><span>暂无扫描文件</span></div>`;
-  const readyCount = packages.filter((pkg) => pkg.state === "ready").length;
+  const readyCount = packages.filter((pkg) => pkg.state === "ready" && pkg.selectedForImport !== false).length;
   const blockedCount = packages.filter((pkg) => pkg.state === "blocked").length;
-  elements.importBtn.disabled = readyCount === 0 || blockedCount > 0;
-  elements.importBtn.textContent = "直接入库 Eagle";
+  const riskCount = packages.filter((pkg) => pkg.riskAccepted && pkg.selectedForImport !== false).length;
+  const totalSelected = readyCount;
+  if (elements.packageSelectionSummary) elements.packageSelectionSummary.textContent = `${totalSelected} 组已选${riskCount ? ` · ${riskCount} 组风险入库` : ""}`;
+  elements.importBtn.disabled = totalSelected === 0;
+  elements.importBtn.textContent = totalSelected ? `导入已选 ${totalSelected} 组` : "请选择入库素材组";
   log(`扫描完成：${scan.stats?.toImport || 0} 个文件将导入，${blockedCount} 条记录被阻止`);
 }
 
@@ -1656,6 +1775,29 @@ function openAepDuplicateSelectionModal(selection) {
   return true;
 }
 
+function openAepMissingModal(results, outputRoot) {
+  if (!elements.aepMissingModal || !elements.aepMissingSummary || !elements.aepMissingList) return false;
+  const missingResults = results.filter((item) => (item.missing_files || []).length);
+  const totalFiles = missingResults.reduce((sum, item) => sum + (item.missing_files || []).length, 0);
+  elements.aepMissingSummary.textContent = `${missingResults.length} 个合成共有 ${totalFiles} 个素材路径无法读取。已生成的 PNG、ZIP 和 manifest 会保留，进入配对后可按素材组选择是否风险入库。输出目录：${outputRoot}`;
+  elements.aepMissingList.innerHTML = missingResults.map((item) => `<div class="aep-missing-item"><strong>${escapeHtml(item.composition_name || "未命名合成")}</strong>${(item.missing_files || []).map((file) => `<span>${escapeHtml(file)}</span>`).join("")}</div>`).join("");
+  openModal(elements.aepMissingModal);
+  return true;
+}
+
+function continueAepMissingCollection() {
+  const pending = state.aep.pendingMissingCollection;
+  if (!pending) return;
+  state.aep.pendingMissingCollection = null;
+  closeModals();
+  state.sourceDir = pending.outputRoot;
+  elements.projectName.value = pending.projectName;
+  state.importStage = 1;
+  render(pending.scan);
+  setView("import");
+  showToast("已进入配对预检", "缺失素材组已标记风险；请选择需要入库的素材组，或先回到 AEP 修复后重新收集。", "normal");
+}
+
 async function collectAepSelection(options = {}) {
   const selection = aepSelectionSnapshot();
   if (selection.duplicates.length && !options.confirmDuplicates && openAepDuplicateSelectionModal(selection)) return;
@@ -1682,15 +1824,20 @@ async function collectAepSelection(options = {}) {
     });
     const previewCount = results.filter((item) => item.preview_file).length;
     const missingCount = results.filter((item) => (item.missing_files || []).length).length;
-    results.forEach((item) => log(`完成“${item.composition_name}”：${item.preview_file ? "PNG + " : ""}ZIP + manifest${item.preview_error ? `；预览失败：${item.preview_error}` : ""}`));
-    state.sourceDir = outputRoot;
+    results.forEach((item) => log(`完成“${item.composition_name}”：${item.preview_file ? "PNG + " : ""}ZIP + manifest${item.preview_error ? `；预览失败：${item.preview_error}` : ""}${(item.missing_files || []).length ? `；缺失素材：${item.missing_files.join("、")}` : ""}`));
     const projectName = elements.projectName.value.trim() || path.basename(state.aep.aepPath, path.extname(state.aep.aepPath));
     elements.projectName.value = projectName;
     state.importStage = 1;
     const scan = scanDirectory(outputRoot, { projectName });
+    if (missingCount && openAepMissingModal(results, outputRoot)) {
+      state.aep.pendingMissingCollection = { outputRoot, projectName, scan, results };
+      log(`收集完成但发现 ${missingCount} 个缺失素材合成，等待用户处理。`);
+      return;
+    }
+    state.sourceDir = outputRoot;
     render(scan);
     setView("import");
-    showToast("AEP 收集完成", `${results.length} 个去重收集包已生成，${previewCount} 张 PNG 已配对；${missingCount ? `${missingCount} 项存在缺失素材，请在预检中处理。` : "现在进入 PNG + ZIP 配对预检。"}`);
+    showToast("AEP 收集完成", `${results.length} 个去重收集包已生成，${previewCount} 张 PNG 已配对；现在进入 PNG + ZIP 配对预检。`);
   } catch (error) {
     if (state.aep.stopRequested || error.code === "ABORT_ERR") {
       log("已手动停止 AEP 收集。");
@@ -1992,6 +2139,16 @@ async function openHomeDrop(dataTransfer) {
 }
 
 document.addEventListener("click", (event) => {
+  const importCardSize = event.target.closest("[data-import-card-size]");
+  if (importCardSize) {
+    setImportCardSize(importCardSize.dataset.importCardSize);
+    return;
+  }
+  const managedCardSize = event.target.closest("[data-managed-card-size]");
+  if (managedCardSize) {
+    setManagedCardSize(managedCardSize.dataset.managedCardSize);
+    return;
+  }
   const viewButton = event.target.closest("[data-view]");
   if (viewButton) { setView(viewButton.dataset.view); return; }
   const homePick = event.target.closest("[data-home-pick]");
@@ -2083,6 +2240,16 @@ document.addEventListener("click", (event) => {
     const action = duplicateAction.dataset.aepDuplicateAction;
     closeModals();
     if (action === "continue") collectAepSelection({ confirmDuplicates: true });
+    return;
+  }
+  const missingAction = event.target.closest("[data-aep-missing-action]");
+  if (missingAction) {
+    if (missingAction.dataset.aepMissingAction === "continue") continueAepMissingCollection();
+    if (missingAction.dataset.aepMissingAction === "back") {
+      state.aep.pendingMissingCollection = null;
+      closeModals();
+      showToast("已返回 AEP 检查", "请修复素材路径后重新收集；本次收集包不会自动入库。", "normal");
+    }
     return;
   }
   const aepPreviewZoomAction = event.target.closest("[data-aep-preview-zoom]");
@@ -2223,6 +2390,30 @@ document.addEventListener("change", (event) => {
     aepToggleOccurrence(compId, occurrenceKey, aepCheck.checked);
     setAepActive(compId, occurrenceKey);
     renderAepQueue();
+    return;
+  }
+  const packageSelect = event.target.closest("[data-package-select]");
+  if (packageSelect && state.scan) {
+    const pkg = packageById(packageSelect.dataset.packageSelect);
+    if (!pkg) return;
+    if (packageSelect.checked && pkg.state === "blocked") {
+      if (pkg.riskOverrideEligible) {
+        pkg.riskAccepted = true;
+        pkg.selectedForImport = true;
+        showToast("已允许风险入库", `${pkg.packageName || "当前包装"}：${pkg.riskReason}。入库后可在维护页替换 ZIP 修复。`, "error");
+      } else {
+        packageSelect.checked = false;
+        pkg.selectedForImport = false;
+        showToast("仍不能入库", pkg.matchError || "请先修复配对关系。", "error");
+        return;
+      }
+    } else {
+      pkg.selectedForImport = packageSelect.checked;
+      if (!packageSelect.checked) pkg.riskAccepted = false;
+    }
+    state.selectedPackageId = pkg.packageId;
+    refreshScanDerivedState();
+    render(state.scan);
     return;
   }
   const packageTypeSelect = event.target.closest("[data-package-type]");
@@ -2420,4 +2611,5 @@ elements.sourceTemplate.addEventListener("input", () => applyRenameRule(false));
   }
 })();
 
+setImportCardSize(state.importCardSize, { persist: false });
 setView("home", { remember: false });

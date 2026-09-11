@@ -191,6 +191,35 @@ test("imports an image-only background without creating a source item", async ()
   assert.equal(result.filed[0].sourcePath, null);
 });
 
+test("allows an explicitly accepted dependency-risk package and records repair path", async () => {
+  const adapter = new FakeAdapter();
+  const scan = makeScanResult({
+    packages: [{
+      packageId: "pkg-risk",
+      packageName: "人名条",
+      packageType: "信息条",
+      version: "v01",
+      aeCompName: "人名条",
+      state: "blocked",
+      riskAccepted: true,
+      riskOverrideEligible: true,
+      dependencyStatus: "blocked",
+      missingFiles: ["F:\\素材\\Photos.jpg"],
+      preview: { path: "D:\\source\\人名条.png" },
+      source: { path: "D:\\source\\人名条.zip" },
+    }],
+  });
+
+  const result = await importFormalBatch(adapter, scan);
+
+  assert.equal(result.filed.length, 1);
+  assert.equal(result.filed[0].riskAccepted, true);
+  assert.match(adapter.items[0].annotation, /依赖缺失，风险入库/);
+  assert.match(adapter.items[0].annotation, /Photos\.jpg/);
+  assert.match(adapter.items[0].annotation, /维护已入库包装中替换 ZIP/);
+  assert.ok(adapter.items[0].tags.includes("依赖风险"));
+});
+
 test("imports a PNG-only background when the optional-source flag was lost", async () => {
   const adapter = new FakeAdapter();
   const scan = makeScanResult({

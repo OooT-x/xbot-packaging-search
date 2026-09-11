@@ -49,6 +49,34 @@ class SafeFilenameTests(unittest.TestCase):
     def test_uses_fallback_for_blank_name(self):
         self.assertEqual(CORE.safe_filename("   "), "未命名")
 
+    def test_recovers_moved_absolute_footage_from_anchored_suffix(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            actual = root / "(素材)" / "分镜" / "素材" / "Photos.jpg"
+            actual.parent.mkdir(parents=True)
+            actual.write_bytes(b"photo")
+            moved = Path("F:/旧工程/(素材)/分镜/素材/Photos.jpg")
+
+            resolved, rewrite = CORE._resolve_footage_path(moved, root / "project.aep")
+
+            self.assertEqual(resolved, actual.resolve())
+            self.assertIn("Photos.jpg", rewrite or "")
+
+    def test_does_not_guess_ambiguous_moved_footage(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            project_dir = root / "project"
+            for base in (project_dir, root):
+                actual = base / "(素材)" / "Photos.jpg"
+                actual.parent.mkdir(parents=True)
+                actual.write_bytes(str(base).encode())
+            moved = Path("F:/旧工程/(素材)/Photos.jpg")
+
+            resolved, rewrite = CORE._resolve_footage_path(moved, project_dir / "project.aep")
+
+            self.assertEqual(resolved, moved)
+            self.assertIsNone(rewrite)
+
 
 class VideoFramePackagingTests(unittest.TestCase):
     def test_video_frame_compositions_mark_only_video_footage(self):

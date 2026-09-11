@@ -479,6 +479,8 @@ function applyReportFacts(pkg, reports) {
   }
   if (facts.missingFootage.length > 0) {
     reportWarnings.push(`Report 检出缺失素材，阻止入库：${facts.missingFootage.join("、")}`);
+    pkg.missingFiles = uniqueDependencyValues(pkg.missingFiles, facts.missingFootage);
+    pkg.riskOverrideEligible = true;
     pkg.state = "blocked";
     pkg.errors = [...(pkg.errors || []), "Report 检出缺失素材，不能确认依赖完整性"];
     pkg.dependencyStatus = "blocked";
@@ -690,6 +692,7 @@ function scanDirectory(sourceDir, options = {}) {
       }
 
       const dependencyStatus = String(entry.dependency_status || "").trim();
+      const missingFiles = normalizeDependencyList(entry.missing_files);
       if (/阻止|blocked/i.test(dependencyStatus)) {
         packages.push({
           packageId,
@@ -702,10 +705,17 @@ function scanDirectory(sourceDir, options = {}) {
           source: { path: sourcePath, relative: path.relative(root, sourcePath) },
           sourceOptional: false,
           state: "blocked",
-          warnings: [...entryWarnings, "manifest 标记为阻止入库"],
+          warnings: [
+            ...entryWarnings,
+            ...(missingFiles.length ? [`收集记录缺失素材：${missingFiles.join("、")}`] : []),
+            "manifest 标记为阻止入库",
+          ],
           errors: [],
           manifestPath: entry.manifestPath,
           reportReferences: normalizeDependencyList(entry.report_files),
+          missingFiles,
+          riskOverrideEligible: missingFiles.length > 0,
+          dependencyStatus: "blocked",
         });
         continue;
       }
@@ -729,6 +739,8 @@ function scanDirectory(sourceDir, options = {}) {
         reportReferences: normalizeDependencyList(entry.report_files),
         fonts: normalizeDependencyList(entry.fonts),
         effects: normalizeDependencyList(entry.effects),
+        missingFiles,
+        riskOverrideEligible: missingFiles.length > 0,
         dependencyStatus: /警告|warning/i.test(dependencyStatus) ? "warning" : "complete",
       });
     }
@@ -813,6 +825,10 @@ function scanDirectory(sourceDir, options = {}) {
 
       const dependencyStatus = String(entry.dependency_status || "").trim();
       const blockedByDependency = /阻止|blocked/i.test(dependencyStatus);
+      const missingFiles = normalizeDependencyList(entry.missing_files);
+      if (missingFiles.length) {
+        entryWarnings.push(`收集记录缺失素材：${missingFiles.join("、")}`);
+      }
       if (blockedByDependency) entryWarnings.push("收集记录标记为阻止入库");
       const state = entryErrors.length === 0 && !blockedByDependency ? "ready" : "blocked";
       const preview = previewFile
@@ -841,7 +857,11 @@ function scanDirectory(sourceDir, options = {}) {
         reportReferences: normalizeDependencyList(entry.report_files),
         fonts: normalizeDependencyList(entry.fonts),
         effects: normalizeDependencyList(entry.effects),
-        dependencyStatus: /警告|warning/i.test(dependencyStatus) ? "warning" : "complete",
+        missingFiles,
+        riskOverrideEligible: blockedByDependency && missingFiles.length > 0,
+        dependencyStatus: blockedByDependency
+          ? "blocked"
+          : (/警告|warning/i.test(dependencyStatus) ? "warning" : "complete"),
       });
 
       if (state === "ready") {

@@ -1,0 +1,777 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>X.bot Eagle 渐进式流程 v0</title>
+    <style>
+      :root {
+        --canvas: #ebe9e4;
+        --surface: #fffefa;
+        --surface-soft: #f4f3ef;
+        --surface-muted: #eeede8;
+        --ink: #1f2523;
+        --ink-soft: #5f6863;
+        --ink-faint: #858c88;
+        --line: #d7d6cf;
+        --line-strong: #c3c2b9;
+        --blue: #2854d9;
+        --blue-deep: #173aa6;
+        --blue-soft: #e4eaff;
+        --green: #287457;
+        --green-soft: #e0f1e8;
+        --amber: #9d621b;
+        --amber-soft: #faebd2;
+        --red: #b84743;
+        --red-soft: #f9dfdd;
+        --shadow-float: 0 16px 42px rgba(35, 39, 34, .11), 0 2px 8px rgba(35, 39, 34, .05);
+        --shadow-soft: 0 6px 18px rgba(35, 39, 34, .07);
+        --space: 1;
+        --motion: 1;
+        --font-ui: "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+        --font-mono: "Cascadia Code", Consolas, monospace;
+      }
+
+      body[data-theme="dark"] {
+        --canvas: #171a19;
+        --surface: #252a27;
+        --surface-soft: #202421;
+        --surface-muted: #1b1f1d;
+        --ink: #f0f1ed;
+        --ink-soft: #c0c6c1;
+        --ink-faint: #8c9690;
+        --line: #393e3a;
+        --line-strong: #4d544f;
+        --blue: #7895ff;
+        --blue-deep: #a9b9ff;
+        --blue-soft: #29396f;
+        --green: #70d0a5;
+        --green-soft: #203b2e;
+        --amber: #f1b660;
+        --amber-soft: #49351c;
+        --red: #ff8a83;
+        --red-soft: #4c2523;
+        --shadow-float: 0 18px 48px rgba(0, 0, 0, .28), 0 2px 8px rgba(0, 0, 0, .2);
+        --shadow-soft: 0 6px 18px rgba(0, 0, 0, .2);
+      }
+
+      body[data-variant="compact"] { --space: .78; }
+      body[data-variant="focus"] { --space: 1.06; }
+      body[data-motion="off"] { --motion: 0; }
+
+      * { box-sizing: border-box; }
+      html, body { min-height: 100%; }
+      body {
+        margin: 0;
+        background: var(--canvas);
+        color: var(--ink);
+        font: 14px/1.55 var(--font-ui);
+        text-wrap: pretty;
+      }
+      button, input, select { font: inherit; }
+      button { color: inherit; }
+      button:focus-visible, input:focus-visible, select:focus-visible {
+        outline: 3px solid color-mix(in srgb, var(--blue) 28%, transparent);
+        outline-offset: 2px;
+      }
+      [hidden] { display: none !important; }
+
+      .app { min-height: 100vh; padding-bottom: 104px; }
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        min-height: 64px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 10px 18px;
+        border-bottom: 1px solid var(--line);
+        background: color-mix(in srgb, var(--surface) 92%, transparent);
+        backdrop-filter: blur(16px);
+      }
+      .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+      .brand img { width: 36px; height: 36px; border-radius: 9px; }
+      .brand-copy { min-width: 0; }
+      .brand-copy strong { display: block; font-size: 14px; letter-spacing: -.02em; }
+      .brand-copy span { display: block; color: var(--ink-faint); font-size: 10px; }
+      .route-context { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--ink-soft); }
+      .route-context::before { content: "/"; color: var(--line-strong); }
+      .route-context strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+      .top-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+      .api-state { display: flex; align-items: center; gap: 7px; color: var(--ink-soft); font-size: 11px; }
+      .api-state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px color-mix(in srgb, var(--green) 15%, transparent); }
+
+      .btn {
+        min-height: 36px;
+        padding: 0 13px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: var(--surface);
+        cursor: pointer;
+        transition: transform calc(150ms * var(--motion)) ease, border-color calc(150ms * var(--motion)) ease, background calc(150ms * var(--motion)) ease, box-shadow calc(150ms * var(--motion)) ease;
+      }
+      .btn:hover { border-color: var(--line-strong); background: var(--surface-soft); }
+      .btn:active { transform: translateY(1px); }
+      .btn.primary { border-color: var(--blue); background: var(--blue); color: white; font-weight: 750; box-shadow: 0 5px 12px color-mix(in srgb, var(--blue) 20%, transparent); }
+      .btn.primary:hover { border-color: var(--blue-deep); background: var(--blue-deep); }
+      .btn.quiet { background: transparent; }
+      .btn.icon { width: 36px; padding: 0; display: grid; place-items: center; }
+      .btn:disabled { cursor: not-allowed; opacity: .45; box-shadow: none; transform: none; }
+
+      .popover { position: relative; }
+      .more-menu {
+        position: absolute;
+        top: 44px;
+        right: 0;
+        z-index: 40;
+        width: 220px;
+        padding: 7px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface);
+        box-shadow: var(--shadow-float);
+      }
+      .menu-item { width: 100%; display: flex; justify-content: space-between; padding: 9px 10px; border: 0; border-radius: 7px; background: transparent; text-align: left; cursor: pointer; }
+      .menu-item:hover { background: var(--surface-soft); }
+      .menu-item small { color: var(--ink-faint); }
+
+      .workspace { width: min(1180px, calc(100% - 32px)); margin: 0 auto; }
+      .screen { animation: enter calc(180ms * var(--motion)) ease-out both; }
+      @keyframes enter { from { opacity: .2; transform: translateY(calc(5px * var(--motion))); } to { opacity: 1; transform: none; } }
+      .screen-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 18px; padding: calc(28px * var(--space)) 2px calc(18px * var(--space)); }
+      .eyebrow { color: var(--blue); font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+      h1, h2, h3, p { margin: 0; }
+      h1 { margin-top: 5px; font-size: clamp(23px, 3vw, 34px); line-height: 1.16; letter-spacing: -.045em; }
+      .screen-head p { margin-top: 7px; max-width: 660px; color: var(--ink-soft); }
+      .compact-flow-head { display: flex; align-items: center; justify-content: space-between; gap: 22px; padding: 14px 2px 10px; }
+      .compact-flow-head .screen-head { min-width: 0; padding: 0; }
+      .compact-page-head { padding: 14px 2px 10px; }
+      .compact-page-head .screen-head { padding: 0; }
+      .screen-head.compact h1 { margin-top: 0; font-size: clamp(20px, 2.3vw, 25px); }
+      .screen-head.compact p { margin-top: 3px; font-size: 12px; }
+      .compact-flow-head .journey { flex: none; margin: 0 5px 0 0; }
+
+      .home-stage { padding-top: calc(24px * var(--space)); }
+      .task-grid { display: grid; grid-template-columns: 1fr; }
+      .task-card {
+        min-height: calc(320px * var(--space));
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        padding: calc(22px * var(--space));
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--surface);
+        text-align: left;
+        cursor: pointer;
+        transition: transform calc(160ms * var(--motion)) ease, border-color calc(160ms * var(--motion)) ease, box-shadow calc(160ms * var(--motion)) ease;
+      }
+      .task-card:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--blue) 45%, var(--line)); box-shadow: var(--shadow-soft); }
+      .task-card.primary-task { position: relative; overflow: hidden; background: color-mix(in srgb, var(--blue-soft) 34%, var(--surface)); }
+      .task-card.primary-task::after { content: ""; position: absolute; inset: 10px; border: 1px dashed color-mix(in srgb, var(--blue) 34%, var(--line)); border-radius: 10px; pointer-events: none; transition: border-color calc(150ms * var(--motion)) ease, background calc(150ms * var(--motion)) ease; }
+      .task-card.primary-task.is-dragover { border-color: var(--blue); box-shadow: 0 0 0 4px color-mix(in srgb, var(--blue) 15%, transparent), var(--shadow-soft); transform: translateY(-2px); }
+      .task-card.primary-task.is-dragover::after { border-color: var(--blue); background: color-mix(in srgb, var(--blue-soft) 42%, transparent); }
+      .task-card.primary-task > * { position: relative; z-index: 1; }
+      .task-card h2 { margin-top: auto; font-size: 21px; letter-spacing: -.035em; }
+      .primary-task h2 { max-width: 600px; font-size: clamp(25px, 3.1vw, 38px); }
+      .task-card p { margin-top: 7px; color: var(--ink-soft); max-width: 520px; }
+      .drop-instruction { display: flex; align-items: center; gap: 9px; color: var(--blue); font-weight: 750; }
+      .drop-instruction::before { content: "↓"; width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid currentColor; border-radius: 8px; font-size: 18px; }
+      .task-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 20px; }
+      .secondary-row { display: grid; grid-template-columns: 1.15fr .85fr; gap: 10px; margin-top: 10px; }
+      .secondary-task {
+        min-height: 76px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 14px 16px;
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        background: var(--surface);
+        color: var(--ink);
+        text-align: left;
+        cursor: pointer;
+        transition: transform calc(160ms * var(--motion)) ease, border-color calc(160ms * var(--motion)) ease, box-shadow calc(160ms * var(--motion)) ease;
+      }
+      .secondary-task:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--blue) 38%, var(--line)); box-shadow: var(--shadow-soft); }
+      .secondary-copy { min-width: 0; }
+      .secondary-copy strong { display: block; font-size: 15px; }
+      .secondary-copy small { display: block; margin-top: 4px; color: var(--ink-soft); font-size: 12px; }
+      .secondary-action { margin-left: auto; flex: none; color: var(--blue); font-size: 12px; font-weight: 750; }
+      .recent-task .secondary-copy strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+      .journey {
+        display: grid;
+        grid-template-columns: repeat(3, 28px);
+        gap: 24px;
+        align-items: center;
+        width: max-content;
+        margin: 5px 0 12px 2px;
+      }
+      .journey-step { position: relative; width: 28px; height: 24px; display: grid; place-items: center; color: var(--ink-faint); }
+      .journey-step:not(:last-child)::after { content: ""; position: absolute; left: 23px; top: 50%; width: 34px; height: 1px; background: var(--line-strong); }
+      .journey-step b { width: 9px; height: 9px; display: block; border: 1.5px solid currentColor; border-radius: 50%; background: var(--surface); transition: width calc(160ms * var(--motion)) ease, height calc(160ms * var(--motion)) ease, background calc(160ms * var(--motion)) ease; }
+      .journey-step.active { color: var(--blue); }
+      .journey-step.active b { width: 17px; height: 17px; background: var(--blue); box-shadow: inset 0 0 0 4px var(--surface); }
+      .journey-step.done { color: var(--green); }
+      .journey-step.done b { background: currentColor; }
+      .journey-step.done::after { background: color-mix(in srgb, var(--green) 55%, var(--line)); }
+      body[data-variant="focus"] .journey { display: none; }
+
+      .panel { margin-top: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: 0 1px 0 rgba(35, 39, 34, .02); }
+      .panel-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: calc(16px * var(--space)) calc(18px * var(--space)); border-bottom: 1px solid var(--line); }
+      .panel-head h2 { font-size: 15px; }
+      .panel-head p { margin-top: 3px; color: var(--ink-soft); font-size: 11px; }
+      .panel-body { padding: calc(18px * var(--space)); }
+
+      .source-options { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      .source-card { min-height: 190px; display: flex; flex-direction: column; padding: 18px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-soft); cursor: pointer; text-align: left; }
+      .source-card:hover { border-color: var(--blue); }
+      .source-mark { width: 44px; height: 36px; display: grid; place-items: center; border: 1px solid var(--line-strong); border-radius: 7px; color: var(--blue); font: 750 12px var(--font-mono); }
+      .source-card h3 { margin-top: auto; font-size: 16px; }
+      .source-card p { margin-top: 5px; color: var(--ink-soft); font-size: 12px; }
+      .source-card span { margin-top: 13px; color: var(--blue); font-weight: 750; }
+
+      .tree-layout { display: grid; grid-template-columns: minmax(0, 1fr) 310px; min-height: 440px; }
+      .tree-main { min-width: 0; border-right: 1px solid var(--line); }
+      .tree-tools { display: flex; gap: 8px; padding: 12px; border-bottom: 1px solid var(--line); background: var(--surface-soft); }
+      .search { flex: 1; min-width: 120px; min-height: 36px; padding: 0 11px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--ink); }
+      .chip { min-height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 99px; background: var(--surface); cursor: pointer; color: var(--ink-soft); }
+      .chip.active { border-color: var(--blue); background: var(--blue-soft); color: var(--blue); }
+      .tree-list { padding: 8px 12px 16px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+      .tree-row { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr) 105px 75px auto; align-items: center; gap: 8px; min-height: 45px; padding: 5px 8px; border-radius: 7px; cursor: pointer; }
+      .tree-row:hover { background: var(--surface-soft); }
+      .tree-row.active { background: var(--blue-soft); }
+      .tree-row.root { background: color-mix(in srgb, var(--ink) 3%, var(--surface)); }
+      .tree-row.root .tree-name { position: relative; padding-left: 17px; }
+      .tree-row.root .tree-name::before { content: ""; position: absolute; left: 2px; top: 6px; width: 6px; height: 6px; border-right: 1.5px solid var(--ink-soft); border-bottom: 1.5px solid var(--ink-soft); transform: rotate(45deg); }
+      .tree-row.child { width: calc(100% - 28px); margin-left: 28px; }
+      .tree-row.child::before { content: ""; position: absolute; left: -14px; top: -7px; bottom: -7px; border-left: 1px solid var(--line-strong); }
+      .tree-row.child:last-child::before { bottom: 50%; }
+      .tree-row.child::after { content: ""; position: absolute; left: -14px; top: 50%; width: 11px; border-top: 1px solid var(--line-strong); }
+      .tree-row input { width: 16px; height: 16px; accent-color: var(--blue); }
+      .tree-name strong { display: block; font-size: 12px; }
+      .tree-name small, .tree-meta { color: var(--ink-faint); font-size: 10px; }
+      .status { justify-self: end; padding: 3px 7px; border-radius: 99px; font-size: 9px; white-space: nowrap; }
+      .status.ready { background: var(--green-soft); color: var(--green); }
+      .status.review { background: var(--amber-soft); color: var(--amber); }
+      .inspector { padding: 16px; }
+      .inspector h3 { font-size: 15px; }
+      .inspector > p { margin-top: 4px; color: var(--ink-soft); font-size: 11px; }
+      .preview-placeholder { height: 170px; display: grid; place-items: center; margin-top: 14px; border: 1px dashed var(--line-strong); border-radius: 9px; background: var(--surface-soft); color: var(--ink-faint); font: 11px var(--font-mono); }
+      .fact-list { display: grid; gap: 8px; margin-top: 14px; }
+      .fact { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; }
+      .fact span { color: var(--ink-faint); }
+      .fact strong { text-align: right; }
+
+      .pair-list { display: grid; align-content: start; gap: 9px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+      .pair-row { display: grid; grid-template-columns: 24px 92px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); transition: border-color calc(140ms * var(--motion)) ease, background calc(140ms * var(--motion)) ease; }
+      .pair-row.selected { border-color: color-mix(in srgb, var(--blue) 28%, var(--line)); }
+      .pair-row.excluded > :not(.pair-check) { opacity: .48; }
+      .pair-check { width: 16px; height: 16px; accent-color: var(--blue); cursor: pointer; }
+      .pair-preview { height: 64px; display: grid; place-items: center; border: 1px dashed var(--line-strong); border-radius: 7px; color: var(--ink-faint); font: 10px var(--font-mono); }
+      .pair-copy strong { display: block; }
+      .pair-copy span { display: block; margin-top: 3px; color: var(--ink-soft); font-size: 11px; }
+      .pair-action { display: flex; align-items: center; gap: 7px; }
+      .status.skipped { border: 1px solid var(--line); background: var(--surface); color: var(--ink-faint); }
+
+      .library-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; min-height: 500px; }
+      .library-main { min-width: 0; border-right: 1px solid var(--line); }
+      .library-toolbar { display: flex; gap: 8px; padding: 12px; border-bottom: 1px solid var(--line); }
+      .library-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); align-content: start; gap: 9px; padding: 12px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+      .library-card { display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 10px; padding: 9px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-soft); cursor: pointer; text-align: left; }
+      .library-card:hover, .library-card.active { border-color: var(--blue); background: var(--blue-soft); }
+      .mini-preview { height: 62px; display: grid; place-items: center; border: 1px dashed var(--line-strong); border-radius: 6px; color: var(--ink-faint); font: 9px var(--font-mono); }
+      .library-card strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .library-card small { display: block; margin-top: 4px; color: var(--ink-soft); }
+      .library-inspector { padding: 16px; }
+      .library-actions { display: grid; gap: 7px; margin-top: 16px; }
+
+      .aep-screen > .panel,
+      .pairing-screen > .panel {
+        height: calc(100vh - 218px);
+        height: calc(100dvh - 218px);
+        min-height: 340px;
+        max-height: 650px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .manage-screen > .panel {
+        height: calc(100vh - 160px);
+        height: calc(100dvh - 160px);
+        min-height: 380px;
+        max-height: 720px;
+        overflow: hidden;
+      }
+      .aep-screen > .panel > .panel-head,
+      .pairing-screen > .panel > .panel-head { flex: none; }
+      .aep-screen .tree-layout { flex: 1; min-height: 0; }
+      .aep-screen .tree-main,
+      .manage-screen .library-main { display: flex; min-height: 0; flex-direction: column; }
+      .aep-screen .tree-list,
+      .manage-screen .library-grid { flex: 1; min-height: 0; }
+      .aep-screen .inspector,
+      .manage-screen .library-inspector { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+      .pairing-screen .pair-list { flex: 1; min-height: 0; }
+      .manage-screen .library-layout { height: 100%; min-height: 0; }
+      .tree-list,
+      .pair-list,
+      .library-grid,
+      .inspector,
+      .library-inspector { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+      .tree-list::-webkit-scrollbar,
+      .pair-list::-webkit-scrollbar,
+      .library-grid::-webkit-scrollbar,
+      .inspector::-webkit-scrollbar,
+      .library-inspector::-webkit-scrollbar { width: 7px; }
+      .tree-list::-webkit-scrollbar-thumb,
+      .pair-list::-webkit-scrollbar-thumb,
+      .library-grid::-webkit-scrollbar-thumb,
+      .inspector::-webkit-scrollbar-thumb,
+      .library-inspector::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 99px; background: var(--line-strong); background-clip: padding-box; }
+
+      .compare-grid { display: grid; grid-template-columns: 1fr 52px 1fr; gap: 12px; align-items: stretch; }
+      .compare-card { padding: 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }
+      .compare-card.new { border-color: color-mix(in srgb, var(--blue) 45%, var(--line)); background: var(--blue-soft); }
+      .compare-card strong { display: block; margin-bottom: 8px; }
+      .compare-arrow { display: grid; place-items: center; color: var(--blue); font-size: 24px; }
+      .notice { margin-top: 12px; padding: 11px 12px; border-radius: 8px; background: var(--amber-soft); color: var(--amber); font-size: 11px; }
+
+      .success { min-height: 460px; display: grid; place-items: center; text-align: center; }
+      .success-mark { width: 58px; height: 58px; display: grid; place-items: center; margin: 0 auto 16px; border-radius: 50%; background: var(--green-soft); color: var(--green); font-size: 26px; }
+      .success h2 { font-size: 25px; letter-spacing: -.04em; }
+      .success p { margin: 7px auto 20px; max-width: 480px; color: var(--ink-soft); }
+
+      .action-dock {
+        position: fixed;
+        left: 50%;
+        bottom: 14px;
+        z-index: 30;
+        width: min(900px, calc(100% - 28px));
+        min-height: 68px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 11px 12px 11px 16px;
+        border: 1px solid var(--line-strong);
+        border-radius: 13px;
+        background: color-mix(in srgb, var(--surface) 94%, transparent);
+        box-shadow: var(--shadow-float);
+        backdrop-filter: blur(18px);
+        transform: translateX(-50%);
+      }
+      .dock-copy { min-width: 0; flex: 1; }
+      .dock-copy strong { display: block; }
+      .dock-copy span { display: block; margin-top: 2px; overflow: hidden; color: var(--ink-soft); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+      .dock-actions { display: flex; gap: 8px; }
+
+      .tweaks-toggle { position: fixed; right: 14px; bottom: 14px; z-index: 52; }
+      .tweaks {
+        position: fixed;
+        right: 14px;
+        bottom: 60px;
+        z-index: 51;
+        width: 250px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--surface);
+        box-shadow: var(--shadow-float);
+      }
+      .tweaks-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+      .tweaks label { display: block; margin-top: 10px; color: var(--ink-soft); font-size: 11px; }
+      .tweaks select { width: 100%; min-height: 34px; margin-top: 4px; padding: 0 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-soft); color: var(--ink); }
+      .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+      .switch-row input { accent-color: var(--blue); }
+
+      body[data-variant="compact"] .workspace { width: min(1260px, calc(100% - 24px)); }
+      body[data-variant="compact"] .screen-head { padding-top: 16px; padding-bottom: 11px; }
+      body[data-variant="compact"] h1 { font-size: 24px; }
+      body[data-variant="focus"] .screen-head p,
+      body[data-variant="focus"] .secondary-copy small,
+      body[data-variant="focus"] .panel-head p { display: none; }
+
+      @media (max-width: 820px) {
+        .task-grid, .secondary-row, .source-options, .tree-layout, .library-layout { grid-template-columns: 1fr; }
+        .tree-main, .library-main { border-right: 0; border-bottom: 1px solid var(--line); }
+        .aep-screen > .panel, .manage-screen > .panel { height: auto; min-height: 0; max-height: none; overflow: visible; }
+        .aep-screen .tree-main { height: min(48vh, 360px); }
+        .manage-screen .library-main { height: min(50vh, 420px); }
+        .aep-screen .inspector, .manage-screen .library-inspector { overflow: visible; }
+        .compare-grid { grid-template-columns: 1fr; }
+        .compare-arrow { min-height: 30px; transform: rotate(90deg); }
+        .api-state span { display: none; }
+      }
+      @media (max-width: 560px) {
+        .workspace { width: min(100% - 20px, 1180px); }
+        .brand-copy span, .route-context { display: none; }
+        .compact-flow-head { gap: 12px; }
+        .screen-head.compact p { display: none; }
+        .pairing-screen > .panel { height: calc(100vh - 245px); height: calc(100dvh - 245px); min-height: 300px; }
+        .pair-row { grid-template-columns: 22px 72px minmax(0, 1fr); gap: 9px; }
+        .pair-action { grid-column: 2 / -1; justify-self: end; }
+        .tree-row { grid-template-columns: 24px minmax(0, 1fr) auto; }
+        .tree-meta.duration { display: none; }
+        .action-dock { align-items: stretch; flex-direction: column; }
+        .dock-actions .btn { flex: 1; }
+        .tweaks-toggle { right: 8px; top: 72px; bottom: auto; }
+        .tweaks { right: 8px; top: 114px; bottom: auto; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        :root { --motion: 0; }
+      }
+    </style>
+  </head>
+  <body data-theme="light" data-variant="guided" data-motion="on">
+    <div class="app">
+      <header class="topbar">
+        <button class="btn icon quiet" id="backBtn" type="button" aria-label="返回上一步" hidden>←</button>
+        <div class="brand">
+          <img src="../eagle-plugin/logo.png" alt="X.bot" />
+          <div class="brand-copy"><strong>X.bot 包装工作流</strong><span>渐进式交互 v0</span></div>
+        </div>
+        <div class="route-context" id="routeContext"><strong>任务首页</strong></div>
+        <div class="top-actions">
+          <div class="api-state"><span>Eagle 已连接</span></div>
+          <div class="popover">
+            <button class="btn icon" id="moreBtn" type="button" aria-label="更多工具" aria-expanded="false">•••</button>
+            <div class="more-menu" id="moreMenu" hidden>
+              <button class="menu-item" type="button" data-message="历史待入库作为兼容入口，不进入主流程。"><span>历史待入库</span><small>兼容</small></button>
+              <button class="menu-item" type="button" data-message="批次记录将在独立页面中按需打开。"><span>批次记录</span><small>记录</small></button>
+              <button class="menu-item" type="button" data-message="诊断只在用户主动打开时显示。"><span>系统诊断</span><small>工具</small></button>
+            </div>
+          </div>
+        </div>
+      </header>
+      <main class="workspace" id="workspace"></main>
+      <div class="action-dock" id="actionDock" hidden></div>
+    </div>
+
+    <input id="quickAepPicker" type="file" accept=".aep,application/octet-stream" hidden />
+    <input id="quickFolderPicker" type="file" webkitdirectory directory multiple hidden />
+
+    <button class="btn icon tweaks-toggle" id="tweaksBtn" type="button" aria-label="打开 Tweaks">T</button>
+    <aside class="tweaks" id="tweaks" hidden>
+      <div class="tweaks-head"><strong>Tweaks</strong><button class="btn icon quiet" id="closeTweaks" type="button" aria-label="关闭 Tweaks">×</button></div>
+      <label>布局变体<select id="variantSelect"><option value="guided">引导式</option><option value="compact">紧凑式</option><option value="focus">专注式</option></select></label>
+      <label>主题<select id="themeSelect"><option value="light">浅色</option><option value="dark">深色</option></select></label>
+      <label class="switch-row"><span>界面动效</span><input id="motionToggle" type="checkbox" checked /></label>
+      <label class="switch-row"><span>显示设计注释</span><input id="notesToggle" type="checkbox" /></label>
+      <p id="designNote" hidden style="margin-top:12px;color:var(--ink-soft);font-size:10px;">v0 假设：新增包装与维护包装是两个独立任务；历史、诊断和技术信息不占用主界面。</p>
+    </aside>
+
+    <script>
+      const previewRoutes = new Set(["home", "aep", "pairing", "manage", "compare", "success"]);
+      const previewRoute = location.hash.slice(1);
+      const initialRoute = previewRoutes.has(previewRoute) ? previewRoute : "home";
+      const appState = {
+        route: initialRoute,
+        history: initialRoute === "home" ? [] : ["home"],
+        source: null,
+        selected: new Set(["包装"]),
+        selectedPairs: new Set(["背景", "小标注", "视频框"]),
+        confirmedPairs: new Set(),
+        activeComp: "包装",
+        filter: "all",
+        managedPackage: "小标注",
+        stagedUpdate: null,
+      };
+
+      const routeNames = {
+        home: "任务首页",
+        aep: "新增包装 / 选择合成",
+        pairing: "新增包装 / 确认配对",
+        success: "新增包装 / 完成",
+        manage: "维护已入库包装",
+        compare: "维护包装 / 更新确认",
+      };
+
+      const comps = [
+        { name: "包装", role: "ROOT", size: "1920×1080", duration: "12.00s", status: "ready", child: false },
+        { name: "背景", role: "PRE", size: "1920×1080", duration: "12.00s", status: "ready", child: true },
+        { name: "小标注", role: "PRE", size: "720×160", duration: "5.00s", status: "ready", child: true },
+        { name: "视频框", role: "PRE", size: "1920×1080", duration: "8.00s", status: "review", child: true },
+        { name: "竖屏框", role: "PRE", size: "1080×1920", duration: "8.00s", status: "ready", child: true },
+      ];
+
+      const pairingItems = [
+        { name: "背景", detail: "背景.png + 背景.zip · 自动匹配", status: "ready" },
+        { name: "小标注", detail: "小标注.png + 小标注.zip · 自动匹配", status: "ready" },
+        { name: "视频框", detail: "视频框.png + 视频框.zip · Report 提示视频依赖", status: "review" },
+      ];
+
+      const packages = [
+        { name: "小标注", project: "变速箱", type: "信息条", version: "v01" },
+        { name: "视频框", project: "变速箱", type: "视频框", version: "v01" },
+        { name: "品牌背景", project: "支付宝阿宝", type: "背景", version: "v02" },
+        { name: "时间轴", project: "乾崑奕境", type: "时间轴", version: "v01" },
+      ];
+
+      const workspace = document.getElementById("workspace");
+      const actionDock = document.getElementById("actionDock");
+      const backBtn = document.getElementById("backBtn");
+      const routeContext = document.getElementById("routeContext");
+
+      function journey(step) {
+        const labels = ["选择内容", "确认配对", "写入 Eagle"];
+        return `<div class="journey" aria-label="新增包装流程">${labels.map((label, index) => {
+          const current = index + 1;
+          const className = current === step ? "active" : current < step ? "done" : "";
+          const state = current === step ? "当前" : current < step ? "已完成" : "未开始";
+          return `<span class="journey-step ${className}" role="img" aria-label="${state}：${label}" title="${label}"><b aria-hidden="true"></b></span>`;
+        }).join("")}</div>`;
+      }
+
+      function head(eyebrow, title, description, compact = false) {
+        return `<div class="screen-head ${compact ? "compact" : ""}"><div>${eyebrow ? `<div class="eyebrow">${eyebrow}</div>` : ""}<h1>${title}</h1><p>${description}</p></div></div>`;
+      }
+
+      function go(route, remember = true) {
+        if (remember && appState.route !== route) appState.history.push(appState.route);
+        appState.route = route;
+        render();
+        window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      }
+
+      function back() {
+        const previous = appState.history.pop() || "home";
+        appState.route = previous;
+        render();
+      }
+
+      function screenHome() {
+        return `<section class="screen home-stage">
+          <div class="task-grid">
+            <section class="task-card primary-task" data-primary-drop tabindex="0" role="button" aria-label="拖入或选择 AEP 工程、包装文件夹">
+              <div class="drop-instruction" id="quickDropLabel">拖入 AEP 或包装文件夹</div>
+              <h2>新增包装</h2><p>系统会根据内容直接进入合成选择或 PNG + ZIP 配对确认。</p>
+              <div class="task-actions"><button class="btn primary" type="button" data-pick="aep">选择 AEP 工程</button><button class="btn" type="button" data-pick="folder">选择交付文件夹</button></div>
+            </section>
+          </div>
+          <div class="secondary-row">
+            <button class="secondary-task maintenance-task" type="button" data-go="manage"><span class="secondary-copy"><strong>维护已入库包装</strong><small>更新素材或发布新版本</small></span><span class="secondary-action">打开素材库 →</span></button>
+            <button class="secondary-task recent-task" type="button" data-go="aep"><span class="secondary-copy"><small>继续上次</small><strong>变速箱 · 视频框</strong></span><span class="secondary-action">继续 →</span></button>
+          </div>
+        </section>`;
+      }
+
+      function filteredComps() {
+        if (appState.filter === "candidate") return comps.filter((item) => item.status === "ready");
+        if (appState.filter === "review") return comps.filter((item) => item.status === "review");
+        return comps;
+      }
+
+      function screenAep() {
+        const active = comps.find((item) => item.name === appState.activeComp) || comps[0];
+        const rows = filteredComps().map((comp) => `<label class="tree-row ${comp.child ? "child" : "root"} ${comp.name === active.name ? "active" : ""}" data-comp="${comp.name}">
+          <input type="checkbox" data-check="${comp.name}" ${appState.selected.has(comp.name) ? "checked" : ""} />
+          <span class="tree-name"><strong>${comp.name}</strong><small>${comp.role} · 合成 ID ${comps.indexOf(comp) + 11}</small></span>
+          <span class="tree-meta">${comp.size}</span><span class="tree-meta duration">${comp.duration}</span><span class="status ${comp.status}">${comp.status === "ready" ? "可交付" : "需复核"}</span>
+        </label>`).join("");
+        return `<section class="screen aep-screen"><div class="compact-flow-head">${head("", "选择交付合成", "勾选需要独立交付的合成。", true)}${journey(1)}</div>
+          <div class="panel"><div class="panel-head"><div><h2>阿宝包装.aep</h2><p>11 个合成 · Worker 已读取</p></div><button class="btn" type="button" data-message="输出目录、代表帧规则和 Worker 路径会在这里渐进展开。">高级设置</button></div>
+            <div class="tree-layout"><div class="tree-main"><div class="tree-tools"><input class="search" type="search" placeholder="搜索合成" aria-label="搜索合成" /><button class="chip ${appState.filter === "all" ? "active" : ""}" type="button" data-filter="all">全部</button><button class="chip ${appState.filter === "candidate" ? "active" : ""}" type="button" data-filter="candidate">推荐</button><button class="chip ${appState.filter === "review" ? "active" : ""}" type="button" data-filter="review">复核</button></div><div class="tree-list">${rows}</div></div>
+              <aside class="inspector"><h3>${active.name}</h3><p>${active.role === "ROOT" ? "根合成" : "直属预合成"} · ${active.size}</p><div class="preview-placeholder">16:9 PREVIEW PLACEHOLDER</div><div class="fact-list"><div class="fact"><span>代表帧</span><strong>2.00 秒</strong></div><div class="fact"><span>预览来源</span><strong>${active.name === "视频框" ? "包装" : active.name}</strong></div><div class="fact"><span>依赖状态</span><strong>${active.status === "review" ? "需要检查视频依赖" : "可以收集"}</strong></div></div><div style="margin-top:14px;"><button class="btn" type="button" data-message="v0 中不执行真实渲染；生产版会在此生成当前合成代表帧。">生成代表帧</button></div></aside>
+            </div></div>
+        </section>`;
+      }
+
+      function screenPairing() {
+        const selectedCount = appState.selectedPairs.size;
+        const pendingCount = pairingItems.filter((item) => appState.selectedPairs.has(item.name) && item.status === "review" && !appState.confirmedPairs.has(item.name)).length;
+        const rows = pairingItems.map((item) => {
+          const selected = appState.selectedPairs.has(item.name);
+          const pending = selected && item.status === "review" && !appState.confirmedPairs.has(item.name);
+          const statusClass = !selected ? "skipped" : pending ? "review" : "ready";
+          const statusLabel = !selected ? "本次跳过" : pending ? "待确认" : item.status === "review" ? "已确认" : "可入库";
+          const action = pending
+            ? `<button class="btn" type="button" data-confirm-review="${item.name}">确认风险</button>`
+            : `<button class="btn" type="button" data-message="打开当前这一组的名称和配对修改，不影响其他记录。" ${selected ? "" : "disabled"}>修改</button>`;
+          return `<div class="pair-row ${selected ? "selected" : "excluded"}"><input class="pair-check" type="checkbox" data-pair-check="${item.name}" aria-label="本次入库：${item.name}" ${selected ? "checked" : ""} /><div class="pair-preview">PNG PREVIEW</div><div class="pair-copy"><strong>${item.name}</strong><span>${item.detail}</span></div><div class="pair-action"><span class="status ${statusClass}">${statusLabel}</span>${action}</div></div>`;
+        }).join("");
+        return `<section class="screen pairing-screen"><div class="compact-flow-head">${head("", "确认交付物", "检查 PNG 与 ZIP 配对。", true)}${journey(2)}</div>
+          <div class="panel"><div class="panel-head"><div><h2>支付宝阿宝</h2><p>扫描完成 · ${pairingItems.length} 组配对 · 已选 ${selectedCount} 组${pendingCount ? ` · ${pendingCount} 项需要确认` : ""}</p></div><button class="btn" type="button" data-message="扫描文件、Report 和 manifest 细节会在抽屉中显示。">查看技术细节</button></div><div class="panel-body pair-list">${rows}</div></div>
+        </section>`;
+      }
+
+      function screenManage() {
+        const active = packages.find((item) => item.name === appState.managedPackage) || packages[0];
+        const cards = packages.map((pkg) => `<button class="library-card ${pkg.name === active.name ? "active" : ""}" type="button" data-package="${pkg.name}"><span class="mini-preview">PREVIEW</span><span><strong>${pkg.name}</strong><small>${pkg.project} · ${pkg.type}<br />${pkg.version} · PNG + ZIP</small></span></button>`).join("");
+        return `<section class="screen manage-screen"><div class="compact-page-head">${head("", "维护入库包装", "搜索并选择需要维护的包装。", true)}</div>
+          <div class="panel"><div class="library-layout"><div class="library-main"><div class="library-toolbar"><input class="search" type="search" placeholder="搜索项目、包装或版本" aria-label="搜索正式包装" /><select class="btn" aria-label="筛选项目"><option>全部项目</option><option>变速箱</option><option>支付宝阿宝</option></select></div><div class="library-grid">${cards}</div></div>
+            <aside class="library-inspector"><h3>${active.name}</h3><p style="margin-top:4px;color:var(--ink-soft);">${active.project} · ${active.type} · ${active.version}</p><div class="preview-placeholder">16:9 PREVIEW PLACEHOLDER</div><div class="fact-list"><div class="fact"><span>当前配对</span><strong>PNG + ZIP</strong></div><div class="fact"><span>最近更新</span><strong>2026-09-04</strong></div><div class="fact"><span>历史版本</span><strong>1 条修订</strong></div></div><div class="library-actions"><button class="btn" type="button" data-update="preview">更新预览图</button><button class="btn" type="button" data-update="source">更新打包文件</button><button class="btn primary" type="button" data-message="发布新版本会进入独立的新建流程，不与素材修订混在一起。">发布新版本</button></div></aside>
+          </div></div>
+        </section>`;
+      }
+
+      function screenCompare() {
+        const kind = appState.stagedUpdate === "source" ? "打包文件 ZIP" : "预览图 PNG";
+        return `<section class="screen">${head("Review update", `确认更新${kind}`, "选择文件不会立即写入 Eagle；核对新旧内容后再执行替换。")}
+          <div class="panel"><div class="panel-head"><div><h2>${appState.managedPackage}</h2><p>变速箱 · 信息条 · v01</p></div></div><div class="panel-body"><div class="compare-grid"><div class="compare-card"><strong>当前素材</strong><div class="preview-placeholder">CURRENT ${kind === "预览图 PNG" ? "PNG" : "ZIP INFO"}</div></div><div class="compare-arrow">→</div><div class="compare-card new"><strong>待更新素材</strong><div class="preview-placeholder">NEW ${kind === "预览图 PNG" ? "PNG" : "ZIP INFO"}</div></div></div><div class="notice">确认后才会切换当前素材；旧 item 将保留到 03_历史版本，并生成修订记录。</div></div></div>
+        </section>`;
+      }
+
+      function screenSuccess() {
+        return `<section class="screen">${journey(3)}<div class="success"><div><div class="success-mark">✓</div><h2>${appState.selectedPairs.size} 组包装已写入 Eagle</h2><p>配对、命名和项目标签已经完成。可以返回首页继续新增，或者打开已入库管理检查结果。</p><button class="btn" type="button" data-go="manage">查看已入库包装</button></div></div></section>`;
+      }
+
+      function dock() {
+        if (appState.route === "aep") {
+          const count = appState.selected.size;
+          return `<div class="dock-copy"><strong>已选 ${count} 个合成</strong><span>${count ? [...appState.selected].join("、") : "从结构树勾选需要独立交付的对象"}</span></div><div class="dock-actions"><button class="btn" type="button" data-clear-selection ${count ? "" : "disabled"}>清空</button><button class="btn primary" type="button" data-go="pairing" ${count ? "" : "disabled"}>生成交付并继续</button></div>`;
+        }
+        if (appState.route === "pairing") {
+          const selectedCount = appState.selectedPairs.size;
+          const pendingCount = pairingItems.filter((item) => appState.selectedPairs.has(item.name) && item.status === "review" && !appState.confirmedPairs.has(item.name)).length;
+          const headline = selectedCount ? `已选择 ${selectedCount} 组${pendingCount ? `，${pendingCount} 组待确认` : ""}` : "尚未选择交付物";
+          const detail = !selectedCount ? "至少选择一组配对后才能写入 Eagle" : pendingCount ? "处理已选项目的风险提示后才能写入 Eagle" : "只写入本次勾选的配对";
+          return `<div class="dock-copy"><strong>${headline}</strong><span>${detail}</span></div><div class="dock-actions"><button class="btn" type="button" data-message="名称、类型和配对的批量修改会在这里按需打开。" ${selectedCount ? "" : "disabled"}>批量修改</button><button class="btn primary" id="importAction" type="button" ${selectedCount && !pendingCount ? "" : "disabled"} data-go="success">写入 Eagle</button></div>`;
+        }
+        if (appState.route === "compare") return `<div class="dock-copy"><strong>更新尚未写入</strong><span>确认后保留旧素材并切换当前指针</span></div><div class="dock-actions"><button class="btn" type="button" data-go="manage">取消</button><button class="btn primary" type="button" data-finish-update>确认更新</button></div>`;
+        return "";
+      }
+
+      function render() {
+        const screens = { home: screenHome, aep: screenAep, pairing: screenPairing, manage: screenManage, compare: screenCompare, success: screenSuccess };
+        workspace.innerHTML = screens[appState.route]();
+        routeContext.querySelector("strong").textContent = routeNames[appState.route];
+        backBtn.hidden = appState.route === "home";
+        const dockMarkup = dock();
+        actionDock.hidden = !dockMarkup;
+        actionDock.innerHTML = dockMarkup;
+      }
+
+      document.addEventListener("click", (event) => {
+        const goButton = event.target.closest("[data-go]");
+        if (goButton && !goButton.disabled) { go(goButton.dataset.go); return; }
+        const picker = event.target.closest("[data-pick]");
+        if (picker) { document.getElementById(picker.dataset.pick === "aep" ? "quickAepPicker" : "quickFolderPicker").click(); return; }
+        const primaryDrop = event.target.closest("[data-primary-drop]");
+        if (primaryDrop && !event.target.closest("button")) { document.getElementById("quickAepPicker").click(); return; }
+        const filter = event.target.closest("[data-filter]");
+        if (filter) { appState.filter = filter.dataset.filter; render(); return; }
+        const comp = event.target.closest("[data-comp]");
+        if (comp && !event.target.closest("input")) { appState.activeComp = comp.dataset.comp; render(); return; }
+        const pkg = event.target.closest("[data-package]");
+        if (pkg) { appState.managedPackage = pkg.dataset.package; render(); return; }
+        const update = event.target.closest("[data-update]");
+        if (update) { appState.stagedUpdate = update.dataset.update; go("compare"); return; }
+        if (event.target.closest("[data-clear-selection]")) { appState.selected.clear(); render(); return; }
+        const reviewButton = event.target.closest("[data-confirm-review]");
+        if (reviewButton) {
+          const listScrollTop = reviewButton.closest(".pair-list")?.scrollTop || 0;
+          appState.confirmedPairs.add(reviewButton.dataset.confirmReview);
+          render();
+          const pairList = document.querySelector(".pair-list");
+          if (pairList) pairList.scrollTop = listScrollTop;
+          return;
+        }
+        if (event.target.closest("[data-finish-update]")) { appState.history = []; go("manage", false); return; }
+        const message = event.target.closest("[data-message]");
+        if (message) { alert(message.dataset.message); return; }
+      });
+
+      document.addEventListener("change", (event) => {
+        const pairCheck = event.target.closest("[data-pair-check]");
+        if (pairCheck) {
+          const listScrollTop = pairCheck.closest(".pair-list")?.scrollTop || 0;
+          if (pairCheck.checked) appState.selectedPairs.add(pairCheck.dataset.pairCheck); else appState.selectedPairs.delete(pairCheck.dataset.pairCheck);
+          render();
+          const pairList = document.querySelector(".pair-list");
+          if (pairList) pairList.scrollTop = listScrollTop;
+          return;
+        }
+        const check = event.target.closest("[data-check]");
+        if (check) {
+          if (check.checked) appState.selected.add(check.dataset.check); else appState.selected.delete(check.dataset.check);
+          appState.activeComp = check.dataset.check;
+          render();
+        }
+      });
+
+      backBtn.addEventListener("click", back);
+      function openDroppedContent(files, hasDirectory = false) {
+        const list = Array.from(files || []);
+        if (!list.length) return;
+        const hasAep = list.some((file) => String(file.name || "").toLocaleLowerCase().endsWith(".aep"));
+        appState.source = hasAep && !hasDirectory ? "aep" : "folder";
+        go(appState.source === "aep" ? "aep" : "pairing");
+      }
+
+      document.getElementById("quickAepPicker").addEventListener("change", (event) => {
+        if (event.target.files?.length) openDroppedContent(event.target.files, false);
+        event.target.value = "";
+      });
+      document.getElementById("quickFolderPicker").addEventListener("change", (event) => {
+        if (event.target.files?.length) openDroppedContent(event.target.files, true);
+        event.target.value = "";
+      });
+      document.addEventListener("dragenter", (event) => {
+        const zone = event.target.closest?.("[data-primary-drop]");
+        if (!zone) return;
+        event.preventDefault();
+        zone.classList.add("is-dragover");
+        const label = zone.querySelector("#quickDropLabel");
+        if (label) label.textContent = "松开后自动识别并进入对应流程";
+      });
+      document.addEventListener("dragover", (event) => {
+        const zone = event.target.closest?.("[data-primary-drop]");
+        if (!zone) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+      });
+      document.addEventListener("dragleave", (event) => {
+        const zone = event.target.closest?.("[data-primary-drop]");
+        if (!zone || zone.contains(event.relatedTarget)) return;
+        zone.classList.remove("is-dragover");
+        const label = zone.querySelector("#quickDropLabel");
+        if (label) label.textContent = "拖入 AEP 或包装文件夹";
+      });
+      document.addEventListener("drop", (event) => {
+        const zone = event.target.closest?.("[data-primary-drop]");
+        if (!zone) return;
+        event.preventDefault();
+        zone.classList.remove("is-dragover");
+        const items = Array.from(event.dataTransfer?.items || []);
+        const hasDirectory = items.some((item) => {
+          try { return Boolean(item.webkitGetAsEntry?.()?.isDirectory); } catch { return false; }
+        });
+        openDroppedContent(event.dataTransfer?.files, hasDirectory);
+      });
+      document.addEventListener("keydown", (event) => {
+        const zone = event.target.closest?.("[data-primary-drop]");
+        if (zone && (event.key === "Enter" || event.key === " ")) {
+          event.preventDefault();
+          document.getElementById("quickAepPicker").click();
+        }
+      });
+      const moreBtn = document.getElementById("moreBtn");
+      const moreMenu = document.getElementById("moreMenu");
+      moreBtn.addEventListener("click", () => {
+        moreMenu.hidden = !moreMenu.hidden;
+        moreBtn.setAttribute("aria-expanded", moreMenu.hidden ? "false" : "true");
+      });
+
+      const tweaks = document.getElementById("tweaks");
+      document.getElementById("tweaksBtn").addEventListener("click", () => { tweaks.hidden = false; });
+      document.getElementById("closeTweaks").addEventListener("click", () => { tweaks.hidden = true; });
+      document.getElementById("variantSelect").addEventListener("change", (event) => { document.body.dataset.variant = event.target.value; localStorage.setItem("xbot-v0-variant", event.target.value); });
+      document.getElementById("themeSelect").addEventListener("change", (event) => { document.body.dataset.theme = event.target.value; localStorage.setItem("xbot-v0-theme", event.target.value); });
+      document.getElementById("motionToggle").addEventListener("change", (event) => { document.body.dataset.motion = event.target.checked ? "on" : "off"; });
+      document.getElementById("notesToggle").addEventListener("change", (event) => { document.getElementById("designNote").hidden = !event.target.checked; });
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") { moreMenu.hidden = true; tweaks.hidden = true; }
+      });
+
+      const savedVariant = localStorage.getItem("xbot-v0-variant") || "guided";
+      const savedTheme = localStorage.getItem("xbot-v0-theme") || "light";
+      document.body.dataset.variant = savedVariant;
+      document.body.dataset.theme = savedTheme;
+      document.getElementById("variantSelect").value = savedVariant;
+      document.getElementById("themeSelect").value = savedTheme;
+      render();
+    </script>
+  </body>
+</html>

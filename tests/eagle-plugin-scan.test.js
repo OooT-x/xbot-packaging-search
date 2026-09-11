@@ -318,6 +318,7 @@ test("blocks entries marked as blocked by the manifest", () => {
           preview_file: "a.png",
           source_file: "a.zip",
           dependency_status: "阻止入库",
+          missing_files: ["F:\\素材\\Photos.jpg", "F:\\素材\\emoji.webp"],
         },
       ],
     }));
@@ -327,6 +328,9 @@ test("blocks entries marked as blocked by the manifest", () => {
     const result = scanDirectory(temp);
     assert.equal(result.packages[0].state, "blocked");
     assert.ok(result.packages[0].warnings.some((warning) => /阻止入库/.test(warning)));
+    assert.deepEqual(result.packages[0].missingFiles, ["F:\\素材\\Photos.jpg", "F:\\素材\\emoji.webp"]);
+    assert.equal(result.packages[0].dependencyStatus, "blocked");
+    assert.equal(result.packages[0].riskOverrideEligible, true);
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }

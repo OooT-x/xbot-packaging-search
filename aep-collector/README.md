@@ -21,7 +21,7 @@
 - ZIP 使用独立顶层文件夹封装，生成后自动执行 CRC、自检 AEP 和 manifest 完整性校验。
 - manifest 标记为 `xbot-collection` 收集记录，供 Eagle 插件读取合成名、对应 ZIP 和依赖状态，不冒充已经补齐 PNG、类型和版本的正式入库清单。
 - 收集时通过本机 `aerender` 后台渲染已确认或默认帧，输出与 ZIP 同名的 PNG，并将 `preview_file`、时间和 AE 帧号写回 manifest 及 ZIP 内的 manifest。
-- 缺失素材写入 manifest，并标记为“阻止入库”。
+- 收集前先解析全部素材路径；工程搬迁后可由唯一 `(素材)`/`素材`/`Footage` 锚点恢复的路径自动重定位并重链接。无法恢复的素材写入 manifest 的 `missing_files`，并在插件配对预检中按素材组显示；用户可显式接受风险入库，后续通过维护流程替换 ZIP 修复。
 
 ## 运行
 

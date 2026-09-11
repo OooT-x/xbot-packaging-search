@@ -57,7 +57,7 @@ test("production import view exposes preview-first pairing and direct naming", (
   assert.doesNotMatch(html, /写入 00_待入库/);
   assert.match(html, /id="assetModal"/);
   assert.match(html, /class="bottom-bar import-bottom"/);
-  assert.match(html, /AE → Eagle · v1\.7\.1/);
+  assert.match(html, /AE → Eagle · v1\.7\.6/);
   assert.match(html, /@keyframes view-in \{ from \{ opacity: 0; \} to \{ opacity: 1; \} \}/);
   assert.match(html, /body\[data-active-view="import"\] #view-import \{ padding-bottom: 104px; \}/);
   assert.match(html, /body\[data-active-view="import"\] #view-import \.import-bottom \{ position: fixed/);
@@ -116,7 +116,13 @@ test("production import view exposes preview-first pairing and direct naming", (
   assert.doesNotMatch(homeDropBlock, /setView\(/);
   assert.match(pluginJs, /if \(state\.activeView === "home"\) setView\("aep"\);/);
   assert.match(pluginJs, /if \(state\.activeView !== "import"\) setView\("import"\);/);
-  assert.equal(manifest.version, "1.7.1");
+  assert.match(pluginJs, /data-package-select=/);
+  assert.match(html, /aepMissingModal/);
+  assert.match(pluginJs, /function packageMissingFiles\(pkg\)/);
+  assert.match(pluginJs, /发现缺失素材，确认风险后可入库/);
+  assert.match(pluginJs, /风险入库已确认/);
+  assert.match(pluginJs, /selectedForImport/);
+  assert.equal(manifest.version, "1.7.6");
 });
 
 test("hosts the AEP collector inside the Eagle plugin and returns to pairing", () => {
@@ -230,6 +236,72 @@ test("exposes the formal packaging maintenance workspace", () => {
   assert.match(pluginJs, /function openManagedPreviewModal\(packageId\)/);
   assert.match(pluginJs, /state\.managedPreview/);
   assert.match(pluginJs, /bindPreviewStageInteractions\(elements\.managedPreviewStage, state\.managedPreview, elements\.managedPreviewZoom\)/);
+});
+
+test("keeps the managed card list independently scrollable and resizable", () => {
+  const html = fs.readFileSync(htmlPath, "utf8");
+  const pluginJs = fs.readFileSync(pluginJsPath, "utf8");
+  assert.match(html, /\.managed-main \{[^}]*display:flex;[^}]*overflow:hidden/);
+  assert.match(html, /\.managed-grid \{[^}]*flex:1;[^}]*overflow-y:auto;[^}]*overscroll-behavior:contain/);
+  assert.match(html, /body\[data-active-view="managed"\] \.app \{ height:100vh;[^}]*overflow:hidden/);
+  assert.match(html, /data-managed-card-size="compact"/);
+  assert.match(html, /data-managed-card-size="medium"/);
+  assert.match(html, /data-managed-card-size="large"/);
+  assert.match(html, /id="managedRows" data-card-size="medium"/);
+  assert.match(pluginJs, /const MANAGED_CARD_SIZE_KEY = "xbot\.managedCardSize"/);
+  assert.match(pluginJs, /function setManagedCardSize\(size, options = \{\}\)/);
+  assert.match(pluginJs, /window\.localStorage\.setItem\(MANAGED_CARD_SIZE_KEY, nextSize\)/);
+});
+
+test("adapts primary workspaces and panels to the Eagle window", () => {
+  const html = fs.readFileSync(htmlPath, "utf8");
+  assert.match(html, /--workspace-gutter: clamp\(10px, 1\.4vw, 24px\)/);
+  assert.match(html, /\.workspace-view \{ width: min\(1920px, calc\(100% - var\(--workspace-gutter\) - var\(--workspace-gutter\)\)\)/);
+  assert.match(html, /@media \(min-width: 1400px\) \{[\s\S]*#view-home \{ display: grid; grid-template-columns:/);
+  assert.match(html, /\.managed-shell \{[^}]*grid-template-columns:clamp\(190px,14vw,250px\)[^}]*clamp\(300px,24vw,420px\)/);
+  assert.match(html, /\.managed-grid \{ --managed-card-min:clamp\(220px,16vw,280px\)/);
+  assert.match(html, /body\[data-active-view="aep"\] #view-aep \.aep-import-shell \{ min-height: 0; flex: 1; display: flex/);
+  assert.match(html, /body\[data-active-view="aep"\] #view-aep \.aep-shell \{ min-height: 0; flex: 1; grid-template-columns: clamp/);
+  assert.match(html, /body\[data-active-view="aep"\] #view-aep \.aep-tree-list \{ min-height: 0; overscroll-behavior: contain/);
+});
+
+test("keeps pairing controls compact while allowing independent list layouts", () => {
+  const html = fs.readFileSync(htmlPath, "utf8");
+  const pluginJs = fs.readFileSync(pluginJsPath, "utf8");
+  assert.match(html, /class="section-head import-section-head"/);
+  assert.match(html, /data-import-card-size="compact"/);
+  assert.match(html, /data-import-card-size="medium"/);
+  assert.match(html, /data-import-card-size="large"/);
+  assert.match(html, /id="packageRows" data-card-size="medium"/);
+  assert.match(html, /body\[data-active-view="import"\] #view-import \.package-grid \{ min-height: 0; flex: 1; overflow-y: auto/);
+  assert.match(html, /\.package-grid\[data-card-size="compact"\] \{ grid-template-columns: repeat\(auto-fit, minmax\(min\(100%, 620px\), 1fr\)\)/);
+  assert.match(html, /grid-template-areas: "visual copy" "visual facts" "edit edit"/);
+  assert.match(html, /\.card-title-row \{ display: flex;[^}]*flex-wrap: wrap/);
+  assert.match(html, /\.card-meta-grid \{ display: grid; grid-template-columns: repeat\(auto-fit/);
+  assert.match(html, /\.pair-targets \{ grid-template-columns: repeat\(auto-fit/);
+  assert.match(html, /\.pair-facts \{ grid-template-columns: repeat\(auto-fit/);
+  assert.match(pluginJs, /class="pair-fact"/);
+  assert.match(html, /@media \(max-width: 760px\) \{[\s\S]*grid-template-areas: "copy" "visual" "facts" "edit"/);
+  assert.match(html, /\.package-grid \.pair-copy \{ grid-area: copy; \}/);
+  assert.match(html, /\.package-grid \.pair-visual \{ grid-area: visual; \}/);
+  assert.match(html, />双列<\/button>/);
+  assert.match(html, />单列<\/button>/);
+  assert.match(html, />大图<\/button>/);
+  assert.match(pluginJs, /class="card-meta-grid"/);
+  assert.match(pluginJs, /<b>项目<\/b>/);
+  assert.match(pluginJs, /<b>合成<\/b>/);
+  assert.match(pluginJs, /const IMPORT_CARD_SIZE_KEY = "xbot\.importCardSize"/);
+  assert.match(pluginJs, /function setImportCardSize\(size, options = \{\}\)/);
+  assert.match(pluginJs, /window\.localStorage\.setItem\(IMPORT_CARD_SIZE_KEY, nextSize\)/);
+});
+
+test("turns workflow logs into non-blocking popovers and keeps the AEP tree scrollable", () => {
+  const html = fs.readFileSync(htmlPath, "utf8");
+  assert.match(html, /\.log-drawer \{ position: fixed;[^}]*box-shadow: var\(--shadow\)/);
+  assert.match(html, /\.log-drawer > div \{ max-height: min\(240px, 30vh\); overflow: auto/);
+  assert.match(html, /body\[data-active-view="aep"\] \.log-drawer,\s*body\[data-active-view="import"\] \.log-drawer \{ bottom: 76px; \}/);
+  assert.match(html, /#view-aep \.aep-tree-panel \{ min-height: 0; overflow: hidden; \}/);
+  assert.match(html, /#view-aep \.aep-tree-list \{ min-height: 0; overflow-y: auto/);
 });
 
 test("ships an interactive preview-first PNG and ZIP pairing prototype", () => {

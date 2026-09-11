@@ -132,7 +132,16 @@ function buildAnnotation(pkg, pair, options = {}) {
   if (pkg.sourceOptional && !pair?.sourceItemId) {
     lines.push("源文件：无（仅图片背景）");
   }
-  lines.push(`状态：${options.status || (pkg.dependencyStatus === "warning" ? "启用（依赖警告）" : "启用")}`);
+  const missingFiles = [...new Set([
+    ...(pkg.missingFiles || []),
+    ...(pkg.missingFootage || []),
+  ].map((value) => String(value || "").trim()).filter(Boolean))];
+  const riskAccepted = Boolean(pkg.riskAccepted || pkg.dependencyStatus === "blocked");
+  lines.push(`状态：${options.status || (riskAccepted ? "启用（依赖缺失，风险入库）" : pkg.dependencyStatus === "warning" ? "启用（依赖警告）" : "启用")}`);
+  if (missingFiles.length) {
+    lines.push(`依赖风险：${missingFiles.join("、")}`);
+    lines.push("后续修复：补齐素材后，在维护已入库包装中替换 ZIP 并重新发布。");
+  }
   if (options.revisionId) lines.push(`修订号：${options.revisionId}`);
   if (options.replacedBy) lines.push(`取代为：${options.replacedBy}`);
   if (Array.isArray(pkg.fonts) && pkg.fonts.length > 0) {
@@ -277,6 +286,7 @@ async function findDuplicateBatches(adapter, scanResult, rootFolderId) {
 function buildTags(pkg) {
   const tags = [pkg.projectName, pkg.packageType, pkg.version, INGEST_ROOT_NAME].filter(Boolean);
   if (pkg.dependencyStatus === "warning") tags.push("依赖警告");
+  if (pkg.riskAccepted || pkg.dependencyStatus === "blocked") tags.push("依赖风险");
   return [...new Set(tags)];
 }
 
@@ -1180,6 +1190,11 @@ async function writeFormalPair(adapter, metadata, existing = null, options = {})
     aeCompName: metadata.aeCompName,
     batchId: metadata.batchId,
     dependencyStatus: metadata.dependencyStatus,
+    riskAccepted: Boolean(metadata.riskAccepted),
+    missingFiles: [...new Set([
+      ...(metadata.missingFiles || []),
+      ...(metadata.missingFootage || []),
+    ].map((value) => String(value || "").trim()).filter(Boolean))],
     previewItemId: previewItem.id,
     sourceItemId: sourceItem?.id || null,
     previewName: itemFileName(previewItem),
@@ -1194,9 +1209,25 @@ async function writeFormalPair(adapter, metadata, existing = null, options = {})
 }
 
 async function importFormalBatch(adapter, scanResult, options = {}) {
-  const readyPackages = (scanResult?.packages || []).filter(
-    (pkg) => pkg.state === "ready"
+  const selectedPackages = (scanResult?.packages || []).filter(
+    (pkg) => pkg.selectedForImport !== false
   );
+  const hasDependencyRisk = (pkg) => Boolean(
+    pkg.riskOverrideEligible ||
+    pkg.dependencyStatus === "blocked" ||
+    (pkg.missingFiles || []).length ||
+    (pkg.missingFootage || []).length
+  );
+  const readyPackages = selectedPackages.filter(
+    (pkg) => (pkg.state === "ready" && (!hasDependencyRisk(pkg) || (pkg.riskAccepted && pkg.riskOverrideEligible)))
+      || (pkg.state === "blocked" && pkg.riskAccepted && pkg.riskOverrideEligible)
+  );
+  const blockedSelected = selectedPackages.filter(
+    (pkg) => !readyPackages.includes(pkg)
+  );
+  if (blockedSelected.length) {
+    throw new Error(`仍有素材组未通过配对检查：${blockedSelected.map((pkg) => pkg.matchError || pkg.packageName || pkg.packageId).join("、")}`);
+  }
   if (!readyPackages.length) throw new Error("没有可直接入库的素材");
 
   const projectName = String(scanResult.projectName || "").trim();

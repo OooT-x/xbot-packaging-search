@@ -547,14 +547,20 @@ def _copy_video_as_first_frame(
     missing: list[str],
     warnings: list[str],
     replacements: list[dict[str, Any]],
+    source_project: Path | None = None,
 ) -> tuple[int, int]:
     raw_file = getattr(footage, "file", None)
     if not raw_file:
         return 0, 0
 
     source_path = Path(str(raw_file))
+    rewrite = None
+    if source_project is not None:
+        source_path, rewrite = _resolve_footage_path(source_path, source_project)
+    if rewrite:
+        warnings.append(f"已恢复素材路径：{rewrite}")
     if not source_path.is_file():
-        missing.append(str(source_path))
+        missing.append(str(raw_file))
         return 0, 0
 
     original_name = str(getattr(footage, "name", source_path.name))
@@ -616,19 +622,67 @@ def _sequence_files(footage: Any, source_path: Path) -> list[Path]:
     return result
 
 
+def _resolve_footage_path(raw_path: Path, source_project: Path) -> tuple[Path, str | None]:
+    """Resolve an absolute footage path that moved with the AEP project.
+
+    AE stores absolute paths in an AEP. Projects are commonly copied between
+    drives, so an exact existence check alone incorrectly reports every asset
+    as missing. Relocation is limited to an unambiguous anchored suffix such
+    as ``(素材)\\...``; basename guesses are deliberately avoided.
+    """
+
+    path = Path(str(raw_path)).expanduser()
+    if path.exists():
+        return path, None
+
+    if not path.is_absolute():
+        relative = (source_project.parent / path).resolve()
+        if relative.exists():
+            return relative, f"{path} -> {relative}"
+        return path, None
+
+    parts = list(path.parts)
+    anchors = ("(素材)", "素材", "Footage", "footage")
+    suffixes: list[Path] = []
+    for index, part in enumerate(parts):
+        if part in anchors and index < len(parts) - 1:
+            suffix = Path(*parts[index:])
+            if suffix not in suffixes:
+                suffixes.append(suffix)
+
+    bases = [source_project.parent, *source_project.parent.parents[:6]]
+    candidates: list[Path] = []
+    for base in bases:
+        for suffix in suffixes:
+            candidate = (base / suffix).resolve()
+            if candidate.exists() and candidate not in candidates:
+                candidates.append(candidate)
+
+    if len(candidates) == 1:
+        candidate = candidates[0]
+        return candidate, f"{path} -> {candidate}"
+    return path, None
+
+
 def _copy_and_relink_footage(
     footage: Any,
     assets_root: Path,
     missing: list[str],
     warnings: list[str],
+    source_project: Path | None = None,
 ) -> tuple[int, int]:
     raw_file = getattr(footage, "file", None)
     if not raw_file:
         return 0, 0
 
     source_path = Path(str(raw_file))
+    rewrite = None
+    if source_project is not None:
+        source_path, rewrite = _resolve_footage_path(source_path, source_project)
+    if rewrite:
+        warnings.append(f"已恢复素材路径：{rewrite}")
     if not source_path.exists():
-        missing.append(str(source_path))
+        missing.append(str(raw_file))
         return 0, 0
 
     category_folder = assets_root / _category_for(source_path)
@@ -806,9 +860,16 @@ def collect_composition(
                     missing,
                     warnings,
                     video_frame_replacements,
+                    source_path,
                 )
             else:
-                count, size = _copy_and_relink_footage(item, assets_root, missing, warnings)
+                count, size = _copy_and_relink_footage(
+                    item,
+                    assets_root,
+                    missing,
+                    warnings,
+                    source_path,
+                )
             copied_file_count += count
             copied_bytes += size
 
