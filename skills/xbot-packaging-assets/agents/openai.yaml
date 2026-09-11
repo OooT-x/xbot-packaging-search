@@ -1,0 +1,4 @@
+interface:
+  display_name: "X.bot 包装素材"
+  short_description: "维护、运行、诊断并验证飞书包装素材检索与源文件交付闭环"
+  default_prompt: "Use $xbot-packaging-assets to inspect and handle the current X.bot packaging asset workflow."

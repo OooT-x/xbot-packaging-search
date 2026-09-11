@@ -27,8 +27,10 @@ const {
 } = require("../lib/managed-assets.js");
 
 const state = {
-  activeView: "import",
+  activeView: "home",
+  navigationHistory: [],
   importStage: 1,
+  importResult: null,
   sourceDir: null,
   scan: null,
   batchFolders: [],
@@ -90,6 +92,16 @@ const state = {
 };
 
 const elements = {
+  backBtn: document.getElementById("backBtn"),
+  routeContext: document.getElementById("routeContext"),
+  moreBtn: document.getElementById("moreBtn"),
+  moreMenu: document.getElementById("moreMenu"),
+  homeDropZone: document.getElementById("homeDropZone"),
+  homeDropLabel: document.getElementById("homeDropLabel"),
+  homeResumeBtn: document.getElementById("homeResumeBtn"),
+  homeResumeTitle: document.getElementById("homeResumeTitle"),
+  successTitle: document.getElementById("successTitle"),
+  successSummary: document.getElementById("successSummary"),
   apiState: document.getElementById("apiState"),
   apiDot: document.getElementById("apiDot"),
   diagApi: document.getElementById("diagApi"),
@@ -1030,7 +1042,8 @@ async function runImport() {
       log(`写入 bot 索引同步队列失败：${error.message}`);
     }
     elements.importBtn.textContent = "本批次已入库";
-    setView("import");
+    state.importResult = { batchId: result.batchId, filedCount, reusedCount };
+    setView("success");
     showToast("直接入库完成", `${filedCount} 对素材已写入 01_预览图 / 02_AE源文件。`);
   } catch (error) {
     log(`直接入库失败：${error.message}`);
@@ -1415,7 +1428,9 @@ function setPreviewZoom(view, stage, readout, value, anchor = null) {
       view.previewPanY = anchorY - (anchorY - view.previewPanY) * ratio;
     }
   }
-  if (zoom <= 1.01) {
+  // Keep the pan offset while zoomed out. Resetting at every value below 100%
+  // made the drag gesture appear to do nothing after the first zoom-out step.
+  if (Math.abs(zoom - 1) <= 0.01) {
     view.previewPanX = 0;
     view.previewPanY = 0;
   }
@@ -1445,7 +1460,7 @@ function bindPreviewStageInteractions(stage, view, readout) {
     setPreviewZoom(view, stage, readout, view.previewZoom * Math.exp(-delta * 0.0015), event);
   }, { passive: false });
   stage.addEventListener("pointerdown", (event) => {
-    if (!isOpen() || event.button !== 0 || view.previewZoom <= 1.01) return;
+    if (!isOpen() || event.button !== 0 || view.previewZoom <= 0) return;
     event.preventDefault();
     stage.setPointerCapture(event.pointerId);
     view.previewDrag = {
@@ -1702,14 +1717,51 @@ function stopAepCollection() {
   controller.abort();
 }
 
-function setView(view) {
-  const allowed = ["import", "aep", "formal", "history", "diagnostics", "managed"];
+const routeLabels = {
+  home: "任务首页",
+  aep: "新增包装 / 选择合成",
+  import: "新增包装 / 确认交付物",
+  success: "新增包装 / 完成",
+  managed: "维护已入库包装",
+  formal: "历史待入库",
+  history: "批次记录",
+  diagnostics: "系统诊断",
+};
+
+function updateHomeResume() {
+  if (!elements.homeResumeBtn || !elements.homeResumeTitle) return;
+  const importInProgress = Boolean(state.sourceDir && state.importStage < 3);
+  const aepInProgress = Boolean(state.aep.aepPath && !state.aep.collecting && state.importStage < 3);
+  const targetView = importInProgress ? "import" : aepInProgress ? "aep" : "";
+  elements.homeResumeBtn.disabled = !targetView;
+  if (!targetView) {
+    delete elements.homeResumeBtn.dataset.view;
+    elements.homeResumeTitle.textContent = "尚未开始";
+    return;
+  }
+  elements.homeResumeBtn.dataset.view = targetView;
+  elements.homeResumeTitle.textContent = targetView === "import"
+    ? `${elements.projectName.value.trim() || path.basename(state.sourceDir)} · 配对预检`
+    : `${path.basename(state.aep.aepPath)} · 合成选择`;
+}
+
+function closeMoreMenu() {
+  if (!elements.moreMenu || !elements.moreBtn) return;
+  elements.moreMenu.hidden = true;
+  elements.moreBtn.setAttribute("aria-expanded", "false");
+}
+
+function setView(view, options = {}) {
+  const allowed = ["home", "import", "aep", "formal", "history", "diagnostics", "managed", "success"];
   if (!allowed.includes(view)) return;
+  const previousView = state.activeView;
+  if (options.remember !== false && previousView !== view && previousView) state.navigationHistory.push(previousView);
   state.activeView = view;
+  if (view === "home") state.navigationHistory = [];
   document.body.dataset.activeView = view;
   window.scrollTo({ top: 0, left: 0, behavior: "auto" });
-  const workflowStage = view === "import" ? (state.importStage || 1) : view === "aep" ? 0 : 3;
-  document.querySelectorAll(".workflow-step").forEach((step) => {
+  const workflowStage = view === "aep" ? 1 : view === "import" ? Math.max(2, state.importStage || 1) : view === "success" ? 3 : 0;
+  document.querySelectorAll(".journey-step").forEach((step) => {
     const stage = Number(step.dataset.workflowStep || 0);
     step.classList.toggle("active", stage === workflowStage);
     step.classList.toggle("done", stage > 0 && stage < workflowStage);
@@ -1719,12 +1771,22 @@ function setView(view) {
     section.hidden = !active;
     section.classList.toggle("active", active);
   });
-  document.querySelectorAll(".main-tab[data-view]").forEach((tab) => {
-    tab.classList.toggle("active", tab.dataset.view === view);
-    tab.setAttribute("aria-selected", tab.dataset.view === view ? "true" : "false");
-  });
+  if (elements.routeContext) elements.routeContext.querySelector("strong").textContent = routeLabels[view] || "包装工作流";
+  if (elements.backBtn) elements.backBtn.hidden = view === "home";
+  closeMoreMenu();
+  if (view === "home") updateHomeResume();
+  if (view === "success" && state.importResult) {
+    const { filedCount, reusedCount, batchId } = state.importResult;
+    if (elements.successTitle) elements.successTitle.textContent = `${filedCount} 组包装已写入 Eagle`;
+    if (elements.successSummary) elements.successSummary.textContent = `批次 ${batchId} 已完成配对、命名和项目标签${reusedCount ? `，另复用 ${reusedCount} 组已有记录` : ""}。`;
+  }
   if (view === "formal") refreshBatches();
   if (view === "managed") refreshManagedPackages();
+}
+
+function goBack() {
+  const previous = state.navigationHistory.pop() || "home";
+  setView(previous, { remember: false });
 }
 
 function resolvePickedDirectory(files) {
@@ -1873,11 +1935,10 @@ function isFileDrag(event) {
 function scanSelectedDirectory() {
   if (!state.sourceDir) return false;
   try {
-    state.activeView = "import";
     state.importStage = 1;
+    if (state.activeView !== "import") setView("import");
     const scan = applyManagedDraft(scanDirectory(state.sourceDir, { projectName: elements.projectName.value.trim() || undefined }));
     render(scan);
-    setView("import");
     return true;
   } catch (error) {
     log(`扫描失败：${error.message}`);
@@ -1886,9 +1947,66 @@ function scanSelectedDirectory() {
   }
 }
 
+function setAepSourcePath(aepPath) {
+  const resolved = aepPath ? path.resolve(aepPath) : "";
+  state.aep.aepPath = resolved && path.extname(resolved).toLocaleLowerCase() === ".aep" && fileStat(resolved)?.isFile()
+    ? resolved
+    : null;
+  state.aep.project = null;
+  state.aep.checkedOccurrences.clear();
+  state.aep.activeOccurrenceKey = null;
+  state.aep.previewFiles = {};
+  state.aep.previewTimes = {};
+  setAepPreviewZoom(1);
+  elements.aepFileLabel.textContent = state.aep.aepPath ? path.basename(state.aep.aepPath) : "无法读取 AEP 本地路径";
+  elements.aepOutput.value = defaultAepOutput();
+  renderAepTree();
+  renderAepInspector();
+  renderAepQueue();
+  updateAepActions();
+  return Boolean(state.aep.aepPath);
+}
+
+function droppedAepPath(dataTransfer) {
+  const files = droppedFiles(dataTransfer);
+  if (files.length !== 1) return null;
+  const filePath = typeof files[0]?.path === "string" ? files[0].path : "";
+  if (!filePath || path.extname(filePath).toLocaleLowerCase() !== ".aep") return null;
+  return fileStat(filePath)?.isFile() ? path.resolve(filePath) : null;
+}
+
+async function openHomeDrop(dataTransfer) {
+  const aepPath = droppedAepPath(dataTransfer);
+  if (aepPath) {
+    state.importStage = 1;
+    setView("aep");
+    if (setAepSourcePath(aepPath)) await inspectAepProject();
+    return true;
+  }
+  const sourceDir = resolveDroppedDirectory(dataTransfer);
+  if (!sourceDir) return false;
+  state.importStage = 1;
+  setView("import");
+  if (!setSourceDirectory(sourceDir)) return false;
+  return scanSelectedDirectory();
+}
+
 document.addEventListener("click", (event) => {
   const viewButton = event.target.closest("[data-view]");
   if (viewButton) { setView(viewButton.dataset.view); return; }
+  const homePick = event.target.closest("[data-home-pick]");
+  if (homePick) {
+    const kind = homePick.dataset.homePick;
+    state.importStage = 1;
+    (kind === "aep" ? elements.aepPicker : elements.folderPicker).click();
+    return;
+  }
+  const homeDropCard = event.target.closest("#homeDropZone");
+  if (homeDropCard && !event.target.closest("button")) {
+    state.importStage = 1;
+    elements.aepPicker.click();
+    return;
+  }
   const managedAction = event.target.closest("[data-managed-action]");
   if (managedAction) {
     const action = managedAction.dataset.managedAction;
@@ -1898,6 +2016,7 @@ document.addEventListener("click", (event) => {
     if (action === "add") {
       const pkg = managedPackageById(packageId);
       if (pkg) elements.projectName.value = pkg.projectName;
+      state.importStage = 1;
       setView("import");
       showToast("添加新包装", `${pkg ? `${pkg.projectName} · ` : ""}请在入库工作台选择新的 PNG + ZIP 配对；确认后会创建独立的 v01 包装记录。`);
     }
@@ -1909,6 +2028,7 @@ document.addEventListener("click", (event) => {
         state.managedDraft = { kind: "version", basePackageId: pkg.packageId, projectName: pkg.projectName, version: nextPackageVersion(pkg.version) };
         elements.projectName.value = pkg.projectName;
         elements.importMode.value = "new";
+        state.importStage = 1;
         setView("import");
         showToast("发布新版本", `已准备 ${pkg.projectName} · ${pkg.packageName} 的 ${state.managedDraft.version}；请选择只包含这一版 PNG + ZIP 的文件夹。`);
       }
@@ -2143,7 +2263,17 @@ document.addEventListener("change", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") closeModals();
+  if (event.key === "Escape") {
+    closeModals();
+    closeMoreMenu();
+  }
+  const homeDrop = event.target.closest("#homeDropZone");
+  if (homeDrop && !event.target.closest("button") && (event.key === "Enter" || event.key === " ")) {
+    event.preventDefault();
+    state.importStage = 1;
+    elements.aepPicker.click();
+    return;
+  }
   const assetAction = event.target.closest("[data-asset-action]");
   if (assetAction && (event.key === "Enter" || event.key === " ")) {
     event.preventDefault();
@@ -2153,11 +2283,22 @@ document.addEventListener("keydown", (event) => {
 
 document.querySelectorAll("[data-close-modal]").forEach((button) => button.addEventListener("click", closeModals));
 document.querySelectorAll(".modal-backdrop").forEach((backdrop) => backdrop.addEventListener("click", (event) => { if (event.target === backdrop) closeModals(); }));
+elements.backBtn?.addEventListener("click", goBack);
+elements.moreBtn?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  elements.moreMenu.hidden = !elements.moreMenu.hidden;
+  elements.moreBtn.setAttribute("aria-expanded", elements.moreMenu.hidden ? "false" : "true");
+});
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".popover")) closeMoreMenu();
+});
 elements.folderPicker.addEventListener("change", () => {
   const sourceDir = resolvePickedDirectory(elements.folderPicker.files);
   if (!setSourceDirectory(sourceDir)) {
     showToast("无法读取文件夹", "请在 Eagle 内选择本地项目包装文件夹。", "error");
+    return;
   }
+  if (scanSelectedDirectory()) showToast("已扫描文件夹", "已进入 PNG + ZIP 配对预检。", "success");
 });
 elements.dropZone.addEventListener("dragenter", (event) => {
   if (!isFileDrag(event)) return;
@@ -2190,24 +2331,49 @@ elements.dropZone.addEventListener("drop", (event) => {
   }
   if (scanSelectedDirectory()) showToast("已扫描文件夹", "已进入 PNG + ZIP 配对预检。", "success");
 });
+elements.homeDropZone?.addEventListener("dragenter", (event) => {
+  if (!isFileDrag(event)) return;
+  event.preventDefault();
+  elements.homeDropZone.classList.add("is-dragover");
+  elements.homeDropLabel.textContent = "松开后自动识别并进入对应流程";
+});
+elements.homeDropZone?.addEventListener("dragover", (event) => {
+  if (!isFileDrag(event)) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "copy";
+  elements.homeDropZone.classList.add("is-dragover");
+});
+elements.homeDropZone?.addEventListener("dragleave", (event) => {
+  if (elements.homeDropZone.contains(event.relatedTarget)) return;
+  elements.homeDropZone.classList.remove("is-dragover");
+  elements.homeDropLabel.textContent = "拖入 AEP 或包装文件夹";
+});
+elements.homeDropZone?.addEventListener("drop", async (event) => {
+  event.preventDefault();
+  elements.homeDropZone.classList.remove("is-dragover");
+  elements.homeDropLabel.textContent = "正在识别内容…";
+  try {
+    if (!await openHomeDrop(event.dataTransfer)) {
+      setView("home", { remember: false });
+      showToast("无法识别拖入内容", "请拖入一个 .aep 文件、包装文件夹，或改用选择按钮。", "error");
+    }
+  } catch (error) {
+    setView("home", { remember: false });
+    showToast("读取失败", error.message, "error");
+  } finally {
+    elements.homeDropLabel.textContent = "拖入 AEP 或包装文件夹";
+  }
+});
 elements.scanBtn.addEventListener("click", scanSelectedDirectory);
-elements.aepPicker.addEventListener("change", () => {
+elements.aepPicker.addEventListener("change", async () => {
   const file = elements.aepPicker.files?.[0];
   const aepPath = file?.path || "";
-  state.aep.aepPath = aepPath && path.extname(aepPath).toLocaleLowerCase() === ".aep" ? aepPath : null;
-  state.aep.project = null;
-  state.aep.checkedOccurrences.clear();
-  state.aep.activeOccurrenceKey = null;
-  state.aep.previewFiles = {};
-  state.aep.previewTimes = {};
-  setAepPreviewZoom(1);
-  elements.aepFileLabel.textContent = state.aep.aepPath ? path.basename(state.aep.aepPath) : "无法读取 AEP 本地路径";
-  elements.aepOutput.value = defaultAepOutput();
-  renderAepTree();
-  renderAepInspector();
-  renderAepQueue();
-  updateAepActions();
-  if (!state.aep.aepPath) showToast("AEP 路径不可用", "请在 Eagle 内选择本地 .aep 文件；当前浏览器预览无法提供本地路径。", "error");
+  if (!setAepSourcePath(aepPath)) {
+    showToast("AEP 路径不可用", "请在 Eagle 内选择本地 .aep 文件；当前浏览器预览无法提供本地路径。", "error");
+    return;
+  }
+  if (state.activeView === "home") setView("aep");
+  await inspectAepProject();
 });
 elements.aepInspectBtn.addEventListener("click", inspectAepProject);
 elements.aepDefaultOutputBtn.addEventListener("click", () => { elements.aepOutput.value = defaultAepOutput(); updateAepActions(); });
@@ -2253,3 +2419,5 @@ elements.sourceTemplate.addEventListener("input", () => applyRenameRule(false));
     elements.batchSelect.innerHTML = "<option>请在 Eagle 内运行</option>";
   }
 })();
+
+setView("home", { remember: false });

@@ -6,23 +6,34 @@ const assert = require("node:assert/strict");
 const htmlPath = path.join(__dirname, "..", "eagle-plugin", "index.html");
 const pluginJsPath = path.join(__dirname, "..", "eagle-plugin", "js", "plugin.js");
 
-test("keeps the import and legacy workspace inside the app shell", () => {
+test("keeps the progressive home and every workspace inside the app shell", () => {
   const html = fs.readFileSync(htmlPath, "utf8");
+  const pluginJs = fs.readFileSync(pluginJsPath, "utf8");
+  const appStart = html.indexOf('<div class="app">');
+  const appEnd = html.indexOf('<div class="modal-backdrop"');
 
-  assert.doesNotMatch(
-    html,
-    /<\/div>\s*<\/div><details class="log-drawer"[^>]*>\s*<summary>运行记录<\/summary><div id="log">/
-  );
-  assert.match(
-    html,
-    /<details class="log-drawer"><summary>运行记录<\/summary><div id="log">[\s\S]*?<\/details>\s*<\/section>\s*<section class="workspace-view" id="view-formal" hidden>/
-  );
-  assert.match(html, /<section class="workspace-view active" id="view-import">/);
-  assert.match(html, /<section class="workspace-view" id="view-history" hidden>/);
-  assert.match(html, /<section class="workspace-view" id="view-diagnostics" hidden>/);
+  assert.ok(appStart >= 0 && appEnd > appStart);
+  for (const view of ["home", "import", "aep", "formal", "history", "diagnostics", "managed", "success"]) {
+    const offset = html.indexOf(`id="view-${view}"`);
+    assert.ok(offset > appStart && offset < appEnd, `${view} view should remain inside .app`);
+  }
+  assert.match(html, /<section class="workspace-view active" id="view-home">/);
+  assert.match(html, /<section class="workspace-view" id="view-import" hidden>/);
+  assert.match(html, /id="backBtn"[^>]*hidden/);
+  assert.match(html, /id="routeContext"><strong>任务首页<\/strong>/);
+  assert.match(html, /id="moreMenu" hidden/);
+  assert.match(html, /data-home-pick="aep"/);
+  assert.match(html, /data-home-pick="folder"/);
+  assert.match(html, /data-view="managed"/);
   assert.match(html, /id="dropZone"/);
   assert.doesNotMatch(html, /class="top-context"/);
+  assert.doesNotMatch(html, /<nav class="main-tabs"/);
   assert.doesNotMatch(html, /选择一个项目包装文件夹后，插件会把 PNG 预览和 ZIP 打包文件按规则自动匹配/);
+  assert.match(pluginJs, /function goBack\(\)/);
+  assert.match(pluginJs, /elements\.backBtn\?\.addEventListener\("click", goBack\)/);
+  assert.match(pluginJs, /elements\.homeDropZone\?\.addEventListener\("drop", async/);
+  assert.match(pluginJs, /if \(scanSelectedDirectory\(\)\) showToast\("已扫描文件夹"/);
+  assert.match(pluginJs, /setView\("home", \{ remember: false \}\)/);
 });
 
 test("production import view exposes preview-first pairing and direct naming", () => {
@@ -35,14 +46,18 @@ test("production import view exposes preview-first pairing and direct naming", (
     )
   );
 
-  assert.match(html, /class="workflow-steps"/);
-  assert.match(html, /data-workflow-step="3"/);
+  assert.doesNotMatch(html, /class="flow-head-row"/);
+  assert.doesNotMatch(html, /AEP Collector \/ 00/);
+  assert.doesNotMatch(html, /Library \/ 05/);
+  assert.match(html, /#view-import \.drop-card \{ padding: 8px 12px; \}/);
+  assert.match(html, /#view-aep \.aep-drop-card \{ min-height: 52px; padding: 8px 11px; \}/);
+  assert.match(html, /class="managed-toolbar-actions"/);
   assert.match(html, /包装配对预检/);
   assert.match(html, /直接入库 Eagle/);
   assert.doesNotMatch(html, /写入 00_待入库/);
   assert.match(html, /id="assetModal"/);
   assert.match(html, /class="bottom-bar import-bottom"/);
-  assert.match(html, /AE → Eagle 工作台 · v1\.6\.2/);
+  assert.match(html, /AE → Eagle · v1\.7\.1/);
   assert.match(html, /@keyframes view-in \{ from \{ opacity: 0; \} to \{ opacity: 1; \} \}/);
   assert.match(html, /body\[data-active-view="import"\] #view-import \{ padding-bottom: 104px; \}/);
   assert.match(html, /body\[data-active-view="import"\] #view-import \.import-bottom \{ position: fixed/);
@@ -93,7 +108,15 @@ test("production import view exposes preview-first pairing and direct naming", (
   assert.match(pluginJs, /pkg\.sourceOptional = sourceOptional/);
   assert.match(pluginJs, /importFormalBatch/);
   assert.match(pluginJs, /state\.importStage/);
-  assert.equal(manifest.version, "1.6.2");
+  assert.match(pluginJs, /setView\("success"\)/);
+  const homePickBlock = pluginJs.match(/const homePick = event\.target\.closest\("\[data-home-pick\]"\);[\s\S]*?\n  }/)?.[0] || "";
+  const homeDropBlock = pluginJs.match(/const homeDropCard = event\.target\.closest\("#homeDropZone"\);[\s\S]*?\n  }/)?.[0] || "";
+  assert.ok(homePickBlock && homeDropBlock);
+  assert.doesNotMatch(homePickBlock, /setView\(/);
+  assert.doesNotMatch(homeDropBlock, /setView\(/);
+  assert.match(pluginJs, /if \(state\.activeView === "home"\) setView\("aep"\);/);
+  assert.match(pluginJs, /if \(state\.activeView !== "import"\) setView\("import"\);/);
+  assert.equal(manifest.version, "1.7.1");
 });
 
 test("hosts the AEP collector inside the Eagle plugin and returns to pairing", () => {
@@ -101,10 +124,9 @@ test("hosts the AEP collector inside the Eagle plugin and returns to pairing", (
   const pluginJs = fs.readFileSync(pluginJsPath, "utf8");
   const header = html.match(/<header class="topbar">[\s\S]*?<\/header>/)?.[0] || "";
 
-  assert.match(html, /<nav class="main-tabs"/);
-  assert.match(html, /data-view="aep"[\s\S]*data-view="import"/);
-  assert.match(html, /data-view="import"[^>]*><strong>入库工作台<\/strong>/);
-  assert.match(html, /data-view="aep"[^>]*><strong>AEP 收集<\/strong>/);
+  assert.match(html, /id="homeDropZone"/);
+  assert.match(html, /data-home-pick="aep"[\s\S]*data-home-pick="folder"/);
+  assert.match(html, /新增包装/);
   assert.match(html, /class="aep-import-shell"/);
   assert.match(html, /class="drop-card aep-drop-card"/);
   assert.match(html, /id="aepStatCompositions"/);
@@ -150,7 +172,10 @@ test("hosts the AEP collector inside the Eagle plugin and returns to pairing", (
   assert.match(pluginJs, /controller\.abort\(\)/);
   assert.match(pluginJs, /scanDirectory\(outputRoot, \{ projectName \}\)/);
   assert.match(pluginJs, /setView\("import"\)/);
-  assert.match(pluginJs, /const allowed = \["import", "aep", "formal", "history", "diagnostics", "managed"\]/);
+  assert.match(pluginJs, /const allowed = \["home", "import", "aep", "formal", "history", "diagnostics", "managed", "success"\]/);
+  assert.match(pluginJs, /function setAepSourcePath\(aepPath\)/);
+  assert.match(pluginJs, /await inspectAepProject\(\)/);
+  assert.match(pluginJs, /function openHomeDrop\(dataTransfer\)/);
   assert.match(pluginJs, /function resolveDroppedDirectory\(dataTransfer\)/);
   assert.match(pluginJs, /function normalizeDroppedPath\(value\)/);
   assert.match(pluginJs, /function droppedPathCandidates\(dataTransfer\)/);
@@ -178,13 +203,15 @@ test("hosts the AEP collector inside the Eagle plugin and returns to pairing", (
   assert.match(pluginJs, /addEventListener\("pointermove"/);
   assert.match(pluginJs, /setPointerCapture\(event\.pointerId\)/);
   assert.match(pluginJs, /event\.stopPropagation\(\)/);
+  assert.match(pluginJs, /if \(Math\.abs\(zoom - 1\) <= 0\.01\)/);
+  assert.match(pluginJs, /event\.button !== 0 \|\| view\.previewZoom <= 0/);
   assert.equal((pluginJs.match(/dropZone: document\.getElementById\("dropZone"\)/g) || []).length, 1);
 });
 
 test("exposes the formal packaging maintenance workspace", () => {
   const html = fs.readFileSync(htmlPath, "utf8");
   const pluginJs = fs.readFileSync(pluginJsPath, "utf8");
-  assert.match(html, /data-view="managed"[^>]*><strong>已入库管理<\/strong>/);
+  assert.match(html, /data-view="managed"[\s\S]*维护已入库包装/);
   assert.match(html, /id="view-managed" hidden/);
   assert.match(html, /id="managedRows"/);
   assert.match(html, /id="managedPreviewPicker"/);
