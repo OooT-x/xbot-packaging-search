@@ -55,6 +55,8 @@
 
 在出现首个可运行闭环前不创建正式软件发布标签。
 
+Eagle 插件使用独立的 `eagle-plugin/manifest.json` 版本，不等同于仓库根目录软件版本。插件 GitHub Release 使用 `eagle-plugin-vX.Y.Z` tag 和同版本 `.eagleplugin` 资产，不占用根项目的 `vX.Y.Z` 标签空间。
+
 ## 需求反复和实验管理
 
 - 不通过删除历史掩盖方向变化。

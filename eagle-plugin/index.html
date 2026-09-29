@@ -189,6 +189,24 @@
       .package-type-select:focus { border-color: color-mix(in srgb, var(--blue) 54%, var(--line)); background: var(--panel-strong); color: var(--ink); outline: 3px solid color-mix(in srgb, var(--blue) 13%, transparent); }
       .package-type-select.is-missing { border-color: color-mix(in srgb, var(--amber) 55%, var(--line)); background: var(--amber-soft); color: var(--amber); font-weight: 800; }
       .package-type-select.is-missing:focus { border-color: var(--amber); outline-color: color-mix(in srgb, var(--amber) 18%, transparent); }
+      .package-type-control { position: relative; display: inline-flex; max-width: 100%; vertical-align: middle; z-index: 4; }
+      .package-type-trigger { position: relative; display: inline-flex; align-items: center; justify-content: space-between; gap: 14px; min-width: 112px; max-width: 100%; min-height: 28px; padding: 3px 9px 3px 8px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--panel-strong); color: var(--ink-soft); font: 700 11px/1.25 var(--font-ui); text-align: left; cursor: pointer; transition: border-color var(--motion-fast) ease, background-color var(--motion-fast) ease, color var(--motion-fast) ease, box-shadow var(--motion-fast) ease; }
+      .package-type-trigger:hover, .package-type-trigger[aria-expanded="true"] { border-color: var(--blue); background: var(--blue-soft); color: var(--blue); }
+      .package-type-trigger.is-missing { border-color: color-mix(in srgb, var(--amber) 55%, var(--line)); background: var(--amber-soft); color: var(--amber); }
+      .package-type-trigger.is-missing:hover, .package-type-trigger.is-missing[aria-expanded="true"] { border-color: var(--amber); background: color-mix(in srgb, var(--amber-soft) 78%, var(--panel-strong)); }
+      .package-type-trigger > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .package-type-chevron { width: 6px; height: 6px; flex: none; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg) translateY(-2px); transition: transform var(--motion-fast) var(--ease-out-ui); }
+      .package-type-trigger[aria-expanded="true"] .package-type-chevron { transform: rotate(225deg) translate(-1px, -1px); }
+      .package-type-menu { position: fixed; top: 0; left: 0; z-index: 80; width: 168px; max-height: min(280px, calc(100vh - 132px)); overflow: auto; padding: 5px; border: 1px solid var(--line-strong); border-radius: 11px; background: var(--panel-strong); box-shadow: var(--shadow); transform-origin: top right; animation: package-menu-in var(--motion-fast) var(--ease-out-ui); }
+      .package-type-menu.is-above { transform-origin: bottom right; }
+      .package-type-option { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 29px; padding: 5px 8px; border: 0; border-radius: 7px; background: transparent; color: var(--ink-soft); font: 650 11px/1.3 var(--font-ui); text-align: left; cursor: pointer; }
+      .package-type-option:hover, .package-type-option:focus-visible { background: var(--panel-muted); color: var(--ink); outline: none; }
+      .package-type-option.is-selected { background: var(--blue-soft); color: var(--blue); font-weight: 800; }
+      .package-type-option.is-selected::after { content: "✓"; color: currentColor; font-weight: 900; }
+      .package-type-option.is-add { margin-top: 4px; border-top: 1px solid var(--line); border-radius: 0 0 7px 7px; padding-top: 8px; color: var(--blue); }
+      @keyframes package-menu-in { from { opacity: 0; transform: translateY(-4px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+      [data-theme="dark"] .package-type-menu { background: var(--panel-strong); }
+      @media (prefers-reduced-motion: reduce) { .package-type-menu { animation: none; } }
       .pair-reason { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; padding-top: 10px; color: var(--ink-faint); font-size: 9px; }
       .pair-reason > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .pair-reason .link-btn { flex: 0 0 auto; font-size: 9px; }
@@ -1042,34 +1060,189 @@
         body[data-active-view="aep"] #view-aep .aep-bottom,
         body[data-active-view="import"] #view-import .import-bottom { left: max(var(--workspace-gutter), calc((100vw - 1920px) / 2)); right: max(var(--workspace-gutter), calc((100vw - 1920px) / 2)); }
       }
+
+      /* 1.7.7 skill-guided interaction system: consistent, legible and keyboard complete. */
+      :root {
+        --motion-fast: 140ms;
+        --motion-medium: 220ms;
+        --ease-out-ui: cubic-bezier(.23, 1, .32, 1);
+        --ease-in-out-ui: cubic-bezier(.77, 0, .175, 1);
+        --focus-ring: 0 0 0 3px color-mix(in srgb, var(--blue) 24%, transparent);
+      }
+      .sr-only {
+        position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important;
+        margin: -1px !important; overflow: hidden !important; clip: rect(0, 0, 0, 0) !important;
+        white-space: nowrap !important; border: 0 !important;
+      }
+      .skip-link {
+        position: fixed; z-index: 100; top: 8px; left: 12px; padding: 8px 12px; border-radius: 8px;
+        background: var(--ink); color: var(--panel-strong); font-weight: 800; transform: translateY(-160%);
+        transition: transform var(--motion-fast) var(--ease-out-ui);
+      }
+      .skip-link:focus { transform: translateY(0); }
+      .workspace-main { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+      .workspace-view.active { animation: none; }
+      :focus { scroll-margin-top: 80px; scroll-margin-bottom: 84px; }
+      button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
+        outline: 2px solid var(--blue); outline-offset: 2px; box-shadow: var(--focus-ring);
+      }
+      button, .folder-input, summary { min-height: 32px; }
+      button { transition: transform var(--motion-fast) var(--ease-out-ui), background-color var(--motion-fast) ease, border-color var(--motion-fast) ease, color var(--motion-fast) ease, box-shadow var(--motion-fast) ease; }
+      button:active:not(:disabled) { transform: scale(.97); }
+      .primary-btn:active:not(:disabled) { transform: scale(.97); }
+      .topbar { position: relative; z-index: 30; }
+      .route-context strong { font-size: 13px; }
+      .api-state { font-size: 11px; }
+      .more-menu { transform-origin: top right; opacity: 1; transform: scale(1) translateY(0); transition: opacity var(--motion-fast) var(--ease-out-ui), transform var(--motion-fast) var(--ease-out-ui); }
+      @starting-style { .more-menu:not([hidden]) { opacity: 0; transform: scale(.97) translateY(-4px); } }
+      .menu-item { min-height: 40px; }
+
+      .home-task-card { cursor: default; }
+      .home-task-card:hover { transform: none; }
+      .home-task-card.is-dragover { transform: translateY(-2px); }
+      .home-drop-instruction { font-size: 11px; }
+      .home-task-card p, .home-secondary-task small { font-size: 12px; }
+      .home-secondary-task { min-height: 74px; }
+
+      .field-label, .side-label, .metric span, .plan-stat span { font-size: 11px; font-weight: 700; }
+      .text-input, .select-input, .package-type-select { min-height: 36px; font-size: 12px; }
+      .text-input:focus, .select-input:focus, .package-type-select:focus { outline: 2px solid var(--blue); outline-offset: 1px; box-shadow: var(--focus-ring); }
+      .metric, .plan-stat { min-height: 68px; padding: 10px 12px; }
+      .metric strong, .plan-stat strong { font-size: 21px; }
+      .section-head h2, .formal-toolbar h2, .managed-toolbar h2 { font-size: 16px; }
+      .section-head span, .formal-toolbar p, .managed-toolbar p { font-size: 11px; }
+      .status-badge { min-height: 24px; padding: 3px 8px; font-size: 10px; font-weight: 750; }
+      .empty-card { min-height: 96px; display: grid; place-items: center; padding: 24px; border: 1px dashed var(--line-strong); border-radius: 10px; background: color-mix(in srgb, var(--panel-muted) 55%, transparent); color: var(--ink-soft); text-align: center; }
+      .empty-card strong { color: var(--ink); }
+      .empty-state-actions { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+      .support-panel { margin: 0 20px 20px; padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-strong); box-shadow: var(--shadow-soft); }
+      .check-list { gap: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+      .check-row { min-height: 44px; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 12px; }
+      .check-row:last-child { border-bottom: 0; }
+      .update-layout { display: grid; grid-template-columns: minmax(260px, .85fr) minmax(320px, 1.15fr); gap: 12px; margin: 0 20px 20px; }
+      .update-card { min-width: 0; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-strong); box-shadow: var(--shadow-soft); }
+      .update-card h2 { font-size: 14px; }
+      .update-version-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 16px 0 12px; }
+      .update-version-row span { color: var(--ink-faint); font-size: 11px; }
+      .update-version-row strong { color: var(--ink); font: 750 13px var(--font-mono); }
+      .update-state { min-height: 24px; color: var(--ink-soft); font-size: 12px; line-height: 1.6; }
+      .update-state[data-tone="success"] { color: var(--green); }
+      .update-state[data-tone="error"] { color: var(--red); }
+      .update-state[data-tone="notice"] { color: var(--amber); }
+      .update-published { min-height: 18px; margin-top: 6px; color: var(--ink-faint); font-size: 10px; }
+      .update-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 16px; }
+      .update-notes { min-height: 190px; max-height: min(44vh, 430px); margin: 10px 0 0; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-soft); font: 11px/1.7 var(--font-sans); }
+      .update-install-hint { margin-top: 14px; padding: 10px; border: 1px dashed var(--line-strong); border-radius: 8px; color: var(--ink-faint); font-size: 10px; line-height: 1.6; }
+      .update-menu-badge { color: var(--amber); }
+      .update-available-btn { min-height: 28px; padding: 0 9px; border: 1px solid color-mix(in srgb, var(--amber) 36%, var(--line)); border-radius: 99px; background: var(--amber-soft); color: var(--amber); font-size: 10px; font-weight: 750; cursor: pointer; }
+      .update-available-btn:hover { border-color: var(--amber); }
+      @media (max-width: 760px) { .update-layout { grid-template-columns: 1fr; margin-right: 12px; margin-left: 12px; } .update-card { padding: 14px; } }
+
+      #view-import .package-card { cursor: default; }
+      #view-import .package-card:hover { transform: none; }
+      #view-import .pair-asset-head, #view-import .pair-file-name, #view-import .asset-card-footer,
+      #view-import .card-meta, #view-import .file-pill, #view-import .match-badge,
+      #view-import .selection-summary, #view-import .pair-risk-note strong,
+      #view-import .pair-risk-note span, #view-import .pair-block-note strong,
+      #view-import .pair-block-note span { font-size: 10px; }
+      #view-import .pair-asset-head strong, #view-import .card-title { font-size: 12px; }
+      #view-import .asset-change-btn { min-height: 28px; padding: 0 8px; font-size: 10px; }
+      #view-import .file-pill { min-height: 24px; display: inline-flex; align-items: center; padding: 2px 7px; }
+      #view-import .package-layout-control button, .managed-card-size-control button { min-width: 32px; min-height: 28px; padding: 0 8px; }
+      #packageSelectionSummary, #managedSummary, #batchInfo { min-height: 18px; }
+
+      #view-aep .aep-filter { min-height: 36px; font-size: 11px; }
+      #view-aep .aep-filter[aria-pressed="true"] { background: var(--blue-soft); color: var(--blue-deep); font-weight: 800; }
+      #view-aep .aep-tree-row { grid-template-columns: 26px 26px minmax(0, 1fr) 72px 60px 76px; min-height: 48px; }
+      #view-aep .aep-tree-expander { width: 26px; height: 26px; padding: 0; }
+      #view-aep .aep-tree-check { width: 18px; height: 18px; }
+      #view-aep .aep-tree-name { display: block; width: 100%; min-height: 34px; padding: 2px 0; border: 0; background: transparent; text-align: left; }
+      #view-aep .aep-tree-name small, #view-aep .aep-tree-meta, #view-aep .aep-tree-status { font-size: 10px; }
+      #view-aep .aep-tree-kind { min-width: 32px; height: 20px; font-size: 9px; }
+      #view-aep .aep-tree-row[aria-selected="true"] { border-color: var(--blue); background: var(--blue-soft); }
+      #view-aep .aep-tree-actions button { min-height: 30px; font-size: 10px; }
+      .aep-empty { min-height: 110px; display: grid; place-items: center; color: var(--ink-soft); text-align: center; }
+
+      .plan-card, .managed-card { width: 100%; color: var(--ink); text-align: left; }
+      .plan-name, .plan-meta, .plan-file-names, .managed-card-title, .managed-card-meta, .managed-card-files { display: block; }
+      .managed-card-title { overflow: hidden; font-size: 12px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+      .managed-card-files { display: flex; }
+      .plan-card { transition: border-color var(--motion-fast) ease, background-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease, transform var(--motion-fast) var(--ease-out-ui); }
+      .plan-card:hover { background: var(--panel-strong); }
+      .plan-name, .managed-card h3 { font-size: 12px; }
+      .plan-meta, .plan-file-names, .plan-reason, .managed-card-meta, .managed-detail-row, .managed-history-note { font-size: 10px; }
+      .managed-card-files span { min-height: 22px; display: inline-flex; align-items: center; padding: 2px 6px; font-size: 10px; }
+
+      .details-drawer summary, .log-drawer summary { min-height: 34px; display: flex; align-items: center; padding: 7px 10px; border-radius: 7px; }
+      .details-drawer summary:hover, .log-drawer summary:hover { background: var(--panel-muted); color: var(--ink); }
+      .bottom-bar { backdrop-filter: blur(18px); }
+
+      .modal-backdrop { display: flex; visibility: hidden; opacity: 0; pointer-events: none; transition: opacity 120ms ease; }
+      .modal-backdrop.open { visibility: visible; opacity: 1; pointer-events: auto; animation: none; transition-duration: var(--motion-medium); }
+      .modal-backdrop .modal { opacity: 0; transform: scale(.97) translateY(8px); transition: opacity 120ms ease, transform 120ms var(--ease-out-ui); }
+      .modal-backdrop.open .modal { opacity: 1; transform: scale(1) translateY(0); transition-duration: var(--motion-medium); }
+      .modal-sub { font-size: 11px; }
+      .modal-head .icon-btn { flex: none; }
+      .rename-error { min-height: 18px; }
+
+      .toast-notice { position: fixed; right: 18px; bottom: 18px; z-index: 60; width: min(360px, calc(100vw - 36px)); padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-strong); box-shadow: var(--shadow); opacity: 0; transform: translateY(10px); pointer-events: none; transition: opacity 120ms ease, transform 120ms var(--ease-out-ui); }
+      .toast-notice.show { opacity: 1; transform: translateY(0); transition-duration: 180ms; }
+      .toast-notice[data-kind="success"] { border-color: color-mix(in srgb, var(--green) 45%, var(--line)); }
+      .toast-notice[data-kind="error"] { border-color: color-mix(in srgb, var(--red) 55%, var(--line)); }
+      .toast-notice strong { display: block; font-size: 12px; }
+      .toast-notice span { display: block; margin-top: 3px; color: var(--ink-soft); font-size: 11px; }
+
+      @media (hover: hover) and (pointer: fine) {
+        .primary-btn:hover { transform: translateY(-1px); }
+        .managed-card:hover, .plan-card:hover { transform: translateY(-1px); }
+      }
+      @media (hover: none), (pointer: coarse) {
+        .primary-btn:hover, .managed-card:hover, .plan-card:hover, .asset-preview-hit:hover, .source-asset:hover { transform: none; }
+      }
+      @media (max-width: 760px) {
+        .support-panel { margin: 0 12px 16px; padding: 14px; }
+        .topbar { gap: 8px; padding: 10px 12px; }
+        .brand { min-width: 0; }
+        .brand-copy span, .api-state span:last-child { display: none; }
+        #view-aep .aep-tree-row { grid-template-columns: 26px 26px minmax(0, 1fr); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+        .modal-backdrop .modal, .toast-notice, .skip-link { transform: none; }
+      }
     </style>
   </head>
   <body data-theme="light" data-active-view="home">
+    <a class="skip-link" href="#mainContent">跳到主要内容</a>
     <div class="app">
       <header class="topbar">
         <button class="icon-btn topbar-back" id="backBtn" type="button" aria-label="返回上一步" hidden>←</button>
-        <div class="brand"><img src="logo.png" alt="X.bot" /><div class="brand-copy"><strong>X.bot 包装工作流</strong><span>AE → Eagle · v1.7.6</span></div></div>
-        <div class="route-context" id="routeContext"><strong>任务首页</strong></div>
-        <div class="top-actions"><div class="api-state"><span class="api-dot" id="apiDot"></span><span id="apiState">正在检测 Eagle API…</span></div><div class="popover"><button class="icon-btn" id="moreBtn" type="button" aria-label="更多工具" aria-expanded="false">•••</button><div class="more-menu" id="moreMenu" hidden><button class="menu-item" type="button" data-view="formal"><span>历史待入库</span><small>兼容</small></button><button class="menu-item" type="button" data-view="history"><span>批次记录</span><small>记录</small></button><button class="menu-item" type="button" data-view="diagnostics"><span>系统诊断</span><small>工具</small></button></div></div><button class="icon-btn" type="button" data-action="toast" data-title="帮助" data-message="新增包装会根据 AEP 或交付文件夹进入对应流程；维护包装使用独立入口，历史与诊断在更多菜单中。">?</button><button class="icon-btn" type="button" data-action="toggle-theme" aria-label="切换主题">◐</button></div>
+        <div class="brand"><img src="logo.png" alt="X.bot" /><div class="brand-copy"><strong>X.bot 包装工作流</strong><span>AE → Eagle · v1.7.7</span></div></div>
+        <div class="route-context" id="routeContext" aria-live="polite"><strong>任务首页</strong></div>
+        <div class="top-actions"><div class="api-state" role="status" aria-live="polite"><span class="api-dot" id="apiDot" aria-hidden="true"></span><span id="apiState">正在检测 Eagle API…</span></div><button class="update-available-btn" id="updateAvailableButton" type="button" data-view="updates" hidden>发现新版本</button><div class="popover"><button class="icon-btn" id="moreBtn" type="button" aria-label="更多工具" aria-haspopup="menu" aria-controls="moreMenu" aria-expanded="false">•••</button><div class="more-menu" id="moreMenu" role="menu" hidden><button class="menu-item" type="button" role="menuitem" data-view="updates"><span>版本更新</span><small id="updateMenuHint">检查</small><small class="update-menu-badge" id="updateMenuBadge" hidden>有新版本</small></button><button class="menu-item" type="button" role="menuitem" data-view="formal"><span>历史待入库</span><small>兼容</small></button><button class="menu-item" type="button" role="menuitem" data-view="history"><span>批次记录</span><small>记录</small></button><button class="menu-item" type="button" role="menuitem" data-view="diagnostics"><span>系统诊断</span><small>工具</small></button></div></div><button class="icon-btn" type="button" aria-label="查看帮助" data-action="toast" data-title="帮助" data-message="新增包装会根据 AEP 或交付文件夹进入对应流程；维护包装使用独立入口，历史、版本更新与诊断在更多菜单中。">?</button><button class="icon-btn" type="button" data-action="toggle-theme" aria-label="切换主题">◐</button></div>
       </header>
 
+      <main class="workspace-main" id="mainContent" tabindex="-1">
+
       <section class="workspace-view active" id="view-home">
-        <div class="home-task-grid"><section class="home-task-card" id="homeDropZone" tabindex="0" role="button" aria-label="拖入或选择 AEP 工程、包装文件夹"><div class="home-drop-instruction" id="homeDropLabel">拖入 AEP 或包装文件夹</div><h1>新增包装</h1><p>系统会根据内容直接进入合成选择或 PNG + ZIP 配对确认。</p><div class="home-task-actions"><button class="primary-btn" type="button" data-home-pick="aep">选择 AEP 工程</button><button class="quiet-btn" type="button" data-home-pick="folder">选择交付文件夹</button></div></section></div>
+        <div class="home-task-grid"><section class="home-task-card" id="homeDropZone" aria-labelledby="homeNewTitle" aria-describedby="homeDropDescription"><div class="home-drop-instruction" id="homeDropLabel">拖入 AEP 或包装文件夹</div><h1 id="homeNewTitle">新增包装</h1><p id="homeDropDescription">系统会根据内容直接进入合成选择或 PNG + ZIP 配对确认，也可以使用下方按钮选择文件。</p><div class="home-task-actions"><button class="primary-btn" type="button" data-home-pick="aep">选择 AEP 工程</button><button class="quiet-btn" type="button" data-home-pick="folder">选择交付文件夹</button></div></section></div>
         <div class="home-secondary-row"><button class="home-secondary-task" type="button" data-view="managed"><span class="home-secondary-copy"><strong>维护已入库包装</strong><small>更新素材或发布新版本</small></span><span class="home-secondary-action">打开素材库 →</span></button><button class="home-secondary-task" id="homeResumeBtn" type="button" disabled><span class="home-secondary-copy"><small>继续当前任务</small><strong id="homeResumeTitle">尚未开始</strong></span><span class="home-secondary-action">继续 →</span></button></div>
       </section>
 
-       <section class="workspace-view" id="view-import" hidden>
+       <section class="workspace-view" id="view-import" aria-labelledby="importViewTitle" hidden>
+         <h1 class="sr-only" id="importViewTitle" tabindex="-1">新增包装：确认交付物</h1>
          <div class="import-shell"><div class="import-main">
           <div class="drop-card" id="dropZone" title="支持收集器输出的 PNG、ZIP、manifest，以及 Eagle 已导入的项目目录"><div class="drop-copy"><div class="drop-mark">↥</div><div><strong>拖入项目包装文件夹</strong><span id="dropLabel">拖入文件夹后自动扫描；也支持收集器输出的 PNG、ZIP、manifest</span></div></div><div class="drop-actions"><label class="folder-input">选择文件夹<input type="file" id="folderPicker" webkitdirectory directory /></label><button class="primary-btn" id="scanBtn" type="button" disabled>开始扫描</button></div></div>
           <div class="input-row"><div><label class="field-label" for="projectName">项目名称</label><input class="text-input" id="projectName" type="text" placeholder="扫描后自动识别，可在这里修改" /></div><div><label class="field-label" for="importMode">重复批次</label><select class="select-input" id="importMode"><option value="prompt">检测到重复时停下</option><option value="reuse">复用现有批次</option><option value="update">更新现有批次</option><option value="new">新建独立批次</option></select></div></div>
           <div class="metrics"><div class="metric"><span>将导入</span><strong id="statToImport">0</strong></div><div class="metric"><span>仅校验</span><strong id="statValidate">0</strong></div><div class="metric"><span>忽略</span><strong id="statIgnore">0</strong></div><div class="metric"><span>冲突</span><strong id="statConflict">0</strong></div></div>
-           <div class="section-head import-section-head"><div><h2>包装配对预检</h2><span id="batchInfo">等待选择文件夹…</span></div><div class="import-head-tools"><span id="packageSelectionSummary" class="selection-summary">0 组已选</span><div class="package-layout-control" role="group" aria-label="配对卡片布局"><button type="button" data-import-card-size="compact" aria-label="双列卡片" title="双列卡片">双列</button><button class="active" type="button" data-import-card-size="medium" aria-label="标准单列" aria-pressed="true" title="标准单列">单列</button><button type="button" data-import-card-size="large" aria-label="大图单列" title="大图单列">大图</button></div></div></div><div class="package-grid" id="packageRows" data-card-size="medium"><div class="empty-card" style="grid-column:1/-1;border:1px dashed var(--line-strong);border-radius:9px;padding:24px;text-align:center;color:var(--ink-faint);">选择一个项目包装文件夹后，这里会显示 PNG 与 ZIP 的对应关系。</div></div>
+           <div class="section-head import-section-head"><div><h2>包装配对预检</h2><span id="batchInfo" aria-live="polite">等待选择文件夹…</span></div><div class="import-head-tools"><span id="packageSelectionSummary" class="selection-summary" aria-live="polite">0 组已选</span><div class="package-layout-control" role="group" aria-label="配对卡片布局"><button type="button" data-import-card-size="compact" aria-label="双列卡片" aria-pressed="false" title="双列卡片">双列</button><button class="active" type="button" data-import-card-size="medium" aria-label="标准单列" aria-pressed="true" title="标准单列">单列</button><button type="button" data-import-card-size="large" aria-label="大图单列" aria-pressed="false" title="大图单列">大图</button></div></div></div><div class="package-grid" id="packageRows" data-card-size="medium"><div class="empty-card" style="grid-column:1/-1;">选择一个项目包装文件夹后，这里会显示 PNG 与 ZIP 的对应关系。</div></div>
           <details class="details-drawer"><summary>查看全部扫描文件</summary><div class="file-detail-list" id="fileRows"></div></details>
           </div><div class="bottom-bar import-bottom"><div class="bottom-copy">确认后直接写入 <strong>01_预览图</strong> / <strong>02_AE源文件</strong>，不经过待入库。</div><div class="bottom-actions"><button class="primary-btn" id="importBtn" type="button" disabled>直接入库 Eagle</button></div></div></div>
         <details class="log-drawer"><summary>运行记录</summary><div id="log">等待选择文件夹…</div></details>
       </section>
 
-      <section class="workspace-view" id="view-aep" hidden>
+      <section class="workspace-view" id="view-aep" aria-labelledby="aepViewTitle" hidden>
+        <h1 class="sr-only" id="aepViewTitle" tabindex="-1">新增包装：选择交付合成</h1>
         <div class="aep-import-shell">
           <div class="aep-setup compact-setup">
             <div class="drop-card aep-drop-card"><div class="drop-copy"><div class="drop-mark aep-drop-mark">AE</div><div><strong>选择 AEP 工程</strong><span id="aepFileLabel">尚未选择 .aep</span></div></div><div class="drop-actions"><label class="folder-input aep-file-action">选择 AEP<input id="aepPicker" type="file" accept=".aep,application/octet-stream" /></label><button class="primary-btn" id="aepInspectBtn" type="button" disabled>读取合成结构</button></div></div>
@@ -1080,9 +1253,9 @@
               <aside class="aep-side">
                 <div class="aep-side-title" title="点击合成名称查看详情；勾选框加入独立收集队列">结构筛选 <small id="aepWorkerState">Worker 待命</small></div>
                 <div class="aep-field"><label class="field-label" for="aepSearch">搜索合成</label><input class="text-input" id="aepSearch" type="search" placeholder="名称、尺寸或角色" /></div>
-                <div class="aep-filter-list" id="aepFilters"><button class="aep-filter active" type="button" data-aep-filter="all">全部合成</button><button class="aep-filter" type="button" data-aep-filter="candidate">推荐交付</button><button class="aep-filter" type="button" data-aep-filter="root">顶层合成</button><button class="aep-filter" type="button" data-aep-filter="child">直属预合成</button><button class="aep-filter" type="button" data-aep-filter="warning">需要复核</button></div>
+                <div class="aep-filter-list" id="aepFilters" role="group" aria-label="合成结构筛选"><button class="aep-filter active" type="button" data-aep-filter="all" aria-pressed="true">全部合成</button><button class="aep-filter" type="button" data-aep-filter="candidate" aria-pressed="false">推荐交付</button><button class="aep-filter" type="button" data-aep-filter="root" aria-pressed="false">顶层合成</button><button class="aep-filter" type="button" data-aep-filter="child" aria-pressed="false">直属预合成</button><button class="aep-filter" type="button" data-aep-filter="warning" aria-pressed="false">需要复核</button></div>
               </aside>
-              <main class="aep-tree-panel"><div class="aep-tree-toolbar" title="勾选需要独立交付的合成"><div class="aep-tree-toolbar-copy"><h2>合成结构浏览器</h2><p><span class="aep-toolbar-key root">ROOT</span>根合成 <span class="aep-toolbar-key child">PRE</span>直属预合成 · 共享引用也可分别勾选，收集时按合成 ID 去重</p></div><div class="aep-tree-actions"><button class="quiet-btn" id="aepExpandBtn" type="button" disabled>展开</button><button class="quiet-btn" id="aepCollapseBtn" type="button" disabled>收起</button><button class="quiet-btn" id="aepSelectVisibleBtn" type="button" disabled>全选当前</button><button class="quiet-btn" id="aepDeselectVisibleBtn" type="button" disabled>取消选择</button></div></div><div class="aep-tree-head"><span>层级 / 合成名称</span><span>尺寸</span><span>时长</span><span>状态</span></div><div class="aep-tree-list" id="aepTree"><div class="aep-empty">先选择一个 AEP 工程，再读取离线合成结构。</div></div></main>
+              <div class="aep-tree-panel"><div class="aep-tree-toolbar" title="勾选需要独立交付的合成"><div class="aep-tree-toolbar-copy"><h2>合成结构浏览器</h2><p><span class="aep-toolbar-key root">ROOT</span>根合成 <span class="aep-toolbar-key child">PRE</span>直属预合成 · 共享引用也可分别勾选，收集时按合成 ID 去重</p></div><div class="aep-tree-actions"><button class="quiet-btn" id="aepExpandBtn" type="button" disabled>展开</button><button class="quiet-btn" id="aepCollapseBtn" type="button" disabled>收起</button><button class="quiet-btn" id="aepSelectVisibleBtn" type="button" disabled>全选当前</button><button class="quiet-btn" id="aepDeselectVisibleBtn" type="button" disabled>取消选择</button></div></div><div class="aep-tree-head" aria-hidden="true"><span>层级 / 合成名称</span><span>尺寸</span><span>时长</span><span>状态</span></div><div class="aep-tree-list" id="aepTree" role="tree" aria-label="AEP 合成结构"><div class="aep-empty">先选择一个 AEP 工程，再读取离线合成结构。</div></div></div>
               <aside class="aep-inspector" id="aepInspector"><div class="aep-inspector-title">合成检查器</div><div class="aep-empty">点击左侧合成名称查看尺寸、父级、直属预合成和预览来源。</div></aside>
             </div>
           </div>
@@ -1094,7 +1267,7 @@
       <section class="workspace-view" id="view-formal" hidden>
         <div class="screen-head"><div><div class="eyebrow">Legacy / 02</div><h1>历史待入库批次</h1><p>这里只处理升级前遗留在 00_待入库 的批次；新导入流程不会再经过这里。</p></div><div class="head-actions"><button class="quiet-btn" id="reloadBatchBtn" type="button">刷新批次</button><button class="primary-btn" id="fileBtn" type="button" disabled>刷新预检</button></div></div>
         <div class="formal-shell">
-          <aside class="formal-side"><div class="side-title">批次与筛选 <small id="batchCount">0 项</small></div><div class="side-label">当前批次</div><div class="batch-select-wrap"><select class="select-input" id="batchSelect" disabled><option>正在加载…</option></select></div><div class="side-label">查看</div><div class="filter-list" id="planFilters"><button class="filter-button active" type="button" data-plan-filter="all">全部记录 <span class="filter-count" id="filterAllCount">0</span></button><button class="filter-button" type="button" data-plan-filter="ready">可入库 <span class="filter-count" id="filterReadyCount">0</span></button><button class="filter-button" type="button" data-plan-filter="review">待补充 <span class="filter-count" id="filterReviewCount">0</span></button><button class="filter-button" type="button" data-plan-filter="blocked">阻止 <span class="filter-count" id="filterBlockedCount">0</span></button></div><div class="side-label">辅助</div><div class="filter-list"><button class="filter-button" type="button" data-action="show-rename">批量规范命名</button><button class="filter-button" type="button" data-action="toast" data-title="审查原则" data-message="文件名只用于人工识别，稳定关联以 package_id、batch_id 和 manifest 为准。">查看命名原则</button></div><div class="side-note">这里只读取历史 00_待入库 批次。新批次会在确认配对和命名后直接进入正式目录。</div></aside>
+          <aside class="formal-side"><div class="side-title">批次与筛选 <small id="batchCount">0 项</small></div><label class="side-label" for="batchSelect">当前批次</label><div class="batch-select-wrap"><select class="select-input" id="batchSelect" disabled><option>正在加载…</option></select></div><div class="side-label">查看</div><div class="filter-list" id="planFilters" role="group" aria-label="入库记录筛选"><button class="filter-button active" type="button" data-plan-filter="all" aria-pressed="true">全部记录 <span class="filter-count" id="filterAllCount">0</span></button><button class="filter-button" type="button" data-plan-filter="ready" aria-pressed="false">可入库 <span class="filter-count" id="filterReadyCount">0</span></button><button class="filter-button" type="button" data-plan-filter="review" aria-pressed="false">待补充 <span class="filter-count" id="filterReviewCount">0</span></button><button class="filter-button" type="button" data-plan-filter="blocked" aria-pressed="false">阻止 <span class="filter-count" id="filterBlockedCount">0</span></button></div><div class="side-label">辅助</div><div class="filter-list"><button class="filter-button" type="button" data-action="show-rename">批量规范命名</button><button class="filter-button" type="button" data-action="toast" data-title="审查原则" data-message="文件名只用于人工识别，稳定关联以 package_id、batch_id 和 manifest 为准。">查看命名原则</button></div><div class="side-note">这里只读取历史 00_待入库 批次。新批次会在确认配对和命名后直接进入正式目录。</div></aside>
           <section class="formal-content"><div class="formal-toolbar"><div><h2>入库预检</h2><p id="fileInfo">请选择一个待入库批次</p></div><span class="status-badge status-muted" id="formalState">等待批次</span></div><div class="plan-stats"><div class="plan-stat"><span>可入库</span><strong id="statFileReady">0</strong></div><div class="plan-stat"><span>待补充/阻止</span><strong id="statFileBlocked">0</strong></div><div class="plan-stat"><span>已入库</span><strong id="statFileAlready">0</strong></div><div class="plan-stat"><span>批次剩余</span><strong id="statFileRemaining">0</strong></div></div><div class="plan-list" id="filePlanRows"><div class="empty-card" style="border:1px dashed var(--line-strong);border-radius:9px;padding:24px;text-align:center;color:var(--ink-faint);">选择待入库批次后，这里会显示正式入库计划。</div></div></section>
           <aside class="formal-inspector" id="packageInspector"><div class="empty-card" style="border:1px dashed var(--line-strong);border-radius:9px;padding:24px;text-align:center;color:var(--ink-faint);">点击一条包装记录查看预览、配对关系和事实字段。</div></aside>
         </div>
@@ -1102,19 +1275,28 @@
         <details class="log-drawer"><summary>运行记录</summary><div id="logFormal">等待加载待入库批次…</div></details>
       </section>
 
-      <section class="workspace-view" id="view-history" hidden><div class="screen-head"><div><div class="eyebrow">History</div><h1>批次记录</h1><p>批次与修订事实保存在 bot 索引中；当前插件尚未提供历史列表读取，只展示真实可用的维护入口。</p></div></div><div class="import-main" style="margin:0 20px 20px;border:1px solid var(--line);border-radius:12px;"><div class="empty-card" style="border:1px dashed var(--line-strong);border-radius:9px;padding:32px;text-align:center;color:var(--ink-faint);">需要查看具体记录时，请进入“维护已入库包装”选择正式素材；批次列表将在索引读取接口接入后显示。</div></div></section>
-      <section class="workspace-view" id="view-diagnostics" hidden><div class="screen-head"><div><div class="eyebrow">System / 04</div><h1>系统诊断</h1><p>在正式操作前确认 Eagle、目录和批量命名所需的基础环境。</p></div></div><div class="import-main" style="margin:0 20px 20px;border:1px solid var(--line);border-radius:12px;"><div class="check-list"><div class="check-row"><span>Eagle Plugin API</span><strong class="check-ok" id="diagApi">检测中</strong></div><div class="check-row"><span>当前活动库</span><strong>由 Eagle 提供</strong></div><div class="check-row"><span>正式目录结构</span><strong class="check-ok">按需创建</strong></div><div class="check-row"><span>命名校验</span><strong class="check-ok">已启用</strong></div><div class="check-row"><span>Bot 同步事件</span><strong class="check-warn">依赖运行根目录</strong></div></div></div></section>
-      <section class="workspace-view" id="view-managed" hidden>
+      <section class="workspace-view" id="view-history" hidden><div class="screen-head"><div><div class="eyebrow">History</div><h1 tabindex="-1">批次记录</h1><p>批次与修订事实保存在 bot 索引中；当前插件尚未提供历史列表读取，只展示真实可用的维护入口。</p></div></div><div class="support-panel"><div class="empty-card"><div><strong>批次列表尚未接入读取接口</strong><p>可以先从正式素材中查看当前版本、更新记录和关联事实。</p><div class="empty-state-actions"><button class="primary-btn" type="button" data-view="managed">维护已入库包装</button><button class="quiet-btn" type="button" data-view="home">返回任务首页</button></div></div></div></div></section>
+      <section class="workspace-view" id="view-diagnostics" hidden><div class="screen-head"><div><div class="eyebrow">System / 04</div><h1 tabindex="-1">系统诊断</h1><p>在正式操作前确认 Eagle、目录和批量命名所需的基础环境。</p></div></div><div class="support-panel"><div class="check-list" aria-label="系统诊断结果"><div class="check-row"><span>Eagle Plugin API</span><strong class="check-ok" id="diagApi" aria-live="polite">检测中</strong></div><div class="check-row"><span>当前活动库</span><strong>由 Eagle 提供</strong></div><div class="check-row"><span>正式目录结构</span><strong class="check-ok">按需创建</strong></div><div class="check-row"><span>命名校验</span><strong class="check-ok">已启用</strong></div><div class="check-row"><span>Bot 同步事件</span><strong class="check-warn">依赖运行根目录</strong></div></div><div class="empty-state-actions"><button class="quiet-btn" type="button" data-view="home">返回任务首页</button><button class="primary-btn" type="button" data-view="managed">检查正式素材</button></div></div></section>
+      <section class="workspace-view" id="view-updates" aria-labelledby="updatesViewTitle" hidden>
+        <div class="screen-head"><div><div class="eyebrow">Plugin / Update</div><h1 id="updatesViewTitle" tabindex="-1">版本更新</h1><p>查询公开 GitHub Release，查看版本说明并下载 Eagle 安装包。</p></div></div>
+        <div class="update-layout">
+          <section class="update-card" aria-labelledby="updateStatusTitle"><h2 id="updateStatusTitle">插件版本</h2><div class="update-version-row"><span>本地版本</span><strong id="currentPluginVersion">v1.7.7</strong></div><div class="update-version-row"><span>最新版本</span><strong id="latestPluginVersion">尚未检查</strong></div><p class="update-state" id="pluginUpdateStatus" role="status" aria-live="polite">打开此页面查询 GitHub 更新。</p><p class="update-published" id="pluginUpdatePublished"></p><div class="update-actions"><button class="quiet-btn" id="checkPluginUpdateBtn" type="button" data-action="check-plugin-update">检查更新</button><button class="primary-btn" id="downloadPluginUpdateBtn" type="button" data-action="download-plugin-update" disabled>下载并打开安装包</button><button class="quiet-btn" id="openPluginPackageBtn" type="button" data-action="open-plugin-package" hidden>重新打开安装包</button></div><p class="update-install-hint">下载完成后会校验文件大小和 GitHub 提供的 SHA-256（若 Release 提供）。打开安装包后由 Eagle 接手安装；请在 Eagle 的确认界面完成更新，并在安装完成后重新打开插件。</p></section>
+          <section class="update-card" aria-labelledby="updateNotesTitle"><h2 id="updateNotesTitle">版本说明</h2><pre class="update-notes" id="pluginUpdateNotes">尚未获取版本说明。</pre></section>
+        </div>
+      </section>
+      <section class="workspace-view" id="view-managed" aria-labelledby="managedViewTitle" hidden>
+        <h1 class="sr-only" id="managedViewTitle" tabindex="-1">维护已入库包装</h1>
         <div class="managed-shell">
           <aside class="managed-side"><div class="side-title">正式包装 <small id="managedCount">0 项</small></div><label class="field-label" for="managedProject">项目</label><select class="select-input" id="managedProject"><option value="all">全部项目</option></select><label class="field-label" for="managedSearch">搜索</label><input class="text-input" id="managedSearch" type="search" placeholder="包装名称、类型或版本" /><div class="managed-side-note">同一包装的预览图与 ZIP 使用稳定 package_id 关联。替换动作先写入新素材，确认后才切换当前指针；旧 item 保留在 03_历史版本。</div></aside>
-          <main class="managed-main"><div class="managed-toolbar"><div><h2>当前正式素材</h2><p id="managedSummary">正在读取 Eagle 正式目录…</p></div><div class="managed-toolbar-actions"><span class="status-badge status-ready">只显示启用记录</span><div class="managed-card-size-control" role="group" aria-label="卡片大小"><button type="button" data-managed-card-size="compact" aria-label="小卡片，显示更多列" title="小卡片 · 更多列">小</button><button class="active" type="button" data-managed-card-size="medium" aria-label="中等卡片" aria-pressed="true" title="中等卡片">中</button><button type="button" data-managed-card-size="large" aria-label="大卡片，显示更大预览" title="大卡片 · 更大预览">大</button></div><button class="quiet-btn" type="button" data-managed-action="refresh">刷新正式素材</button><button class="primary-btn" type="button" data-managed-action="add">添加新包装</button></div></div><div class="managed-grid" id="managedRows" data-card-size="medium"><div class="empty-card">正在读取正式 PNG + ZIP 配对…</div></div></main>
+          <div class="managed-main"><div class="managed-toolbar"><div><h2>当前正式素材</h2><p id="managedSummary" aria-live="polite">正在读取 Eagle 正式目录…</p></div><div class="managed-toolbar-actions"><span class="status-badge status-ready">只显示启用记录</span><div class="managed-card-size-control" role="group" aria-label="卡片大小"><button type="button" data-managed-card-size="compact" aria-label="小卡片，显示更多列" aria-pressed="false" title="小卡片 · 更多列">小</button><button class="active" type="button" data-managed-card-size="medium" aria-label="中等卡片" aria-pressed="true" title="中等卡片">中</button><button type="button" data-managed-card-size="large" aria-label="大卡片，显示更大预览" aria-pressed="false" title="大卡片 · 更大预览">大</button></div><button class="quiet-btn" type="button" data-managed-action="refresh">刷新正式素材</button><button class="primary-btn" type="button" data-managed-action="add">添加新包装</button></div></div><div class="managed-grid" id="managedRows" data-card-size="medium"><div class="empty-card">正在读取正式 PNG + ZIP 配对…</div></div></div>
           <aside class="managed-inspector" id="managedInspector"><div class="empty-card">选择一条包装，查看当前版本并执行更新。</div></aside>
         </div>
         <input id="managedPreviewPicker" type="file" accept=".png,image/png" hidden /><input id="managedSourcePicker" type="file" accept=".zip,application/zip" hidden />
         <details class="log-drawer"><summary>维护运行记录</summary><div id="managedLog">等待读取正式素材…</div></details>
       </section>
 
-      <section class="workspace-view" id="view-success" hidden><div class="success-stage"><div><div class="success-mark">✓</div><h1 id="successTitle">包装已写入 Eagle</h1><p id="successSummary">配对、命名和项目标签已经完成。</p><div class="success-actions"><button class="quiet-btn" type="button" data-view="home">返回任务首页</button><button class="primary-btn" type="button" data-view="managed">查看已入库包装</button></div></div></div></section>
+      <section class="workspace-view" id="view-success" hidden><div class="success-stage"><div><div class="success-mark" aria-hidden="true">✓</div><h1 id="successTitle" tabindex="-1">包装已写入 Eagle</h1><p id="successSummary" aria-live="polite">配对、命名和项目标签已经完成。</p><div class="success-actions"><button class="quiet-btn" type="button" data-view="home">返回任务首页</button><button class="primary-btn" type="button" data-view="managed">查看已入库包装</button></div></div></div></section>
+      </main>
     </div>
 
     <div class="modal-backdrop" id="assetModal" role="dialog" aria-modal="true" aria-labelledby="assetTitle"><div class="modal asset-modal"><div class="modal-head"><div><h2 id="assetTitle">资产详情</h2><p class="modal-sub" id="assetSub">查看文件信息</p></div><button class="icon-btn" type="button" data-close-modal aria-label="关闭">×</button></div><div id="assetBody"></div></div></div>
@@ -1130,7 +1312,7 @@
 
     <div class="modal-backdrop" id="renameModal" role="dialog" aria-modal="true" aria-labelledby="renameTitle"><div class="modal"><div class="modal-head"><div><h2 id="renameTitle">批量规范命名</h2><p class="modal-sub">先用规则生成，再逐条修改。只改本批次素材名称，不改原工程、不改变稳定配对。</p></div><button class="icon-btn" type="button" data-close-modal aria-label="关闭">×</button></div><div class="rename-fields"><div><label class="field-label" for="previewTemplate">预览图命名模板</label><input class="text-input" id="previewTemplate" type="text" value="{项目}_{类型}_{包装}_{版本}" /></div><div><label class="field-label" for="sourceTemplate">源文件命名模板</label><input class="text-input" id="sourceTemplate" type="text" value="{项目}_{包装}_{版本}" /></div></div><div class="token-bank"><span>插入字段</span><button class="token-chip" type="button" data-token="{项目}">{项目}</button><button class="token-chip" type="button" data-token="{包装}">{包装}</button><button class="token-chip" type="button" data-token="{类型}">{类型}</button><button class="token-chip" type="button" data-token="{版本}">{版本}</button><button class="token-chip" type="button" data-token="{合成}">{合成}</button></div><div class="rename-note"><span aria-hidden="true">i</span><span><strong>默认规则与项目文档一致：</strong>预览图包含项目、类型、包装名称和版本；源文件包含项目、包装名称和版本。扩展名由文件类型保留。</span></div><div class="rename-table-wrap" style="overflow:auto;"><div class="rename-table" id="renameRows"></div></div><div class="rename-footer"><span id="renameSummary">等待生成名称</span><span class="rename-error" id="renameError"></span></div><div class="rename-actions"><button class="quiet-btn" type="button" data-action="reset-rename">恢复默认规则</button><div class="button-row"><button class="quiet-btn" type="button" data-action="validate-rename">校验名称</button><button class="quiet-btn" type="button" data-action="apply-rename">应用规则并预览</button><button class="primary-btn" type="button" data-action="confirm-rename">确认命名并继续</button></div></div></div></div>
 
-    <div id="toast" style="position:fixed;right:18px;bottom:18px;z-index:30;display:none;max-width:320px;padding:11px 13px;border:1px solid var(--line);border-radius:9px;background:var(--panel-strong);box-shadow:var(--shadow);"><strong id="toastTitle" style="display:block;font-size:11px;"></strong><span id="toastMessage" style="display:block;margin-top:2px;color:var(--ink-soft);font-size:10px;"></span></div>
+    <div class="toast-notice" id="toast" role="status" aria-live="polite" aria-atomic="true" hidden><strong id="toastTitle"></strong><span id="toastMessage"></span></div>
     <script src="js/plugin.js"></script>
   </body>
 </html>

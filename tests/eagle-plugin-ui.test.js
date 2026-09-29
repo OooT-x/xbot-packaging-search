@@ -13,15 +13,15 @@ test("keeps the progressive home and every workspace inside the app shell", () =
   const appEnd = html.indexOf('<div class="modal-backdrop"');
 
   assert.ok(appStart >= 0 && appEnd > appStart);
-  for (const view of ["home", "import", "aep", "formal", "history", "diagnostics", "managed", "success"]) {
+  for (const view of ["home", "import", "aep", "formal", "history", "diagnostics", "managed", "updates", "success"]) {
     const offset = html.indexOf(`id="view-${view}"`);
     assert.ok(offset > appStart && offset < appEnd, `${view} view should remain inside .app`);
   }
   assert.match(html, /<section class="workspace-view active" id="view-home">/);
-  assert.match(html, /<section class="workspace-view" id="view-import" hidden>/);
+  assert.match(html, /<section class="workspace-view" id="view-import"[^>]*hidden>/);
   assert.match(html, /id="backBtn"[^>]*hidden/);
-  assert.match(html, /id="routeContext"><strong>任务首页<\/strong>/);
-  assert.match(html, /id="moreMenu" hidden/);
+  assert.match(html, /id="routeContext"[^>]*><strong>任务首页<\/strong>/);
+  assert.match(html, /id="moreMenu"[^>]*hidden/);
   assert.match(html, /data-home-pick="aep"/);
   assert.match(html, /data-home-pick="folder"/);
   assert.match(html, /data-view="managed"/);
@@ -33,7 +33,12 @@ test("keeps the progressive home and every workspace inside the app shell", () =
   assert.match(pluginJs, /elements\.backBtn\?\.addEventListener\("click", goBack\)/);
   assert.match(pluginJs, /elements\.homeDropZone\?\.addEventListener\("drop", async/);
   assert.match(pluginJs, /if \(scanSelectedDirectory\(\)\) showToast\("已扫描文件夹"/);
-  assert.match(pluginJs, /setView\("home", \{ remember: false \}\)/);
+  assert.match(pluginJs, /setView\("home", \{ remember: false, focus: false \}\)/);
+  assert.match(html, /data-view="updates"/);
+  assert.match(html, /id="updateAvailableButton"[^>]*data-view="updates"[^>]*hidden/);
+  assert.match(pluginJs, /pluginUpdater\.checkForUpdate\(PLUGIN_VERSION\)/);
+  assert.match(pluginJs, /pluginUpdater\.downloadPluginUpdate\(update\.info, downloadsDirectory\)/);
+  assert.match(pluginJs, /window\.eagle\?\.shell\?\.openPath/);
 });
 
 test("production import view exposes preview-first pairing and direct naming", () => {
@@ -57,7 +62,7 @@ test("production import view exposes preview-first pairing and direct naming", (
   assert.doesNotMatch(html, /写入 00_待入库/);
   assert.match(html, /id="assetModal"/);
   assert.match(html, /class="bottom-bar import-bottom"/);
-  assert.match(html, /AE → Eagle · v1\.7\.6/);
+  assert.match(html, /AE → Eagle · v1\.7\.7/);
   assert.match(html, /@keyframes view-in \{ from \{ opacity: 0; \} to \{ opacity: 1; \} \}/);
   assert.match(html, /body\[data-active-view="import"\] #view-import \{ padding-bottom: 104px; \}/);
   assert.match(html, /body\[data-active-view="import"\] #view-import \.import-bottom \{ position: fixed/);
@@ -65,6 +70,12 @@ test("production import view exposes preview-first pairing and direct naming", (
   assert.match(pluginJs, /data-package-name=/);
   assert.match(pluginJs, /data-package-type=/);
   assert.match(pluginJs, /function packageTypeEditor\(pkg\)/);
+  assert.match(pluginJs, /data-package-type-trigger=/);
+  assert.match(pluginJs, /role="listbox"/);
+  assert.match(pluginJs, /function openPackageTypeMenu\(trigger\)/);
+  assert.match(pluginJs, /function applyPackageTypeSelection\(packageId, value\)/);
+  assert.match(html, /\.package-type-menu \{ position: fixed/);
+  assert.match(pluginJs, /menu\._xbotPicker =/);
   assert.match(pluginJs, /const explicitType = String\(pkg\.packageType \|\| ""\)\.trim\(\);/);
   assert.match(pluginJs, /function sortPackages\(packages\)/);
   assert.match(pluginJs, /const packages = sortPackages\(scan\.packages \|\| \[\]\)/);
@@ -110,10 +121,9 @@ test("production import view exposes preview-first pairing and direct naming", (
   assert.match(pluginJs, /state\.importStage/);
   assert.match(pluginJs, /setView\("success"\)/);
   const homePickBlock = pluginJs.match(/const homePick = event\.target\.closest\("\[data-home-pick\]"\);[\s\S]*?\n  }/)?.[0] || "";
-  const homeDropBlock = pluginJs.match(/const homeDropCard = event\.target\.closest\("#homeDropZone"\);[\s\S]*?\n  }/)?.[0] || "";
-  assert.ok(homePickBlock && homeDropBlock);
+  assert.ok(homePickBlock);
   assert.doesNotMatch(homePickBlock, /setView\(/);
-  assert.doesNotMatch(homeDropBlock, /setView\(/);
+  assert.doesNotMatch(pluginJs, /const homeDropCard = event\.target\.closest\("#homeDropZone"\)/);
   assert.match(pluginJs, /if \(state\.activeView === "home"\) setView\("aep"\);/);
   assert.match(pluginJs, /if \(state\.activeView !== "import"\) setView\("import"\);/);
   assert.match(pluginJs, /data-package-select=/);
@@ -122,7 +132,7 @@ test("production import view exposes preview-first pairing and direct naming", (
   assert.match(pluginJs, /发现缺失素材，确认风险后可入库/);
   assert.match(pluginJs, /风险入库已确认/);
   assert.match(pluginJs, /selectedForImport/);
-  assert.equal(manifest.version, "1.7.6");
+  assert.equal(manifest.version, "1.7.7");
 });
 
 test("hosts the AEP collector inside the Eagle plugin and returns to pairing", () => {
@@ -178,7 +188,7 @@ test("hosts the AEP collector inside the Eagle plugin and returns to pairing", (
   assert.match(pluginJs, /controller\.abort\(\)/);
   assert.match(pluginJs, /scanDirectory\(outputRoot, \{ projectName \}\)/);
   assert.match(pluginJs, /setView\("import"\)/);
-  assert.match(pluginJs, /const allowed = \["home", "import", "aep", "formal", "history", "diagnostics", "managed", "success"\]/);
+  assert.match(pluginJs, /const allowed = \["home", "import", "aep", "formal", "history", "diagnostics", "managed", "updates", "success"\]/);
   assert.match(pluginJs, /function setAepSourcePath\(aepPath\)/);
   assert.match(pluginJs, /await inspectAepProject\(\)/);
   assert.match(pluginJs, /function openHomeDrop\(dataTransfer\)/);
@@ -218,7 +228,7 @@ test("exposes the formal packaging maintenance workspace", () => {
   const html = fs.readFileSync(htmlPath, "utf8");
   const pluginJs = fs.readFileSync(pluginJsPath, "utf8");
   assert.match(html, /data-view="managed"[\s\S]*维护已入库包装/);
-  assert.match(html, /id="view-managed" hidden/);
+  assert.match(html, /id="view-managed"[^>]*hidden/);
   assert.match(html, /id="managedRows"/);
   assert.match(html, /id="managedPreviewPicker"/);
   assert.match(html, /id="managedSourcePicker"/);
@@ -302,6 +312,36 @@ test("turns workflow logs into non-blocking popovers and keeps the AEP tree scro
   assert.match(html, /body\[data-active-view="aep"\] \.log-drawer,\s*body\[data-active-view="import"\] \.log-drawer \{ bottom: 76px; \}/);
   assert.match(html, /#view-aep \.aep-tree-panel \{ min-height: 0; overflow: hidden; \}/);
   assert.match(html, /#view-aep \.aep-tree-list \{ min-height: 0; overflow-y: auto/);
+});
+
+test("applies the skill-guided interaction and accessibility system across every workspace", () => {
+  const html = fs.readFileSync(htmlPath, "utf8");
+  const pluginJs = fs.readFileSync(pluginJsPath, "utf8");
+
+  assert.match(html, /class="skip-link" href="#mainContent"/);
+  assert.match(html, /<main class="workspace-main" id="mainContent" tabindex="-1">/);
+  assert.doesNotMatch(html, /id="homeDropZone"[^>]*role="button"/);
+  assert.match(html, /id="moreBtn"[^>]*aria-haspopup="menu"[^>]*aria-controls="moreMenu"/);
+  assert.match(html, /id="moreMenu" role="menu"/);
+  assert.match(html, /id="toast" role="status" aria-live="polite" aria-atomic="true" hidden/);
+  assert.match(html, /id="view-import" aria-labelledby="importViewTitle"/);
+  assert.match(html, /id="view-aep" aria-labelledby="aepViewTitle"/);
+  assert.match(html, /id="view-managed" aria-labelledby="managedViewTitle"/);
+  assert.match(html, /id="aepTree" role="tree" aria-label="AEP 合成结构"/);
+  assert.match(html, /data-aep-filter="all" aria-pressed="true"/);
+  assert.match(html, /data-plan-filter="all" aria-pressed="true"/);
+  assert.match(html, /@media \(prefers-reduced-motion: reduce\)/);
+  assert.match(html, /\.workspace-view\.active \{ animation: none; \}/);
+  assert.match(html, /\.modal-backdrop\.open \.modal/);
+  assert.match(pluginJs, /function modalFocusableElements\(modal\)/);
+  assert.match(pluginJs, /function trapModalFocus\(event\)/);
+  assert.match(pluginJs, /modalReturnFocus = document\.activeElement/);
+  assert.match(pluginJs, /returnTo\?\.isConnected/);
+  assert.match(pluginJs, /button\.setAttribute\("aria-pressed", active \? "true" : "false"\)/);
+  assert.match(pluginJs, /<button class="managed-card/);
+  assert.match(pluginJs, /<button class="plan-card"/);
+  assert.match(pluginJs, /<button class="aep-tree-name"/);
+  assert.doesNotThrow(() => new Function(pluginJs));
 });
 
 test("ships an interactive preview-first PNG and ZIP pairing prototype", () => {

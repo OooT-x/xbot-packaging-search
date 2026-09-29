@@ -1,6 +1,9 @@
 /* global eagle */
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
+const pluginManifest = require("../manifest.json");
+const pluginUpdater = require("../lib/updater.js");
 const {
   collectAep,
   inspectAep,
@@ -30,6 +33,9 @@ const MANAGED_CARD_SIZE_KEY = "xbot.managedCardSize";
 const MANAGED_CARD_SIZES = new Set(["compact", "medium", "large"]);
 const IMPORT_CARD_SIZE_KEY = "xbot.importCardSize";
 const IMPORT_CARD_SIZES = new Set(["compact", "medium", "large"]);
+const PLUGIN_UPDATE_CACHE_KEY = "xbot.pluginUpdate.cache.v1";
+const PLUGIN_UPDATE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const PLUGIN_VERSION = String(pluginManifest.version || "0.0.0");
 
 function savedManagedCardSize() {
   try {
@@ -92,6 +98,15 @@ const state = {
     previewPanY: 0,
     previewDrag: null,
   },
+  pluginUpdate: {
+    info: null,
+    checkedAt: 0,
+    checking: false,
+    downloading: false,
+    packagePath: "",
+    error: "",
+    message: "",
+  },
   dragDepth: 0,
   aep: {
     aepPath: null,
@@ -122,6 +137,17 @@ const elements = {
   routeContext: document.getElementById("routeContext"),
   moreBtn: document.getElementById("moreBtn"),
   moreMenu: document.getElementById("moreMenu"),
+  updateMenuHint: document.getElementById("updateMenuHint"),
+  updateMenuBadge: document.getElementById("updateMenuBadge"),
+  updateAvailableButton: document.getElementById("updateAvailableButton"),
+  currentPluginVersion: document.getElementById("currentPluginVersion"),
+  latestPluginVersion: document.getElementById("latestPluginVersion"),
+  pluginUpdateStatus: document.getElementById("pluginUpdateStatus"),
+  pluginUpdatePublished: document.getElementById("pluginUpdatePublished"),
+  pluginUpdateNotes: document.getElementById("pluginUpdateNotes"),
+  checkPluginUpdateBtn: document.getElementById("checkPluginUpdateBtn"),
+  downloadPluginUpdateBtn: document.getElementById("downloadPluginUpdateBtn"),
+  openPluginPackageBtn: document.getElementById("openPluginPackageBtn"),
   homeDropZone: document.getElementById("homeDropZone"),
   homeDropLabel: document.getElementById("homeDropLabel"),
   homeResumeBtn: document.getElementById("homeResumeBtn"),
@@ -356,7 +382,7 @@ function managedCard(pkg) {
   const preview = previewPath
     ? `<img src="${escapeHtml(fileUrl(previewPath))}" alt="${escapeHtml(pkg.packageName)}" onerror="this.style.display='none'" />`
     : "PNG";
-  return `<article class="managed-card ${state.managed.selectedPackageId === pkg.packageId ? "selected" : ""}" data-managed-package-id="${escapeHtml(pkg.packageId)}" tabindex="0"><div class="managed-card-thumb">${preview}</div><div><h3 title="${escapeHtml(pkg.packageName)}">${escapeHtml(pkg.packageName)}</h3><div class="managed-card-meta">${escapeHtml(pkg.projectName)} · ${escapeHtml(pkg.packageType || "待补充类型")}<br />${escapeHtml(pkg.version)} · ${escapeHtml(pkg.aeCompName || "未记录合成")}</div><div class="managed-card-files"><span>PNG ${pkg.preview ? "✓" : "—"}</span><span>ZIP ${pkg.source ? "✓" : "—"}</span></div></div></article>`;
+  return `<button class="managed-card ${state.managed.selectedPackageId === pkg.packageId ? "selected" : ""}" type="button" data-managed-package-id="${escapeHtml(pkg.packageId)}" aria-pressed="${state.managed.selectedPackageId === pkg.packageId}"><span class="managed-card-thumb">${preview}</span><span><span class="managed-card-title" title="${escapeHtml(pkg.packageName)}">${escapeHtml(pkg.packageName)}</span><span class="managed-card-meta">${escapeHtml(pkg.projectName)} · ${escapeHtml(pkg.packageType || "待补充类型")}<br />${escapeHtml(pkg.version)} · ${escapeHtml(pkg.aeCompName || "未记录合成")}</span><span class="managed-card-files"><span>PNG ${pkg.preview ? "✓" : "—"}</span><span>ZIP ${pkg.source ? "✓" : "—"}</span></span></span></button>`;
 }
 
 function renderManagedInspector() {
@@ -466,23 +492,77 @@ async function applyManagedReplacement(kind, file) {
 }
 
 function showToast(title, message, kind = "normal") {
-  elements.toastTitle.textContent = title;
-  elements.toastMessage.textContent = message;
-  elements.toast.style.borderColor = kind === "error" ? "var(--red)" : "var(--line)";
-  elements.toast.style.display = "block";
   window.clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => { elements.toast.style.display = "none"; }, 3000);
+  elements.toast.classList.remove("show");
+  elements.toast.hidden = false;
+  elements.toast.dataset.kind = kind;
+  elements.toast.setAttribute("role", kind === "error" ? "alert" : "status");
+  elements.toast.setAttribute("aria-live", kind === "error" ? "assertive" : "polite");
+  elements.toastTitle.textContent = "";
+  elements.toastMessage.textContent = "";
+  requestAnimationFrame(() => {
+    elements.toastTitle.textContent = title;
+    elements.toastMessage.textContent = message;
+    elements.toast.classList.add("show");
+  });
+  toastTimer = window.setTimeout(() => {
+    elements.toast.classList.remove("show");
+    window.setTimeout(() => { elements.toast.hidden = true; }, 140);
+  }, 3000);
 }
 
-function openModal(element) { element.classList.add("open"); }
+let modalReturnFocus = null;
+
+function modalFocusableElements(modal) {
+  return [...modal.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+    .filter((element) => !element.hidden && element.getAttribute("aria-hidden") !== "true");
+}
+
+function openModal(element) {
+  if (!element) return;
+  modalReturnFocus = document.activeElement;
+  element.classList.add("open");
+  element.setAttribute("aria-hidden", "false");
+  requestAnimationFrame(() => modalFocusableElements(element)[0]?.focus({ preventScroll: true }));
+}
+
 function closeModals() {
-  document.querySelectorAll(".modal-backdrop").forEach((modal) => modal.classList.remove("open"));
+  const returnTo = modalReturnFocus;
+  document.querySelectorAll(".modal-backdrop").forEach((modal) => {
+    modal.classList.remove("open");
+    modal.setAttribute("aria-hidden", "true");
+  });
+  modalReturnFocus = null;
   state.aep.previewDrag = null;
   state.assetPreview.previewDrag = null;
   state.managedPreview.previewDrag = null;
   elements.aepPreviewStage?.classList.remove("is-dragging");
   elements.assetBody?.querySelector("[data-asset-preview-stage]")?.classList.remove("is-dragging");
   elements.managedPreviewStage?.classList.remove("is-dragging");
+  if (returnTo?.isConnected) returnTo.focus({ preventScroll: true });
+}
+
+function trapModalFocus(event) {
+  const modal = document.querySelector(".modal-backdrop.open");
+  if (!modal) return false;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeModals();
+    return true;
+  }
+  if (event.key !== "Tab") return false;
+  const focusable = modalFocusableElements(modal);
+  if (!focusable.length) return false;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+  return true;
 }
 
 function statusClass(status) {
@@ -570,22 +650,73 @@ function packageFileName(file) {
   return file.relative || file.name || path.basename(file.path || "");
 }
 
-function packageTypeOptions(pkg) {
+function packageTypeOptionItems(pkg) {
   const currentType = String(pkg.packageType || "").trim();
-  const options = [`<option value=""${currentType ? "" : " selected"}>待补充类型</option>`];
+  const options = [{ value: "", label: "待补充类型" }];
   if (currentType && !KNOWN_PACKAGE_TYPES.includes(currentType)) {
-    options.push(`<option value="${escapeHtml(currentType)}" selected>${escapeHtml(currentType)}（未知）</option>`);
+    options.push({ value: currentType, label: `${currentType}（未知）` });
   }
-  KNOWN_PACKAGE_TYPES.forEach((type) => {
-    options.push(`<option value="${escapeHtml(type)}"${type === currentType ? " selected" : ""}>${escapeHtml(type)}</option>`);
-  });
-  return options.join("");
+  KNOWN_PACKAGE_TYPES.forEach((type) => options.push({ value: type, label: type }));
+  return options.map(({ value, label }) => `<button class="package-type-option${value === currentType ? " is-selected" : ""}" type="button" role="option" data-package-type-option="${escapeHtml(pkg.packageId || "")}" data-package-type-value="${escapeHtml(value)}" aria-selected="${value === currentType ? "true" : "false"}">${escapeHtml(label)}</button>`).join("");
 }
 
 function packageTypeEditor(pkg) {
   const currentType = String(pkg.packageType || "").trim();
   const isMissing = !KNOWN_PACKAGE_TYPES.includes(currentType);
-  return `<label class="package-type-control"><span class="sr-only">包装类型</span><select class="package-type-select${isMissing ? " is-missing" : ""}" data-package-type="${escapeHtml(pkg.packageId || "")}" aria-label="修改包装类型">${packageTypeOptions(pkg)}</select></label>`;
+  const label = currentType || "待补充类型";
+  return `<div class="package-type-control"><span class="sr-only">包装类型</span><button class="package-type-trigger${isMissing ? " is-missing" : ""}" type="button" data-package-type-trigger="${escapeHtml(pkg.packageId || "")}" data-package-type="${escapeHtml(pkg.packageId || "")}" aria-label="修改包装类型：${escapeHtml(pkg.packageName || "包装")}" aria-haspopup="listbox" aria-expanded="false" title="点击选择包装类型"><span>${escapeHtml(label)}</span><span class="package-type-chevron" aria-hidden="true"></span></button><div class="package-type-menu" data-package-type-menu="${escapeHtml(pkg.packageId || "")}" role="listbox" aria-label="包装类型选项" hidden>${packageTypeOptionItems(pkg)}</div></div>`;
+}
+
+function closePackageTypeMenus({ restoreFocus = false } = {}) {
+  document.querySelectorAll("[data-package-type-menu]:not([hidden])").forEach((menu) => {
+    menu.hidden = true;
+    const picker = menu._xbotPicker || menu.closest(".package-type-control");
+    const trigger = picker?.querySelector("[data-package-type-trigger]");
+    trigger?.setAttribute("aria-expanded", "false");
+    if (picker?.isConnected && menu.parentElement !== picker) picker.appendChild(menu);
+    if (restoreFocus) trigger?.focus({ preventScroll: true });
+  });
+}
+
+function openPackageTypeMenu(trigger) {
+  const menu = trigger.closest(".package-type-control")?.querySelector("[data-package-type-menu]");
+  if (!menu) return;
+  closePackageTypeMenus();
+  menu._xbotPicker = trigger.closest(".package-type-control");
+  document.body.appendChild(menu);
+  menu.hidden = false;
+  trigger.setAttribute("aria-expanded", "true");
+  requestAnimationFrame(() => {
+    const triggerRect = trigger.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    const bottomBar = [...document.querySelectorAll(".bottom-bar")].find((element) => {
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0 && rect.top < window.innerHeight;
+    });
+    const bottomLimit = bottomBar ? bottomBar.getBoundingClientRect().top - 12 : window.innerHeight - 12;
+    const above = triggerRect.bottom + 6 + menuRect.height > bottomLimit && triggerRect.top > menuRect.height + 12;
+    const left = Math.min(Math.max(8, triggerRect.right - menuRect.width), window.innerWidth - menuRect.width - 8);
+    const top = above ? triggerRect.top - menuRect.height - 6 : triggerRect.bottom + 6;
+    menu.classList.toggle("is-above", above);
+    menu.style.left = `${left}px`;
+    menu.style.top = `${Math.max(8, top)}px`;
+    menu.querySelector('[role="option"].is-selected')?.focus({ preventScroll: true });
+  });
+}
+
+function applyPackageTypeSelection(packageId, value) {
+  if (!state.scan) return;
+  const pkg = packageById(packageId);
+  if (!pkg) return;
+  pkg.packageType = String(value || "").trim() || null;
+  state.selectedPackageId = pkg.packageId;
+  refreshScanDerivedState();
+  render(state.scan);
+  if (pkg.packageType) {
+    showToast("包装类型已更新", `${pkg.packageName || "当前包装"} 已归入“${pkg.packageType}”，可继续检查后入库。`);
+  } else {
+    showToast("仍待补充包装类型", "请选择信息条、视频框、背景或分镜排版后才能直接入库。", "error");
+  }
 }
 
 function assetLabel(kind) {
@@ -1050,7 +1181,7 @@ function planCard(pair, status, reason = "") {
   const previewSrc = previewPath ? `<img src="${escapeHtml(fileUrl(previewPath))}" alt="" onerror="this.style.display='none'" />` : "";
   const previewName = pair.preview?.name || pair.packageId || "预览图";
   const sourceName = pair.source?.name || pair.packageId || "源文件";
-  return `<article class="plan-card" data-pair-id="${escapeHtml(pair.packageId || "")}" data-plan-status="${escapeHtml(status)}"><div class="plan-thumb package-thumb ${planTone(pair)}">${previewSrc}</div><div><div class="plan-name">${escapeHtml(pair.packageName || previewName)}</div><div class="plan-meta">${escapeHtml(pair.packageType || "待补充类型")} · ${escapeHtml(pair.version || "v01")} · ${escapeHtml(pair.batchId || "未记录批次")}</div><div class="plan-file-names" title="${escapeHtml(`${previewName} / ${sourceName}`)}">${escapeHtml(`${previewName} / ${sourceName}`)}</div></div>${reason ? `<div class="plan-reason">${escapeHtml(reason)}</div>` : badge(status)}</article>`;
+  return `<button class="plan-card" type="button" data-pair-id="${escapeHtml(pair.packageId || "")}" data-plan-status="${escapeHtml(status)}" aria-pressed="${String(state.selectedPair?.packageId || "") === String(pair.packageId || "")}"><span class="plan-thumb package-thumb ${planTone(pair)}">${previewSrc}</span><span><span class="plan-name">${escapeHtml(pair.packageName || previewName)}</span><span class="plan-meta">${escapeHtml(pair.packageType || "待补充类型")} · ${escapeHtml(pair.version || "v01")} · ${escapeHtml(pair.batchId || "未记录批次")}</span><span class="plan-file-names" title="${escapeHtml(`${previewName} / ${sourceName}`)}">${escapeHtml(`${previewName} / ${sourceName}`)}</span></span>${reason ? `<span class="plan-reason">${escapeHtml(reason)}</span>` : badge(status)}</button>`;
 }
 
 function renderFilePlan(plan, remainingCount = 0) {
@@ -1066,6 +1197,7 @@ function renderFilePlan(plan, remainingCount = 0) {
   elements.filterReadyCount.textContent = String(readyPairs.length);
   elements.filterReviewCount.textContent = String(reviewPairs.length);
   elements.filterBlockedCount.textContent = String(blocked.length);
+  if (!state.selectedPair || ![...readyPairs, ...reviewPairs].some((pair) => pair.packageId === state.selectedPair.packageId)) state.selectedPair = readyPairs[0] || reviewPairs[0] || null;
   const rows = [];
   readyPairs.forEach((pair) => rows.push(planCard(pair, "ready")));
   reviewPairs.forEach((pair) => rows.push(planCard(pair, "review", pair.reason)));
@@ -1079,19 +1211,27 @@ function renderFilePlan(plan, remainingCount = 0) {
   elements.formalState.className = `status-badge ${blocked.length ? "status-blocked" : reviewPairs.length ? "status-review" : readyPairs.length ? "status-ready" : "status-muted"}`;
   elements.formalBottomCopy.innerHTML = readyPairs.length ? `已识别 <strong>${readyPairs.length} 对可入库素材</strong> · 可先批量规范命名，再确认正式归位。` : "当前没有可入库记录。";
   applyPlanFilter(state.planFilter);
-  if (!state.selectedPair || ![...readyPairs, ...reviewPairs].some((pair) => pair.packageId === state.selectedPair.packageId)) state.selectedPair = readyPairs[0] || reviewPairs[0] || null;
   if (state.selectedPair) showPackageInspector(state.selectedPair);
 }
 
 function applyPlanFilter(filter) {
   state.planFilter = filter;
-  document.querySelectorAll("#planFilters .filter-button").forEach((button) => button.classList.toggle("active", button.dataset.planFilter === filter));
+  document.querySelectorAll("#planFilters .filter-button").forEach((button) => {
+    const active = button.dataset.planFilter === filter;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
   document.querySelectorAll("#filePlanRows .plan-card").forEach((card) => { card.style.display = filter === "all" || card.dataset.planStatus === filter ? "grid" : "none"; });
 }
 
 function showPackageInspector(pair) {
   if (!pair || !elements.packageInspector) return;
   state.selectedPair = pair;
+  document.querySelectorAll("#filePlanRows .plan-card").forEach((card) => {
+    const active = String(card.dataset.pairId) === String(pair.packageId);
+    card.classList.toggle("selected", active);
+    card.setAttribute("aria-pressed", active ? "true" : "false");
+  });
   const metadata = pair.metadata || pair;
   const previewPath = pair.preview?.filePath || pair.preview?.filepath || "";
   const previewSrc = previewPath ? `<img src="${escapeHtml(fileUrl(previewPath))}" alt="" onerror="this.style.display='none'" />` : "";
@@ -1420,7 +1560,9 @@ function aepRenderFilters() {
   };
   document.querySelectorAll("[data-aep-filter]").forEach((button) => {
     const key = button.dataset.aepFilter;
-    button.classList.toggle("active", key === state.aep.filter);
+    const active = key === state.aep.filter;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
     const count = button.querySelector("span");
     if (count) count.textContent = String(items[key] || 0);
     button.title = `${button.textContent.trim()}：${items[key] || 0} 个`;
@@ -1452,10 +1594,10 @@ function aepTreeBranch(comp, depth, trail, seen, pathIds = []) {
   const levelLabel = depthValue === 0 ? "根合成" : isReference ? "共享引用" : "直属预合成";
   const levelKey = depthValue === 0 ? "ROOT" : isReference ? "LINK" : "PRE";
   const levelClass = depthValue === 0 ? "root" : isReference ? "shared" : "child";
-  return `<div class="aep-tree-row ${selected ? "selected" : ""} ${isReference ? "reference" : ""}" data-aep-id="${escapeHtml(comp.id)}" data-aep-occurrence="${escapeHtml(occurrenceKey)}" data-depth="${depthValue}" role="treeitem" aria-level="${depthValue + 1}" style="--aep-depth:${depthValue};--aep-indent:${indent}px;--aep-guide-left:${guideLeft}px">
-    <button class="aep-tree-expander" type="button" data-aep-expander="${escapeHtml(comp.id)}" aria-label="${expanded ? "收起" : "展开"}" ${hasChildren && !isReference ? "" : "disabled"}>${hasChildren && !isReference ? (expanded ? "⌄" : "›") : "·"}</button>
+  return `<div class="aep-tree-row ${selected ? "selected" : ""} ${isReference ? "reference" : ""}" data-aep-id="${escapeHtml(comp.id)}" data-aep-occurrence="${escapeHtml(occurrenceKey)}" data-depth="${depthValue}" role="treeitem" aria-level="${depthValue + 1}" aria-selected="${selected}" ${hasChildren && !isReference ? `aria-expanded="${expanded}"` : ""} style="--aep-depth:${depthValue};--aep-indent:${indent}px;--aep-guide-left:${guideLeft}px">
+    <button class="aep-tree-expander" type="button" data-aep-expander="${escapeHtml(comp.id)}" aria-label="${expanded ? `收起 ${escapeHtml(comp.name)}` : `展开 ${escapeHtml(comp.name)}`}" aria-expanded="${expanded}" ${hasChildren && !isReference ? "" : "disabled"}>${hasChildren && !isReference ? (expanded ? "⌄" : "›") : "·"}</button>
     <input class="aep-tree-check" type="checkbox" data-aep-check="${escapeHtml(comp.id)}" data-aep-occurrence="${escapeHtml(occurrenceKey)}" ${checked ? "checked" : ""} aria-label="选择 ${escapeHtml(comp.name)}" />
-    <div class="aep-tree-name" data-aep-name="${escapeHtml(comp.id)}" data-aep-occurrence="${escapeHtml(occurrenceKey)}"><span class="aep-tree-name-line"><span class="aep-tree-kind ${levelClass}">${levelKey}</span><strong>${escapeHtml(comp.name)}</strong></span><small>${escapeHtml(isReference ? "共享引用 · 可单独选择" : `${levelLabel} · ${role}`)}</small></div>
+    <button class="aep-tree-name" type="button" data-aep-name="${escapeHtml(comp.id)}" data-aep-occurrence="${escapeHtml(occurrenceKey)}"><span class="aep-tree-name-line"><span class="aep-tree-kind ${levelClass}">${levelKey}</span><strong>${escapeHtml(comp.name)}</strong></span><small>${escapeHtml(isReference ? "共享引用 · 可单独选择" : `${levelLabel} · ${role}`)}</small></button>
     <span class="aep-tree-meta">${escapeHtml(`${comp.width}×${comp.height}`)}</span><span class="aep-tree-meta">${escapeHtml(`${Number(comp.duration || 0).toFixed(2)}s`)}</span><span class="aep-tree-status ${status.tone}">${escapeHtml(status.label)}</span>
   </div>${expanded ? children : ""}`;
 }
@@ -1872,6 +2014,7 @@ const routeLabels = {
   managed: "维护已入库包装",
   formal: "历史待入库",
   history: "批次记录",
+  updates: "版本更新",
   diagnostics: "系统诊断",
 };
 
@@ -1892,14 +2035,188 @@ function updateHomeResume() {
     : `${path.basename(state.aep.aepPath)} · 合成选择`;
 }
 
-function closeMoreMenu() {
+function openMoreMenu() {
   if (!elements.moreMenu || !elements.moreBtn) return;
+  elements.moreMenu.hidden = false;
+  elements.moreBtn.setAttribute("aria-expanded", "true");
+  requestAnimationFrame(() => elements.moreMenu.querySelector('[role="menuitem"]')?.focus());
+}
+
+function closeMoreMenu(options = {}) {
+  if (!elements.moreMenu || !elements.moreBtn) return;
+  const wasOpen = !elements.moreMenu.hidden;
   elements.moreMenu.hidden = true;
   elements.moreBtn.setAttribute("aria-expanded", "false");
+  if (wasOpen && options.restoreFocus) elements.moreBtn.focus();
+}
+
+function formatPluginUpdateDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium" }).format(date);
+}
+
+function renderPluginUpdate() {
+  const update = state.pluginUpdate;
+  const info = update.info;
+  if (elements.currentPluginVersion) elements.currentPluginVersion.textContent = `v${PLUGIN_VERSION}`;
+  if (elements.latestPluginVersion) {
+    elements.latestPluginVersion.textContent = info?.releaseFound ? `v${info.version}` : update.checking ? "查询中…" : "暂无 Release";
+  }
+  if (elements.updateMenuHint) elements.updateMenuHint.textContent = info?.releaseFound ? `v${info.version}` : "检查";
+  if (elements.updateMenuBadge) elements.updateMenuBadge.hidden = !info?.updateAvailable;
+  if (elements.updateAvailableButton) {
+    elements.updateAvailableButton.hidden = !info?.updateAvailable;
+    elements.updateAvailableButton.textContent = info?.updateAvailable ? `发现新版本 v${info.version}` : "发现新版本";
+  }
+  if (elements.checkPluginUpdateBtn) {
+    elements.checkPluginUpdateBtn.disabled = update.checking;
+    elements.checkPluginUpdateBtn.textContent = update.checking ? "正在检查…" : "检查更新";
+  }
+  if (elements.downloadPluginUpdateBtn) {
+    elements.downloadPluginUpdateBtn.disabled = update.checking || update.downloading || !info?.updateAvailable;
+    elements.downloadPluginUpdateBtn.textContent = update.downloading ? "正在下载并校验…" : "下载并打开安装包";
+  }
+  if (elements.openPluginPackageBtn) elements.openPluginPackageBtn.hidden = !update.packagePath;
+
+  let status = "打开此页面查询 GitHub 更新。";
+  let tone = "";
+  if (update.checking) {
+    status = "正在连接 GitHub 查询版本…";
+  } else if (update.error) {
+    status = `检查或下载失败：${update.error}`;
+    tone = "error";
+  } else if (update.message) {
+    status = update.message;
+    tone = update.info?.updateAvailable ? "success" : "notice";
+  } else if (info?.releaseFound && info.updateAvailable) {
+    status = `发现新版本 v${info.version}。查看版本说明后，可以下载并打开安装包。`;
+    tone = "success";
+  } else if (info?.releaseFound) {
+    status = `当前已是最新版本（GitHub 最新版 v${info.version}）。`;
+    tone = "success";
+  } else if (info) {
+    status = "当前仓库尚未发布可供更新的 Eagle 插件 Release。";
+    tone = "notice";
+  }
+  if (elements.pluginUpdateStatus) {
+    elements.pluginUpdateStatus.textContent = status;
+    elements.pluginUpdateStatus.dataset.tone = tone;
+  }
+  if (elements.pluginUpdateNotes) {
+    elements.pluginUpdateNotes.textContent = info?.releaseFound
+      ? (info.notes || "该版本没有填写发布说明。")
+      : "尚未获取版本说明。";
+  }
+  if (elements.pluginUpdatePublished) {
+    const published = info?.publishedAt ? `发布日期：${formatPluginUpdateDate(info.publishedAt)}` : "";
+    const checked = update.checkedAt ? `上次检查：${formatPluginUpdateDate(update.checkedAt)}` : "";
+    elements.pluginUpdatePublished.textContent = [published, checked].filter(Boolean).join(" · ");
+  }
+}
+
+function loadPluginUpdateCache() {
+  try {
+    const cached = JSON.parse(window.localStorage.getItem(PLUGIN_UPDATE_CACHE_KEY) || "null");
+    if (cached && Number.isFinite(cached.checkedAt) && cached.info && typeof cached.info.releaseFound === "boolean") {
+      const rebasedInfo = pluginUpdater.rebaseUpdateInfo(cached.info, PLUGIN_VERSION);
+      if (rebasedInfo) {
+        state.pluginUpdate.info = rebasedInfo;
+        state.pluginUpdate.checkedAt = cached.checkedAt;
+      }
+    }
+  } catch (_) {
+    // Update checks still work when local storage is unavailable or malformed.
+  }
+  renderPluginUpdate();
+}
+
+function savePluginUpdateCache() {
+  try {
+    window.localStorage.setItem(PLUGIN_UPDATE_CACHE_KEY, JSON.stringify({
+      checkedAt: state.pluginUpdate.checkedAt,
+      info: state.pluginUpdate.info,
+    }));
+  } catch (_) {
+    // The current session still retains the checked release information.
+  }
+}
+
+async function checkPluginUpdate(options = {}) {
+  const update = state.pluginUpdate;
+  if (update.checking) return;
+  if (!options.force && update.checkedAt && Date.now() - update.checkedAt < PLUGIN_UPDATE_CACHE_TTL_MS) return;
+  update.checking = true;
+  update.error = "";
+  update.message = "";
+  renderPluginUpdate();
+  try {
+    update.info = await pluginUpdater.checkForUpdate(PLUGIN_VERSION);
+  } catch (error) {
+    update.error = String(error?.message || error || "网络请求失败");
+  } finally {
+    update.checking = false;
+    update.checkedAt = Date.now();
+    savePluginUpdateCache();
+    renderPluginUpdate();
+  }
+}
+
+async function openDownloadedPluginPackage() {
+  const packagePath = state.pluginUpdate.packagePath;
+  const openPath = window.eagle?.shell?.openPath;
+  if (!packagePath) return;
+  if (typeof openPath !== "function") {
+    state.pluginUpdate.error = "请在 Eagle 插件窗口中打开安装包。";
+    renderPluginUpdate();
+    return;
+  }
+  try {
+    await window.eagle.shell.openPath(packagePath);
+    state.pluginUpdate.error = "";
+    state.pluginUpdate.message = `已请求系统打开 ${packagePath}。若未出现 Eagle 安装界面，请在文件管理器中手动打开该文件；确认安装后重新打开插件。`;
+  } catch (error) {
+    state.pluginUpdate.error = `无法打开安装包：${String(error?.message || error)}`;
+  }
+  renderPluginUpdate();
+}
+
+async function downloadPluginUpdate() {
+  const update = state.pluginUpdate;
+  if (!update.info?.updateAvailable || update.downloading) return;
+  update.downloading = true;
+  update.error = "";
+  update.message = "";
+  renderPluginUpdate();
+  try {
+    update.info = await pluginUpdater.checkForUpdate(PLUGIN_VERSION);
+    update.checkedAt = Date.now();
+    savePluginUpdateCache();
+    if (!update.info.updateAvailable) {
+      update.message = update.info.releaseFound
+        ? `检查后确认当前已是最新版本 v${update.info.version}。`
+        : "检查后确认仓库尚未发布可用的 Eagle 插件 Release。";
+      return;
+    }
+    const downloadsDirectory = path.join(os.homedir(), "Downloads", "Xbot Eagle Plugin Updates");
+    const result = await pluginUpdater.downloadPluginUpdate(update.info, downloadsDirectory);
+    update.packagePath = result.path;
+    const openPath = window.eagle?.shell?.openPath;
+    if (typeof openPath === "function") {
+      await window.eagle.shell.openPath(result.path);
+      update.message = "安装包已下载并请求系统打开。若未出现 Eagle 安装界面，请到下载目录手动打开此文件；确认安装后重新打开插件。";
+    } else {
+      update.message = `安装包已下载到 ${result.path}。请在文件管理器中打开该文件，再由 Eagle 确认安装。`;
+    }
+  } catch (error) {
+    update.error = String(error?.message || error || "下载失败");
+  } finally {
+    update.downloading = false;
+    renderPluginUpdate();
+  }
 }
 
 function setView(view, options = {}) {
-  const allowed = ["home", "import", "aep", "formal", "history", "diagnostics", "managed", "success"];
+  const allowed = ["home", "import", "aep", "formal", "history", "diagnostics", "managed", "updates", "success"];
   if (!allowed.includes(view)) return;
   const previousView = state.activeView;
   if (options.remember !== false && previousView !== view && previousView) state.navigationHistory.push(previousView);
@@ -1913,10 +2230,12 @@ function setView(view, options = {}) {
     step.classList.toggle("active", stage === workflowStage);
     step.classList.toggle("done", stage > 0 && stage < workflowStage);
   });
+  let activeSection = null;
   document.querySelectorAll(".workspace-view").forEach((section) => {
     const active = section.id === `view-${view}`;
     section.hidden = !active;
     section.classList.toggle("active", active);
+    if (active) activeSection = section;
   });
   if (elements.routeContext) elements.routeContext.querySelector("strong").textContent = routeLabels[view] || "包装工作流";
   if (elements.backBtn) elements.backBtn.hidden = view === "home";
@@ -1929,6 +2248,15 @@ function setView(view, options = {}) {
   }
   if (view === "formal") refreshBatches();
   if (view === "managed") refreshManagedPackages();
+  if (view === "updates") checkPluginUpdate({ force: true });
+  if (options.focus !== false && activeSection) {
+    requestAnimationFrame(() => {
+      const heading = activeSection.querySelector("h1, h2");
+      if (!heading) return;
+      heading.setAttribute("tabindex", "-1");
+      heading.focus({ preventScroll: true });
+    });
+  }
 }
 
 function goBack() {
@@ -2139,6 +2467,21 @@ async function openHomeDrop(dataTransfer) {
 }
 
 document.addEventListener("click", (event) => {
+  const packageTypeTrigger = event.target.closest("[data-package-type-trigger]");
+  if (packageTypeTrigger) {
+    event.stopPropagation();
+    const menu = packageTypeTrigger.closest(".package-type-control")?.querySelector("[data-package-type-menu]");
+    if (menu?.hidden) openPackageTypeMenu(packageTypeTrigger);
+    else closePackageTypeMenus();
+    return;
+  }
+  const packageTypeOption = event.target.closest("[data-package-type-option]");
+  if (packageTypeOption) {
+    event.stopPropagation();
+    closePackageTypeMenus();
+    applyPackageTypeSelection(packageTypeOption.dataset.packageTypeOption, packageTypeOption.dataset.packageTypeValue);
+    return;
+  }
   const importCardSize = event.target.closest("[data-import-card-size]");
   if (importCardSize) {
     setImportCardSize(importCardSize.dataset.importCardSize);
@@ -2156,12 +2499,6 @@ document.addEventListener("click", (event) => {
     const kind = homePick.dataset.homePick;
     state.importStage = 1;
     (kind === "aep" ? elements.aepPicker : elements.folderPicker).click();
-    return;
-  }
-  const homeDropCard = event.target.closest("#homeDropZone");
-  if (homeDropCard && !event.target.closest("button")) {
-    state.importStage = 1;
-    elements.aepPicker.click();
     return;
   }
   const managedAction = event.target.closest("[data-managed-action]");
@@ -2193,7 +2530,7 @@ document.addEventListener("click", (event) => {
     return;
   }
   const managedCardElement = event.target.closest("[data-managed-package-id]");
-  if (managedCardElement && !event.target.closest("button")) {
+  if (managedCardElement) {
     state.managed.selectedPackageId = managedCardElement.dataset.managedPackageId;
     renderManaged();
     return;
@@ -2354,6 +2691,9 @@ document.addEventListener("click", (event) => {
   const action = event.target.closest("[data-action]");
   if (!action) return;
   const type = action.dataset.action;
+  if (type === "check-plugin-update") checkPluginUpdate({ force: true });
+  if (type === "download-plugin-update") downloadPluginUpdate();
+  if (type === "open-plugin-package") openDownloadedPluginPackage();
   if (type === "show-rename") openRenameModal();
   if (type === "show-duplicate") openModal(elements.duplicateModal);
   if (type === "toggle-theme") { document.body.dataset.theme = document.body.dataset.theme === "dark" ? "light" : "dark"; }
@@ -2416,21 +2756,6 @@ document.addEventListener("change", (event) => {
     render(state.scan);
     return;
   }
-  const packageTypeSelect = event.target.closest("[data-package-type]");
-  if (packageTypeSelect && state.scan) {
-    const pkg = packageById(packageTypeSelect.dataset.packageType);
-    if (!pkg) return;
-    pkg.packageType = String(packageTypeSelect.value || "").trim() || null;
-    state.selectedPackageId = pkg.packageId;
-    refreshScanDerivedState();
-    render(state.scan);
-    if (pkg.packageType) {
-      showToast("包装类型已更新", `${pkg.packageName || "当前包装"} 已归入“${pkg.packageType}”，可继续检查后入库。`);
-    } else {
-      showToast("仍待补充包装类型", "请选择信息条、视频框、背景或分镜排版后才能直接入库。", "error");
-    }
-    return;
-  }
   const select = event.target.closest("[data-package-edit-field]");
   if (!select || !state.scan) return;
   const panel = select.closest("[data-package-edit-panel]");
@@ -2454,19 +2779,54 @@ document.addEventListener("change", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") {
-    closeModals();
-    closeMoreMenu();
-  }
-  const homeDrop = event.target.closest("#homeDropZone");
-  if (homeDrop && !event.target.closest("button") && (event.key === "Enter" || event.key === " ")) {
+  if (trapModalFocus(event)) return;
+  const packageTypeTrigger = event.target.closest?.("[data-package-type-trigger]");
+  if (packageTypeTrigger && ["ArrowDown", "ArrowUp", "Enter", " "].includes(event.key)) {
     event.preventDefault();
-    state.importStage = 1;
-    elements.aepPicker.click();
+    const menu = packageTypeTrigger.closest(".package-type-control")?.querySelector("[data-package-type-menu]");
+    if (event.key === "Enter" || event.key === " ") {
+      if (menu?.hidden) openPackageTypeMenu(packageTypeTrigger);
+      else closePackageTypeMenus();
+    } else {
+      openPackageTypeMenu(packageTypeTrigger);
+      const options = [...menu.querySelectorAll('[role="option"]')];
+      options[event.key === "ArrowUp" ? options.length - 1 : 0]?.focus({ preventScroll: true });
+    }
+    return;
+  }
+  const packageTypeMenu = event.target.closest?.("[data-package-type-menu]");
+  if (packageTypeMenu && !packageTypeMenu.hidden && ["ArrowDown", "ArrowUp", "Home", "End", "Enter", " ", "Escape"].includes(event.key)) {
+    const options = [...packageTypeMenu.querySelectorAll('[role="option"]')];
+    const index = options.indexOf(document.activeElement);
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closePackageTypeMenus({ restoreFocus: true });
+    } else if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      document.activeElement?.click();
+    } else {
+      event.preventDefault();
+      const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? options.length - 1 : event.key === "ArrowDown" ? (index + 1) % options.length : (index - 1 + options.length) % options.length;
+      options[nextIndex]?.focus({ preventScroll: true });
+    }
+    return;
+  }
+  if (event.key === "Escape" && elements.moreMenu && !elements.moreMenu.hidden) {
+    event.preventDefault();
+    closeMoreMenu({ restoreFocus: true });
+    return;
+  }
+  const menu = event.target.closest("#moreMenu");
+  if (menu && ["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+    event.preventDefault();
+    const items = [...menu.querySelectorAll('[role="menuitem"]')];
+    const index = items.indexOf(document.activeElement);
+    const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : event.key === "ArrowDown" ? (index + 1) % items.length : (index - 1 + items.length) % items.length;
+    items[nextIndex]?.focus();
     return;
   }
   const assetAction = event.target.closest("[data-asset-action]");
-  if (assetAction && (event.key === "Enter" || event.key === " ")) {
+  if (assetAction && !event.target.closest("button,input,select") && (event.key === "Enter" || event.key === " ")) {
     event.preventDefault();
     openAssetModal(assetAction.dataset.assetAction, assetAction.dataset.packageId);
   }
@@ -2477,11 +2837,12 @@ document.querySelectorAll(".modal-backdrop").forEach((backdrop) => backdrop.addE
 elements.backBtn?.addEventListener("click", goBack);
 elements.moreBtn?.addEventListener("click", (event) => {
   event.stopPropagation();
-  elements.moreMenu.hidden = !elements.moreMenu.hidden;
-  elements.moreBtn.setAttribute("aria-expanded", elements.moreMenu.hidden ? "false" : "true");
+  if (elements.moreMenu.hidden) openMoreMenu();
+  else closeMoreMenu({ restoreFocus: true });
 });
 document.addEventListener("click", (event) => {
   if (!event.target.closest(".popover")) closeMoreMenu();
+  if (!event.target.closest("[data-package-type-control]")) closePackageTypeMenus();
 });
 elements.folderPicker.addEventListener("change", () => {
   const sourceDir = resolvePickedDirectory(elements.folderPicker.files);
@@ -2597,6 +2958,10 @@ elements.sourceTemplate.addEventListener("focus", () => { renameFocus = "source"
 elements.previewTemplate.addEventListener("input", () => applyRenameRule(false));
 elements.sourceTemplate.addEventListener("input", () => applyRenameRule(false));
 
+document.querySelectorAll(".modal-backdrop").forEach((modal) => modal.setAttribute("aria-hidden", "true"));
+elements.renameError?.setAttribute("role", "alert");
+elements.renameError?.setAttribute("aria-live", "assertive");
+
 (function detectEagle() {
   if (window.eagle && window.eagle.item && window.eagle.folder) {
     elements.apiState.textContent = "Eagle 插件 API 已连接";
@@ -2612,4 +2977,6 @@ elements.sourceTemplate.addEventListener("input", () => applyRenameRule(false));
 })();
 
 setImportCardSize(state.importCardSize, { persist: false });
-setView("home", { remember: false });
+loadPluginUpdateCache();
+setView("home", { remember: false, focus: false });
+window.setTimeout(() => checkPluginUpdate(), 900);
