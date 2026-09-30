@@ -40,6 +40,8 @@ test("production plugin keeps the v5 preview styling and interactive DOM structu
   assert.match(preview, /#manageGrid\[data-card-size="small"\]/, "the slider sizes must change the card grid density");
   assert.match(preview, /\*::-webkit-scrollbar-button\{display:none/, "custom scrollbars must suppress native scrollbar end caps");
   assert.match(preview, /\.frame-art\.actual-preview-image\{[^}]*background:transparent!important;box-shadow:none/, "real previews must not inherit a decorative backing tile");
+  assert.match(preview, /\.manage-inspector \.preview-frame\{[^}]*min-height:0;[^}]*aspect-ratio:1\.55/, "the managed inspector frame must keep the same shape as the other preview thumbnails");
+  assert.match(preview, /\.frame-art\.actual-preview-image\{[^}]*object-fit:contain/, "real previews must fit inside the fixed frame without cropping");
   assert.match(plugin, /<script src='js\/workbench\.js'><\/script><script src='js\/v5-runtime\.js'><\/script>/);
   assert.doesNotMatch(plugin, /<script>\s*[\s\S]*?<\/script>/, "production must load the runtime only once");
 });
