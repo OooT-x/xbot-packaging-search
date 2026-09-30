@@ -1,8 +1,9 @@
-﻿# 变更日志
+# 变更日志
 
 本文件记录可交付变化。软件版本与核心文档版本独立管理；在首个可运行闭环完成前，变更记录保留在 `Unreleased`。
 
 ## Unreleased
+- Eagle 插件本地更新包升级至 `1.7.8`（2026-09-30）：同步更新 manifest、插件内版本标识与回归断言，按插件发布规则包含现有未变更的 AEP Worker，交由 Eagle 官方安装流程接管；Eagle 已安装到 `%APPDATA%\Eagle\Plugins\LB5UL2P0Q9FFF`；安装后 manifest、页面、插件脚本、logo 和 Worker 哈希均与安装包来源一致。
 
 ### Added
 - Eagle 插件增加启动版本检查和顶部更新提示；版本页显示 GitHub Release 说明，可下载符合版本命名的 `.eagleplugin`，校验包大小与可用的 SHA-256 后交给 Eagle 打开安装。既有安装需要先经 Eagle 插件中心或手动安装带更新器的首个版本。

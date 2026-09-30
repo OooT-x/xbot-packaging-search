@@ -1068,7 +1068,7 @@
         body[data-active-view="import"] #view-import .import-bottom { left: max(var(--workspace-gutter), calc((100vw - 1920px) / 2)); right: max(var(--workspace-gutter), calc((100vw - 1920px) / 2)); }
       }
 
-      /* 1.7.7 skill-guided interaction system: consistent, legible and keyboard complete. */
+      /* 1.7.8 production interaction refinements: consistent, legible and keyboard complete. */
       :root {
         --motion-fast: 140ms;
         --motion-medium: 220ms;
@@ -1224,7 +1224,7 @@
     <div class="app">
       <header class="topbar">
         <button class="icon-btn topbar-back" id="backBtn" type="button" aria-label="返回上一步" hidden>←</button>
-        <div class="brand"><img src="logo.png" alt="X.bot" /><div class="brand-copy"><strong>X.bot 包装工作流</strong><span>AE → Eagle · v1.7.7</span></div></div>
+        <div class="brand"><img src="logo.png" alt="X.bot" /><div class="brand-copy"><strong>X.bot 包装工作流</strong><span>AE → Eagle · v1.7.8</span></div></div>
         <div class="route-context" id="routeContext" aria-live="polite"><strong>任务首页</strong></div>
         <div class="top-actions"><div class="api-state" role="status" aria-live="polite"><span class="api-dot" id="apiDot" aria-hidden="true"></span><span id="apiState">正在检测 Eagle API…</span></div><button class="update-available-btn" id="updateAvailableButton" type="button" data-view="updates" hidden>发现新版本</button><div class="popover"><button class="icon-btn" id="moreBtn" type="button" aria-label="更多工具" aria-haspopup="menu" aria-controls="moreMenu" aria-expanded="false">•••</button><div class="more-menu" id="moreMenu" role="menu" hidden><button class="menu-item" type="button" role="menuitem" data-view="updates"><span>版本更新</span><small id="updateMenuHint">检查</small><small class="update-menu-badge" id="updateMenuBadge" hidden>有新版本</small></button><button class="menu-item" type="button" role="menuitem" data-view="formal"><span>历史待入库</span><small>兼容</small></button><button class="menu-item" type="button" role="menuitem" data-view="history"><span>批次记录</span><small>记录</small></button><button class="menu-item" type="button" role="menuitem" data-view="diagnostics"><span>系统诊断</span><small>工具</small></button></div></div><button class="icon-btn" type="button" aria-label="查看帮助" data-action="toast" data-title="帮助" data-message="新增包装会根据 AEP 或交付文件夹进入对应流程；维护包装使用独立入口，历史、版本更新与诊断在更多菜单中。">?</button><button class="icon-btn" type="button" data-action="toggle-theme" aria-label="切换主题">◐</button></div>
       </header>
@@ -1287,7 +1287,7 @@
       <section class="workspace-view" id="view-updates" aria-labelledby="updatesViewTitle" hidden>
         <div class="screen-head"><div><div class="eyebrow">Plugin / Update</div><h1 id="updatesViewTitle" tabindex="-1">版本更新</h1><p>查询公开 GitHub Release，查看版本说明并下载 Eagle 安装包。</p></div></div>
         <div class="update-layout">
-          <section class="update-card" aria-labelledby="updateStatusTitle"><h2 id="updateStatusTitle">插件版本</h2><div class="update-version-row"><span>本地版本</span><strong id="currentPluginVersion">v1.7.7</strong></div><div class="update-version-row"><span>最新版本</span><strong id="latestPluginVersion">尚未检查</strong></div><p class="update-state" id="pluginUpdateStatus" role="status" aria-live="polite">打开此页面查询 GitHub 更新。</p><p class="update-published" id="pluginUpdatePublished"></p><div class="update-actions"><button class="quiet-btn" id="checkPluginUpdateBtn" type="button" data-action="check-plugin-update">检查更新</button><button class="primary-btn" id="downloadPluginUpdateBtn" type="button" data-action="download-plugin-update" disabled>下载并打开安装包</button><button class="quiet-btn" id="openPluginPackageBtn" type="button" data-action="open-plugin-package" hidden>重新打开安装包</button></div><p class="update-install-hint">下载完成后会校验文件大小和 GitHub 提供的 SHA-256（若 Release 提供）。打开安装包后由 Eagle 接手安装；请在 Eagle 的确认界面完成更新，并在安装完成后重新打开插件。</p></section>
+          <section class="update-card" aria-labelledby="updateStatusTitle"><h2 id="updateStatusTitle">插件版本</h2><div class="update-version-row"><span>本地版本</span><strong id="currentPluginVersion">v1.7.8</strong></div><div class="update-version-row"><span>最新版本</span><strong id="latestPluginVersion">尚未检查</strong></div><p class="update-state" id="pluginUpdateStatus" role="status" aria-live="polite">打开此页面查询 GitHub 更新。</p><p class="update-published" id="pluginUpdatePublished"></p><div class="update-actions"><button class="quiet-btn" id="checkPluginUpdateBtn" type="button" data-action="check-plugin-update">检查更新</button><button class="primary-btn" id="downloadPluginUpdateBtn" type="button" data-action="download-plugin-update" disabled>下载并打开安装包</button><button class="quiet-btn" id="openPluginPackageBtn" type="button" data-action="open-plugin-package" hidden>重新打开安装包</button></div><p class="update-install-hint">下载完成后会校验文件大小和 GitHub 提供的 SHA-256（若 Release 提供）。打开安装包后由 Eagle 接手安装；请在 Eagle 的确认界面完成更新，并在安装完成后重新打开插件。</p></section>
           <section class="update-card" aria-labelledby="updateNotesTitle"><h2 id="updateNotesTitle">版本说明</h2><pre class="update-notes" id="pluginUpdateNotes">尚未获取版本说明。</pre></section>
         </div>
       </section>

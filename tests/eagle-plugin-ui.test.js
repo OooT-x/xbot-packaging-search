@@ -62,7 +62,7 @@ test("production import view exposes preview-first pairing and direct naming", (
   assert.doesNotMatch(html, /写入 00_待入库/);
   assert.match(html, /id="assetModal"/);
   assert.match(html, /class="bottom-bar import-bottom"/);
-  assert.match(html, /AE → Eagle · v1\.7\.7/);
+  assert.match(html, /AE → Eagle · v1\.7\.8/);
   assert.match(html, /@keyframes view-in \{ from \{ opacity: 0; \} to \{ opacity: 1; \} \}/);
   assert.match(html, /body\[data-active-view="import"\] #view-import \{ padding-bottom: 104px; \}/);
   assert.match(html, /body\[data-active-view="import"\] #view-import \.import-bottom \{ position: fixed/);
@@ -132,7 +132,7 @@ test("production import view exposes preview-first pairing and direct naming", (
   assert.match(pluginJs, /发现缺失素材，确认风险后可入库/);
   assert.match(pluginJs, /风险入库已确认/);
   assert.match(pluginJs, /selectedForImport/);
-  assert.equal(manifest.version, "1.7.7");
+  assert.equal(manifest.version, "1.7.8");
 });
 
 test("production import and maintenance confirm real Eagle mutations", () => {
