@@ -72,7 +72,9 @@ test("v5 pairing cards own type, asset, and status actions without a side inspec
   assert.match(script, /输出路径已更新/);
   assert.match(html, /\.aep-layout\{grid-template-columns:218px minmax\(0,1fr\) 330px\;gap:14px;height:clamp\(460px,calc\(100vh - 294px\),680px\)/);
   assert.match(html, /\.manage-layout\{grid-template-columns:218px minmax\(0,1fr\) 330px\;gap:14px;height:clamp\(460px,calc\(100vh - 294px\),680px\)/);
-  assert.match(html, /@media \(min-width:1181px\)\{#screen-manage \.manage-layout\{height:calc\(100vh - 150px\);min-height:460px\}\}/);
+  assert.match(html, /body\[data-screen="manage"\] \.workspace\{padding-bottom:22px\}/);
+  assert.match(html, /#screen-manage \.manage-layout\{height:calc\(100vh - 108px\);min-height:460px\}/);
+  assert.match(html, /#screen-manage \.manage-layout>\.manage-inspector\{align-self:stretch;height:100%;max-height:none\}/);
   assert.match(html, /\.manage-layout>\.manage-side,\.manage-layout>\.manage-main,\.manage-layout>\.manage-inspector\{min-height:0/);
   assert.match(html, /\.manage-layout>\.manage-side\{position:sticky;top:76px;z-index:3;align-self:start;height:max-content/);
   assert.match(html, /\.manage-layout>\.manage-inspector\{position:sticky;top:76px;z-index:3;align-self:start;height:max-content/);
@@ -186,7 +188,7 @@ test("v5 preview exposes the plugin update entry and demo update flow", () => {
   assert.doesNotThrow(() => new Function(script));
 });
 
-test("v5 aligns AEP and managed-library motion with pairing interactions", () => {
+test("v5 keeps interactive motion while managed cards avoid rounded-corner hover artifacts", () => {
   const html = fs.readFileSync(previewPath, "utf8");
   const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] || "";
 
@@ -195,7 +197,9 @@ test("v5 aligns AEP and managed-library motion with pairing interactions", () =>
   assert.match(html, /--motion-panel:240ms/);
   assert.match(html, /--ease-out-ui:cubic-bezier\(\.23,1,\.32,1\)/);
   assert.match(html, /\.tree-row\.active,\.manage-card\.selected/);
-  assert.match(html, /\.tree-row:hover,\.manage-card:hover,\.decision-card:hover/);
+  assert.match(html, /\.tree-row:hover,\.decision-card:hover\{transform:translateY\(-1px\)\}/);
+  assert.doesNotMatch(html, /\.manage-card:hover[^{}]*\{[^{}]*transform:/, "hovering a managed card must not composite its rounded scroll container");
+  assert.doesNotMatch(html, /\.manage-card:hover \.manage-thumb \.frame-art\{transform:/, "hovering a managed card must not scale its preview");
   assert.match(html, /\.content-swap\.is-ready/);
   assert.match(html, /\.modal-wrap\.is-open \.modal/);
   assert.match(html, /\.drawer\.is-open/);

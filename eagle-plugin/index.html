@@ -72,9 +72,10 @@
 
     /* Motion parity: AEP and library management now share the pairing page's crisp interaction language. */
     :root{--motion-press:120ms;--motion-state:180ms;--motion-panel:240ms;--ease-out-ui:cubic-bezier(.23,1,.32,1);--ease-in-out-ui:cubic-bezier(.77,0,.175,1);--ease-drawer:cubic-bezier(.32,.72,0,1)}
-    .icon-btn,.ghost-btn,.primary-btn,.danger-btn,.tab,.filter-list button,.tree-row,.manage-card,.decision-card,.pair-row,.asset-chip-button,.card-status-button{transition:transform var(--motion-press) var(--ease-out-ui),border-color var(--motion-state) ease,background-color var(--motion-state) ease,color var(--motion-state) ease,box-shadow var(--motion-state) ease}
+    .icon-btn,.ghost-btn,.primary-btn,.danger-btn,.tab,.filter-list button,.tree-row,.decision-card,.pair-row,.asset-chip-button,.card-status-button{transition:transform var(--motion-press) var(--ease-out-ui),border-color var(--motion-state) ease,background-color var(--motion-state) ease,color var(--motion-state) ease,box-shadow var(--motion-state) ease}
+    .manage-card{transition:border-color var(--motion-state) ease,background-color var(--motion-state) ease,color var(--motion-state) ease,box-shadow var(--motion-state) ease}
     .tree-row.active,.manage-card.selected{border-color:var(--blue);box-shadow:0 0 0 2px color-mix(in srgb,var(--blue) 12%,transparent),var(--shadow-soft)}
-    .tree-row:active,.manage-card:active,.decision-card:active{transform:scale(.99)}
+    .tree-row:active,.decision-card:active{transform:scale(.99)}
     .filter-list button.active,.tab.active{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--blue) 12%,transparent)}
     .manage-thumb .frame-art,.preview-frame .frame-art{transition:transform 200ms var(--ease-out-ui),filter 200ms ease}
     .decision-card b{transition:transform var(--motion-state) var(--ease-out-ui)}
@@ -88,7 +89,7 @@
     .modal-wrap.is-open .modal{opacity:1;transform:scale(1) translateY(0)}
     .drawer{opacity:0;pointer-events:none;transform:translateX(100%);transition:opacity 160ms var(--ease-out-ui),transform var(--motion-panel) var(--ease-drawer)}
     .drawer.is-open{opacity:1;pointer-events:auto;transform:translateX(0)}
-    @media (hover:hover) and (pointer:fine){.tree-row:hover,.manage-card:hover,.decision-card:hover{transform:translateY(-1px)}.manage-card:hover .manage-thumb .frame-art{transform:scale(1.035)}.decision-card:hover b{transform:translateX(3px)}}
+    @media (hover:hover) and (pointer:fine){.tree-row:hover,.decision-card:hover{transform:translateY(-1px)}.decision-card:hover b{transform:translateX(3px)}}
     @media (max-width:1100px){#screen-manage .manage-inspector{opacity:.92;transition:opacity 160ms var(--ease-out-ui),transform var(--motion-panel) var(--ease-drawer)}#screen-manage .manage-inspector.is-open{opacity:1}}
     body.reduce-motion .content-swap,body.reduce-motion .modal-wrap .modal,body.reduce-motion .drawer,body.reduce-motion #screen-manage .manage-inspector{transform:none!important}
     body.reduce-motion *,body.reduce-motion *::before,body.reduce-motion *::after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}
@@ -165,7 +166,7 @@
     .tree-node-children>.tree-row{grid-template-columns:6px 24px 26px minmax(0,1fr) 86px 74px 92px}
     .tree-node-children>.tree-row .tree-disclosure-spacer{width:6px}
     .tree-node-children>.tree-row::before{content:"";position:absolute;left:-5px;top:50%;width:4px;border-top:1px solid var(--line-2)}
-    .manage-layout{grid-template-columns:218px minmax(0,1fr) 330px;gap:14px;height:clamp(460px,calc(100vh - 294px),680px);min-height:0;overflow:visible;border:0;border-radius:0;background:transparent;box-shadow:none}
+    .manage-layout{grid-template-columns:218px minmax(0,1fr) 330px;gap:14px;height:clamp(460px,calc(100vh - 294px),680px);min-height:0;overflow:visible;border:0;border-radius:0;background:var(--canvas);box-shadow:none}
     .manage-layout>.manage-side,.manage-layout>.manage-main,.manage-layout>.manage-inspector{min-height:0;border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-soft)}
     .manage-layout>.manage-side{position:sticky;top:76px;z-index:3;align-self:start;height:max-content;max-height:calc(100vh - 150px);overflow:auto;border-right:1px solid var(--line);background:var(--panel)}
     .manage-layout>.manage-main{height:100%;overflow:auto;overscroll-behavior:contain;background:var(--panel)}
@@ -177,7 +178,7 @@
     .manage-card .asset-chip-button:disabled{cursor:not-allowed;opacity:.48}
     .rename-output-list{display:grid;gap:9px}.rename-output-row{padding:11px;border:1px solid var(--line);border-radius:9px;background:var(--panel-2)}.rename-output-row>strong{display:block;margin-bottom:8px;font-size:11px}.rename-output-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}.rename-output-grid label{display:block;color:var(--ink-3);font-size:10px}.rename-output-grid input{margin-top:4px;font:10px var(--mono)}.rename-output-path{display:block;margin-top:4px;color:var(--ink-3);font-size:9px;overflow-wrap:anywhere}.rename-validation{margin-top:10px;font-size:11px}.rename-validation[data-valid="false"]{color:var(--red)}.rename-validation[data-valid="true"]{color:var(--green)}
     .actual-preview-image{object-fit:contain;background:var(--panel-3)}.manage-card-select{font:inherit;color:inherit}.success-record>div{min-width:0;overflow-wrap:anywhere}.success-record .status-chip{flex:none;align-self:flex-start}
-    @media (min-width:1181px){#screen-manage .manage-layout{height:calc(100vh - 150px);min-height:460px}}
+    @media (min-width:1181px){body[data-screen="manage"] .workspace{padding-bottom:22px}#screen-manage .manage-layout{height:calc(100vh - 108px);min-height:460px}#screen-manage .manage-layout>.manage-inspector{align-self:stretch;height:100%;max-height:none}}
     @media (max-width:1180px){.manage-layout{grid-template-columns:175px minmax(0,1fr);height:auto}.manage-layout>.manage-side{max-height:none}.manage-layout>.manage-main{height:clamp(460px,calc(100vh - 294px),680px)}.manage-layout>.manage-inspector{grid-column:1/-1;position:static;max-height:none}}
     @media (max-width:840px){.manage-layout{grid-template-columns:minmax(0,1fr)}.manage-layout>.manage-side{position:static}}
     *{scrollbar-width:thin;scrollbar-color:transparent transparent}
