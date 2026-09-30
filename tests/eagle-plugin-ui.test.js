@@ -135,6 +135,20 @@ test("production import view exposes preview-first pairing and direct naming", (
   assert.equal(manifest.version, "1.7.7");
 });
 
+test("production import and maintenance confirm real Eagle mutations", () => {
+  const html = fs.readFileSync(htmlPath, "utf8");
+  const pluginJs = fs.readFileSync(pluginJsPath, "utf8");
+
+  assert.match(pluginJs, /state\.importNamingSignature !== importNamingSignature\(\)/);
+  assert.match(pluginJs, /validateFormalItemNames\(renamePairs\(\), \{ nameOverrides: state\.nameOverrides \}, formalLibrary\.items, formalLibrary\.folders\)/);
+  assert.match(pluginJs, /importFormalBatch\(adapter, state\.scan, \{ mode, nameOverrides: state\.nameOverrides \}\)/);
+  assert.match(pluginJs, /archiveFormalPackageVersion\(adapter, base, versionPair\.packageId\)/);
+  assert.match(pluginJs, /prepareManagedReplacement\("preview", elements\.managedPreviewPicker\.files\?\.\[0\]\)/);
+  assert.match(html, /id="managedReplacementModal"/);
+  assert.match(html, /id="successRecords"/);
+  assert.match(html, /id="successWarning"/);
+});
+
 test("hosts the AEP collector inside the Eagle plugin and returns to pairing", () => {
   const html = fs.readFileSync(htmlPath, "utf8");
   const pluginJs = fs.readFileSync(pluginJsPath, "utf8");

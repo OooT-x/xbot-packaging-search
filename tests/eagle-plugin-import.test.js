@@ -8,6 +8,7 @@ const {
   EaglePluginAdapter,
   importFormalBatch,
   importBatch,
+  resolveFormalItemName,
 } = require("../eagle-plugin/lib/eagle-api");
 
 function makeScanResult(overrides = {}) {
@@ -161,6 +162,88 @@ test("imports a ready batch directly into the formal Eagle folders", async () =>
   assert.ok(adapter.items.every((item) => item.folders.length === 1));
 });
 
+test("rejects invalid and reserved Windows item names before writing to Eagle", () => {
+  const pair = makeScanResult().packages[0];
+  assert.throws(
+    () => resolveFormalItemName(pair, "preview", { nameOverrides: { [pair.packageId]: { preview: "名称 .png" } } }),
+    /不能以空格或句点结尾/u
+  );
+  assert.throws(
+    () => resolveFormalItemName(pair, "preview", { nameOverrides: { [pair.packageId]: { preview: "CON.png" } } }),
+    /Windows 保留设备名/u
+  );
+  assert.throws(
+    () => resolveFormalItemName(pair, "preview", { nameOverrides: { [pair.packageId]: { preview: "CON.preview.png" } } }),
+    /Windows 保留设备名/u
+  );
+  assert.throws(
+    () => resolveFormalItemName(pair, "preview", { nameOverrides: { [pair.packageId]: { preview: "   .png" } } }),
+    /名称不能为空/u
+  );
+});
+
+test("blocks a duplicate name in the same formal type directory before adding items", async () => {
+  const adapter = new FakeAdapter();
+  await importFormalBatch(adapter, makeScanResult());
+  const initialItemCount = adapter.items.length;
+  const duplicate = makeScanResult({
+    packages: [{
+      ...makeScanResult().packages[0],
+      packageId: "pkg-gearbox-bg-second",
+      packageName: "另一个包装",
+      preview: { path: "D:\\source\\变速箱包装\\另一个.png" },
+      source: { path: "D:\\source\\变速箱包装\\另一个.zip" },
+    }],
+  });
+
+  await assert.rejects(
+    importFormalBatch(adapter, duplicate, {
+      mode: "new",
+      nameOverrides: {
+        "pkg-gearbox-bg-second": {
+          preview: "变速箱_背景_黑底背景_v01.png",
+        },
+      },
+    }),
+    /正式目录“背景”中已存在预览图名称/u
+  );
+  assert.equal(adapter.items.length, initialItemCount);
+});
+
+test("detects duplicate names for unannotated assets from their formal type folder", async () => {
+  const adapter = new FakeAdapter();
+  await importFormalBatch(adapter, makeScanResult());
+  const previewFolderId = adapter.items[0].folders[0];
+  adapter.items.push({ id: "manual-preview", name: "existing-name.png", ext: "png", folders: [previewFolderId], annotation: "" });
+  const initialItemCount = adapter.items.length;
+  const scan = makeScanResult({ packages: [{
+    ...makeScanResult().packages[0],
+    packageId: "pkg-gearbox-bg-manual-collision",
+  }] });
+
+  await assert.rejects(
+    importFormalBatch(adapter, scan, {
+      mode: "new",
+      nameOverrides: { "pkg-gearbox-bg-manual-collision": { preview: "existing-name.png" } },
+    }),
+    /正式目录“背景”中已存在预览图名称/u
+  );
+  assert.equal(adapter.items.length, initialItemCount);
+});
+
+test("writes new-version lineage to both formal items and the ingest result", async () => {
+  const adapter = new FakeAdapter();
+  const base = makeScanResult().packages[0];
+  const scan = makeScanResult({
+    packages: [{ ...base, packageId: "pkg-gearbox-bg-v02", basePackageId: "pkg-gearbox-bg-v01", version: "v02" }],
+  });
+
+  const result = await importFormalBatch(adapter, scan, { mode: "new" });
+
+  assert.equal(result.filed[0].basePackageId, "pkg-gearbox-bg-v01");
+  assert.ok(adapter.items.every((item) => item.annotation.includes("base_package_id：pkg-gearbox-bg-v01")));
+});
+
 test("imports an image-only background without creating a source item", async () => {
   const adapter = new FakeAdapter();
   const scan = makeScanResult({
@@ -253,6 +336,11 @@ test("protects direct formal import duplicates and supports an explicit update",
   assert.equal(duplicate.state, "duplicate");
   assert.deepEqual(duplicate.matches[0].matchedBy, ["package_id"]);
   assert.equal(adapter.items.length, 2);
+
+  const reused = await importFormalBatch(adapter, makeScanResult({ projectName: "联想" }), { mode: "reuse" });
+  assert.equal(reused.reused[0].projectName, "变速箱");
+  assert.equal(reused.reused[0].version, "v01");
+  assert.equal(reused.reused[0].previewName, "变速箱_背景_黑底背景_v01.png");
 
   const updated = await importFormalBatch(
     adapter,

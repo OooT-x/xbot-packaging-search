@@ -22,9 +22,12 @@ const {
   planFormalFile,
   INGEST_ROOT_NAME,
   KNOWN_PACKAGE_TYPES,
+  getFormalLibraryItems,
+  validateFormalItemNames,
 } = require("../lib/eagle-api.js");
 const { publishIngestEvent } = require("../lib/ingest-bridge.js");
 const {
+  archiveFormalPackageVersion,
   listFormalPackages,
   replaceFormalAsset,
 } = require("../lib/managed-assets.js");
@@ -68,6 +71,8 @@ const state = {
   fileInspection: null,
   fileOverrides: {},
   nameOverrides: {},
+  manualNameOverrides: {},
+  importNamingSignature: null,
   selectedPair: null,
   planFilter: "all",
   pendingImport: null,
@@ -78,6 +83,7 @@ const state = {
   scanFileBaseline: null,
   scanPackageBaseline: null,
   managedDraft: null,
+  pendingManagedReplacement: null,
   managed: {
     packages: [],
     project: "all",
@@ -154,6 +160,12 @@ const elements = {
   homeResumeTitle: document.getElementById("homeResumeTitle"),
   successTitle: document.getElementById("successTitle"),
   successSummary: document.getElementById("successSummary"),
+  successRecords: document.getElementById("successRecords"),
+  successWarning: document.getElementById("successWarning"),
+  managedReplacementModal: document.getElementById("managedReplacementModal"),
+  managedReplacementTitle: document.getElementById("managedReplacementTitle"),
+  managedReplacementSummary: document.getElementById("managedReplacementSummary"),
+  managedReplacementConfirm: document.getElementById("managedReplacementConfirm"),
   apiState: document.getElementById("apiState"),
   apiDot: document.getElementById("apiDot"),
   diagApi: document.getElementById("diagApi"),
@@ -321,6 +333,9 @@ function applyManagedDraft(scan) {
     packages: [{
       ...source,
       projectName: draft.projectName,
+      packageName: draft.packageName || source.packageName,
+      packageType: draft.packageType || source.packageType,
+      aeCompName: draft.aeCompName || source.aeCompName,
       packageId,
       basePackageId: draft.basePackageId,
       version: draft.version,
@@ -396,7 +411,7 @@ function renderManagedInspector() {
   const preview = previewPath
     ? `<button class="managed-preview-trigger" type="button" data-managed-preview="${escapeHtml(pkg.packageId)}" title="点击查看大图 · 滚轮缩放" aria-label="打开${escapeHtml(pkg.packageName)}预览大图"><img src="${escapeHtml(fileUrl(previewPath))}" alt="${escapeHtml(pkg.packageName)}" /></button>`
     : "暂无 PNG";
-  elements.managedInspector.innerHTML = `<div class="managed-inspector-head"><div><h2>${escapeHtml(pkg.packageName)}</h2><p>${escapeHtml(pkg.projectName)} · ${escapeHtml(pkg.packageType || "待补充类型")}</p></div><span class="status-badge status-ready">${escapeHtml(pkg.version)}</span></div><div class="managed-preview">${preview}</div><div class="managed-detail-list"><div class="managed-detail-row"><span>package_id</span><strong class="mono">${escapeHtml(pkg.packageId)}</strong></div><div class="managed-detail-row"><span>batch_id</span><strong class="mono">${escapeHtml(pkg.batchId || "-")}</strong></div><div class="managed-detail-row"><span>预览图</span><strong title="${escapeHtml(previewPath)}">${escapeHtml(previewPath ? path.basename(previewPath) : "缺失")}</strong></div><div class="managed-detail-row"><span>源文件</span><strong title="${escapeHtml(sourcePath)}">${escapeHtml(sourcePath ? path.basename(sourcePath) : "缺失")}</strong></div></div><div class="managed-actions"><button class="quiet-btn" type="button" data-managed-action="update-preview" data-managed-package-id="${escapeHtml(pkg.packageId)}" ${pkg.preview ? "" : "disabled"}>更新预览图</button><button class="quiet-btn" type="button" data-managed-action="update-source" data-managed-package-id="${escapeHtml(pkg.packageId)}" ${pkg.source ? "" : "disabled"}>更新打包文件</button><button class="primary-btn" type="button" data-managed-action="new-version" data-managed-package-id="${escapeHtml(pkg.packageId)}">发布新版本</button></div><div class="managed-history-note">替换预览图或 ZIP 会保留旧素材到“03_历史版本”，并为本次操作生成修订号。设计内容发生变化时，请发布新版本。</div>`;
+  elements.managedInspector.innerHTML = `<div class="managed-inspector-head"><div><h2>${escapeHtml(pkg.packageName)}</h2><p>${escapeHtml(pkg.projectName)} · ${escapeHtml(pkg.packageType || "待补充类型")}</p></div><span class="status-badge status-ready" title="当前有效版本" aria-label="当前有效版本 ${escapeHtml(pkg.version)}">${escapeHtml(pkg.version)}</span></div><div class="managed-preview">${preview}</div><div class="managed-detail-list"><div class="managed-detail-row"><span>package_id</span><strong class="mono">${escapeHtml(pkg.packageId)}</strong></div><div class="managed-detail-row"><span>base_package_id</span><strong class="mono">${escapeHtml(pkg.basePackageId || "—")}</strong></div><div class="managed-detail-row"><span>batch_id</span><strong class="mono">${escapeHtml(pkg.batchId || "-")}</strong></div><div class="managed-detail-row"><span>预览图</span><strong title="${escapeHtml(previewPath)}">${escapeHtml(previewPath ? path.basename(previewPath) : "缺失")}</strong></div><div class="managed-detail-row"><span>源文件</span><strong title="${escapeHtml(sourcePath)}">${escapeHtml(sourcePath ? path.basename(sourcePath) : "缺失")}</strong></div></div><div class="managed-actions"><button class="quiet-btn" type="button" data-managed-action="update-preview" data-managed-package-id="${escapeHtml(pkg.packageId)}" ${pkg.preview ? "" : "disabled"}>更新预览图</button><button class="quiet-btn" type="button" data-managed-action="update-source" data-managed-package-id="${escapeHtml(pkg.packageId)}" ${pkg.source ? "" : "disabled"}>更新打包文件</button><button class="primary-btn" type="button" data-managed-action="new-version" data-managed-package-id="${escapeHtml(pkg.packageId)}">发布新版本</button></div><div class="managed-history-note">替换预览图或 ZIP 会保留旧素材到“03_历史版本”，并为本次操作生成修订号。设计内容发生变化时，请发布新版本。</div>`;
 }
 
 function openManagedPreviewModal(packageId) {
@@ -464,9 +479,44 @@ function openManagedPicker(kind, packageId) {
   picker.click();
 }
 
-async function applyManagedReplacement(kind, file) {
-  const pkg = managedPackageById(state.managed.selectedPackageId);
-  const filePath = file?.path || "";
+function prepareManagedReplacement(kind, file) {
+  if (!file) return;
+  const packageId = state.managed.selectedPackageId;
+  const pkg = managedPackageById(packageId);
+  const filePath = file.path || "";
+  if (!pkg || !filePath) {
+    showToast("无法更新素材", "Eagle 未返回所选文件的本地路径，请在 Eagle 内重新选择。", "error");
+    return;
+  }
+  const expectedExt = kind === "preview" ? ".png" : ".zip";
+  if (path.extname(filePath).toLocaleLowerCase() !== expectedExt) {
+    showToast("文件格式不匹配", `更新${kind === "preview" ? "预览图" : "打包文件"}需要 ${expectedExt.toUpperCase()} 文件。`, "error");
+    return;
+  }
+  const stat = fileStat(filePath);
+  state.pendingManagedReplacement = {
+    packageId,
+    kind,
+    filePath,
+    fileName: path.basename(filePath),
+    fileSize: Number(file.size) || stat?.size || 0,
+  };
+  elements.managedReplacementTitle.textContent = `确认更新${kind === "preview" ? "预览图" : "打包文件"}`;
+  elements.managedReplacementSummary.textContent = `${pkg.projectName} · ${pkg.packageName} · ${pkg.version}\n${path.basename(filePath)} · ${formatBytes(state.pendingManagedReplacement.fileSize)}\n目标：${kind === "preview" ? "01_预览图" : "02_AE源文件"} / ${pkg.packageType}`;
+  openModal(elements.managedReplacementModal);
+}
+
+async function confirmManagedReplacement() {
+  const pending = state.pendingManagedReplacement;
+  if (!pending) return;
+  state.pendingManagedReplacement = null;
+  closeModals();
+  await applyManagedReplacement(pending.kind, pending, pending.packageId);
+}
+
+async function applyManagedReplacement(kind, file, packageId = state.managed.selectedPackageId) {
+  const pkg = managedPackageById(packageId);
+  const filePath = file?.filePath || file?.path || "";
   if (!pkg || !filePath) {
     showToast("无法更新素材", "Eagle 未返回所选文件的本地路径，请在 Eagle 内重新选择。", "error");
     return;
@@ -483,7 +533,7 @@ async function applyManagedReplacement(kind, file) {
     });
     log(`更新完成：${result.replacedItemId} → ${kind === "preview" ? result.previewItemId : result.sourceItemId}`);
     if (!published.skipped) log(`已写入 bot 索引同步队列：${published.filePath}`);
-    showToast("素材已更新", `${pkg.packageName} 的${kind === "preview" ? "预览图" : "ZIP"}已切换，旧文件保留在历史版本。`, "success");
+    showToast("素材修订已完成", `${pkg.packageName} 的${kind === "preview" ? "预览图" : "ZIP"}已切换；revision_id：${result.revisionId}；旧素材已移入 03_历史版本。`, "success");
     await refreshManagedPackages();
   } catch (error) {
     log(`素材更新失败：${error.message}`);
@@ -528,6 +578,7 @@ function openModal(element) {
 
 function closeModals() {
   const returnTo = modalReturnFocus;
+  state.pendingManagedReplacement = null;
   document.querySelectorAll(".modal-backdrop").forEach((modal) => {
     modal.classList.remove("open");
     modal.setAttribute("aria-hidden", "true");
@@ -708,6 +759,7 @@ function applyPackageTypeSelection(packageId, value) {
   if (!state.scan) return;
   const pkg = packageById(packageId);
   if (!pkg) return;
+  invalidateImportNaming(true);
   pkg.packageType = String(value || "").trim() || null;
   state.selectedPackageId = pkg.packageId;
   refreshScanDerivedState();
@@ -1123,6 +1175,8 @@ function resetFormalState() {
   state.fileInspection = null;
   state.fileOverrides = {};
   state.nameOverrides = {};
+  state.manualNameOverrides = {};
+  state.importNamingSignature = null;
   state.selectedPair = null;
   state.planFilter = "all";
   elements.confirmFileBtn.hidden = true;
@@ -1269,6 +1323,17 @@ function showFileInspection(inspection) {
 
 async function runImport() {
   if (!state.scan) return;
+  const versionCandidate = (state.scan.packages || []).find((pkg) => pkg.basePackageId);
+  const selectedCandidates = (state.scan.packages || []).filter((pkg) => pkg.selectedForImport !== false);
+  if ((state.managedDraft || versionCandidate) && ((state.scan.packages || []).length !== 1 || selectedCandidates.length !== 1)) {
+    showToast("新版本需要单独收集", "请选择只包含一组包装记录的文件夹；新版本不会混入其他包装。", "error");
+    return;
+  }
+  if (state.importNamingSignature !== importNamingSignature()) {
+    openRenameModal();
+    showToast("先确认正式命名", "核对 PNG / ZIP 目标名称后，再次点击直接入库。", "normal");
+    return;
+  }
   try {
     const adapter = createAdapter();
     elements.importBtn.disabled = true;
@@ -1277,9 +1342,14 @@ async function runImport() {
     const projectName = elements.projectName.value.trim();
     if (!projectName) throw new Error("请先填写项目名称");
     if (state.pendingPackageEdit) throw new Error("请先点击对应卡片上的“应用”按钮，完成配对更换");
+    const versionPair = (state.scan.packages || []).find((pkg) => pkg.basePackageId);
+    const selected = (state.scan.packages || []).filter((pkg) => pkg.selectedForImport !== false);
+    if (versionPair && ((state.scan.packages || []).length !== 1 || selected.length !== 1)) {
+      throw new Error("发布新版本必须只包含一组 PNG + ZIP 配对，请重新扫描单包装文件夹");
+    }
     state.scan.projectName = projectName;
     log("正在把配对文件直接写入 Eagle 正式目录…");
-    const result = await importFormalBatch(adapter, state.scan, { mode });
+    const result = await importFormalBatch(adapter, state.scan, { mode, nameOverrides: state.nameOverrides });
     if (result.state === "duplicate") {
       state.pendingImport = result;
       elements.importBtn.disabled = false;
@@ -1291,6 +1361,24 @@ async function runImport() {
     }
     const filedCount = result.filed?.length || 0;
     const reusedCount = result.reused?.length || 0;
+    let archiveError = "";
+    let archivedBase = null;
+    if (versionPair) {
+      const base = managedPackageById(versionPair.basePackageId);
+      const completedVersion = [...(result.filed || []), ...(result.reused || [])]
+        .find((item) => item.packageId === versionPair.packageId);
+      if (!base || !completedVersion) {
+        archiveError = base ? "Eagle 未返回已完成的新版本记录" : `找不到旧版本 ${versionPair.basePackageId}`;
+      } else {
+        try {
+          archivedBase = await archiveFormalPackageVersion(adapter, base, versionPair.packageId);
+          log(`旧版本已归档：${base.packageId} → ${versionPair.packageId}`);
+        } catch (error) {
+          archiveError = error.message;
+          log(`新版本已写入，但旧版本归档失败：${error.message}`);
+        }
+      }
+    }
     state.importStage = 3;
     elements.batchInfo.textContent = `batch_id：${result.batchId}（已直接入库）`;
     log(`直接入库完成：批次 ${result.batchId}，${filedCount} 对素材已写入正式目录${reusedCount ? `，${reusedCount} 对复用已有记录` : ""}`);
@@ -1301,19 +1389,36 @@ async function runImport() {
       log(`写入 bot 索引同步队列失败：${error.message}`);
     }
     elements.importBtn.textContent = "本批次已入库";
-    state.importResult = { batchId: result.batchId, filedCount, reusedCount };
+    state.importResult = {
+      batchId: result.batchId,
+      filedCount,
+      reusedCount,
+      filed: result.filed || [],
+      reused: result.reused || [],
+      version: versionPair ? { packageId: versionPair.packageId, basePackageId: versionPair.basePackageId, version: versionPair.version } : null,
+      archivedBase,
+      archiveError,
+    };
+    state.importNamingSignature = null;
+    state.nameOverrides = {};
+    state.managedDraft = null;
     setView("success");
-    showToast("直接入库完成", `${filedCount} 对素材已写入 01_预览图 / 02_AE源文件。`);
+    showToast(archiveError ? "新版本已写入，旧版本待归档" : "直接入库完成", archiveError || `${filedCount} 组写入 Eagle${reusedCount ? `，${reusedCount} 组复用已有记录` : ""}。`);
   } catch (error) {
     log(`直接入库失败：${error.message}`);
     elements.importBtn.disabled = false;
     showToast("直接入库失败", error.message, "error");
+    if (/正式目录|重复名称|Windows 不允许|保留设备名|结尾/u.test(error.message)) {
+      state.importNamingSignature = null;
+      openRenameModal();
+    }
   }
 }
 
 function templateValues(pair) {
   const metadata = pair.metadata || pair;
-  return { "项目": metadata.projectName || "未命名项目", "包装": metadata.packageName || "未命名包装", "类型": metadata.packageType || "待补充类型", "版本": metadata.version || "v01", "合成": metadata.aeCompName || metadata.packageName || "未记录合成" };
+  const projectName = state.scan?.projectName || elements.projectName.value.trim() || metadata.projectName || "未命名项目";
+  return { "项目": projectName, "包装": metadata.packageName || "未命名包装", "类型": metadata.packageType || "待补充类型", "版本": metadata.version || "v01", "合成": metadata.aeCompName || metadata.packageName || "未记录合成" };
 }
 
 function fillTemplate(template, pair) {
@@ -1321,27 +1426,68 @@ function fillTemplate(template, pair) {
   return String(template || "").replace(/\{(项目|包装|类型|版本|合成)\}/g, (_, token) => values[token] || "");
 }
 
+function renamePairs() {
+  if (state.activeView === "import" && state.scan) {
+    return (state.scan.packages || []).filter((pair) => pair.selectedForImport !== false && (pair.state === "ready" || pair.riskAccepted));
+  }
+  return state.filePlan?.readyPairs || [];
+}
+
+function importNamingSignature() {
+  const packages = (state.scan?.packages || [])
+    .filter((pair) => pair.selectedForImport !== false)
+    .map((pair) => ({
+      packageId: pair.packageId,
+      basePackageId: pair.basePackageId || "",
+      projectName: pair.projectName || state.scan?.projectName || "",
+      packageName: pair.packageName || "",
+      packageType: pair.packageType || "",
+      version: pair.version || "v01",
+      previewPath: packagePath(pair, "preview"),
+      sourcePath: packagePath(pair, "source"),
+    }))
+    .sort((left, right) => String(left.packageId).localeCompare(String(right.packageId)));
+  return JSON.stringify({
+    projectName: state.scan?.projectName || elements.projectName.value.trim(),
+    packages,
+    overrides: state.nameOverrides,
+  });
+}
+
+function invalidateImportNaming(clearOverrides = false) {
+  state.importNamingSignature = null;
+  if (clearOverrides) {
+    state.nameOverrides = {};
+    state.manualNameOverrides = {};
+  }
+}
+
 function renameValue(pair, kind) {
   const existing = state.nameOverrides[pair.packageId]?.[kind];
-  if (existing) return existing;
+  if (existing !== undefined) return existing;
   const template = kind === "preview" ? elements.previewTemplate.value : elements.sourceTemplate.value;
   const extension = kind === "preview" ? ".png" : ".zip";
   return `${fillTemplate(template, pair)}${extension}`;
 }
 
 function renderRenameRows() {
-  const pairs = state.filePlan?.readyPairs || [];
-  const rows = ["<div class=\"rename-head\">包装</div><div class=\"rename-head\">原始文件名</div><div class=\"rename-head\">规范预览图</div><div class=\"rename-head\">规范源文件</div><div class=\"rename-head\">状态</div>"];
+  const pairs = renamePairs();
+  const rows = ["<div class=\"rename-head\">包装</div><div class=\"rename-head\">原始文件名</div><div class=\"rename-head\">规范预览图</div><div class=\"rename-head\">规范源文件</div><div class=\"rename-head\">正式目录</div><div class=\"rename-head\">状态</div>"];
   pairs.forEach((pair) => {
     const metadata = pair.metadata || pair;
     const previewName = pair.preview?.name || "预览图";
-    const sourceName = pair.source?.name || "源文件";
-    const manual = Boolean(state.nameOverrides[pair.packageId]);
+    const sourceName = metadata.sourceOptional ? "仅图片背景，无 ZIP" : pair.source?.name || "源文件";
+    const packageType = metadata.packageType || "待补充类型";
+    const manualPreview = Boolean(state.manualNameOverrides[pair.packageId]?.preview);
+    const manualSource = Boolean(state.manualNameOverrides[pair.packageId]?.source);
     rows.push(`<div class="rename-cell rename-package"><span class="package-thumb ${packageTone(metadata)}"></span><div><strong>${escapeHtml(metadata.packageName || pair.packageId)}</strong><span>${escapeHtml(metadata.packageType || "待补充类型")} · ${escapeHtml(metadata.version || "v01")}</span></div></div>`);
     rows.push(`<div class="rename-cell old-name">${escapeHtml(previewName)}<br />${escapeHtml(sourceName)}</div>`);
-    rows.push(`<div class="rename-cell"><input class="rename-input ${manual ? "manual" : ""}" data-rename-id="${escapeHtml(pair.packageId)}" data-rename-kind="preview" value="${escapeHtml(renameValue(pair, "preview"))}" aria-label="${escapeHtml(metadata.packageName || pair.packageId)} 预览图名称" /></div>`);
-    rows.push(`<div class="rename-cell"><input class="rename-input ${manual ? "manual" : ""}" data-rename-id="${escapeHtml(pair.packageId)}" data-rename-kind="source" value="${escapeHtml(renameValue(pair, "source"))}" aria-label="${escapeHtml(metadata.packageName || pair.packageId)} 源文件名称" /></div>`);
-    rows.push(`<div class="rename-cell"><span class="rename-status ${manual ? "manual" : "auto"}">${manual ? "手动修改" : "自动生成"}</span></div>`);
+    rows.push(`<div class="rename-cell"><input class="rename-input ${manualPreview ? "manual" : ""}" data-rename-id="${escapeHtml(pair.packageId)}" data-rename-kind="preview" value="${escapeHtml(renameValue(pair, "preview"))}" aria-label="${escapeHtml(metadata.packageName || pair.packageId)} 预览图名称" /></div>`);
+    rows.push(metadata.sourceOptional
+      ? `<div class="rename-cell"><span class="rename-status auto">仅图片背景，无 ZIP</span></div>`
+      : `<div class="rename-cell"><input class="rename-input ${manualSource ? "manual" : ""}" data-rename-id="${escapeHtml(pair.packageId)}" data-rename-kind="source" value="${escapeHtml(renameValue(pair, "source"))}" aria-label="${escapeHtml(metadata.packageName || pair.packageId)} 源文件名称" /></div>`);
+    rows.push(`<div class="rename-cell rename-target"><span>01_预览图 / ${escapeHtml(packageType)}</span><span>${metadata.sourceOptional ? "仅图片背景，无 ZIP" : `02_AE源文件 / ${escapeHtml(packageType)}`}</span></div>`);
+    rows.push(`<div class="rename-cell"><span class="rename-status ${manualPreview || manualSource ? "manual" : "auto"}">${manualPreview || manualSource ? "有手动修改" : "自动生成"}</span></div>`);
   });
   elements.renameRows.innerHTML = rows.join("") || `<div class="rename-cell" style="grid-column:1/-1;padding:24px;color:var(--ink-faint);text-align:center;">当前没有完整的 PNG + ZIP 配对。</div>`;
   validateRename(false);
@@ -1351,34 +1497,45 @@ function validateRename(showFeedback = true) {
   const invalidPattern = /[<>:"\/\\|?*\u0000-\u001F]/u;
   const seen = new Map();
   let invalidCount = 0;
-  document.querySelectorAll(".rename-input").forEach((input) => {
-    const value = input.value.trim();
-    const key = `${input.dataset.renameKind}\u0000${value.toLocaleLowerCase()}`;
-    const invalid = !value || invalidPattern.test(value) || /[. ]$/u.test(value) || seen.has(key);
+  const pairsById = new Map(renamePairs().map((pair) => [String(pair.packageId), pair.metadata || pair]));
+  elements.renameRows.querySelectorAll(".rename-input").forEach((input) => {
+    const extension = input.dataset.renameKind === "preview" ? ".png" : ".zip";
+    const rawValue = input.value;
+    const value = rawValue.toLocaleLowerCase().endsWith(extension) ? rawValue.slice(0, -extension.length) : rawValue;
+    const metadata = pairsById.get(String(input.dataset.renameId)) || {};
+    const key = `${input.dataset.renameKind}\u0000${String(metadata.packageType || "").toLocaleLowerCase()}\u0000${value.toLocaleLowerCase()}`;
+    const reserved = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iu.test(value);
+    const invalid = !value.trim() || invalidPattern.test(value) || /[. ]$/u.test(value) || reserved || seen.has(key);
     input.classList.toggle("invalid", invalid);
     if (invalid) invalidCount += 1;
     if (value) seen.set(key, input);
-    const statusCell = input.dataset.renameKind === "preview" ? input.parentElement.nextElementSibling?.nextElementSibling : input.parentElement.nextElementSibling;
+    const cells = [...elements.renameRows.children];
+    const inputIndex = cells.indexOf(input.parentElement);
+    const statusCell = cells[inputIndex + (input.dataset.renameKind === "preview" ? 3 : 2)];
     const status = statusCell?.querySelector(".rename-status");
     if (status) {
-      const manual = Boolean(state.nameOverrides[input.dataset.renameId]);
+      const manual = Boolean(state.manualNameOverrides[input.dataset.renameId]?.[input.dataset.renameKind]);
       status.className = `rename-status ${invalid ? "invalid" : manual ? "manual" : "auto"}`;
       status.textContent = invalid ? "需修正" : manual ? "手动修改" : "自动生成";
     }
   });
   if (invalidCount) {
     elements.renameSummary.innerHTML = `<strong>${invalidCount} 个名称需修正</strong> · 应用前请完成校验`;
-    elements.renameError.textContent = "检查空名称、非法字符、结尾空格/句点或重复名称";
+    elements.renameError.textContent = "检查空名称、非法字符、保留设备名、结尾空格/句点或同类型目录重名";
   } else {
-    elements.renameSummary.innerHTML = `<strong>${state.filePlan?.readyPairs?.length || 0} 组</strong> · 预览图与源文件命名均可用`;
+    elements.renameSummary.innerHTML = `<strong>${renamePairs().length} 组</strong> · 目标目录、预览图与源文件名称可用`;
     elements.renameError.textContent = "";
   }
+  const confirmButton = elements.renameModal.querySelector('[data-action="confirm-rename"]');
+  if (confirmButton) confirmButton.disabled = invalidCount > 0;
   if (showFeedback) showToast(invalidCount ? "命名校验未通过" : "命名校验通过", invalidCount ? "请处理标红的名称后再继续。" : "所有名称唯一，且符合 Windows 文件名规则。", invalidCount ? "error" : "normal");
   return invalidCount === 0;
 }
 
 function applyRenameRule(showFeedback = true) {
   state.nameOverrides = {};
+  state.manualNameOverrides = {};
+  state.importNamingSignature = null;
   renderRenameRows();
   if (showFeedback) showToast("已按规则生成名称", "你仍可以直接修改任意一条预览图或源文件名称。");
 }
@@ -1387,8 +1544,13 @@ function updateNameOverride(input) {
   const id = input.dataset.renameId;
   state.nameOverrides[id] = state.nameOverrides[id] || {};
   state.nameOverrides[id][input.dataset.renameKind] = input.value;
+  state.manualNameOverrides[id] = state.manualNameOverrides[id] || {};
+  state.manualNameOverrides[id][input.dataset.renameKind] = true;
+  state.importNamingSignature = null;
   input.classList.add("manual");
-  const statusCell = input.dataset.renameKind === "preview" ? input.parentElement.nextElementSibling?.nextElementSibling : input.parentElement.nextElementSibling;
+  const cells = [...elements.renameRows.children];
+  const inputIndex = cells.indexOf(input.parentElement);
+  const statusCell = cells[inputIndex + (input.dataset.renameKind === "preview" ? 3 : 2)];
   const status = statusCell?.querySelector(".rename-status");
   if (status) { status.className = "rename-status manual"; status.textContent = "手动修改"; }
   validateRename(false);
@@ -1406,19 +1568,31 @@ function captureRenameValues() {
 }
 
 function openRenameModal() {
-  if (!state.filePlan?.readyPairs?.length) {
-    showToast("暂无可命名记录", "需要先形成完整的 PNG + ZIP 配对。", "error");
+  if (!renamePairs().length) {
+    showToast("暂无可命名记录", "需要先形成完整且已选择的 PNG + ZIP 配对。", "error");
     return;
   }
   renderRenameRows();
   openModal(elements.renameModal);
 }
 
-function confirmRename() {
+async function confirmRename() {
   if (!validateRename()) return;
   captureRenameValues();
+  if (state.activeView === "import" && state.scan) {
+    try {
+      const formalLibrary = await getFormalLibraryItems(createAdapter());
+      validateFormalItemNames(renamePairs(), { nameOverrides: state.nameOverrides }, formalLibrary.items, formalLibrary.folders);
+    } catch (error) {
+      elements.renameSummary.innerHTML = "<strong>正式目录校验未通过</strong> · 尚未写入任何素材";
+      elements.renameError.textContent = error.message;
+      showToast("命名与正式目录冲突", error.message, "error");
+      return;
+    }
+    state.importNamingSignature = importNamingSignature();
+  }
   closeModals();
-  showToast("命名已确认", "正式入库时将写入这些名称，并保持 package_id / batch_id 不变。");
+  showToast("命名已确认", state.activeView === "import" ? "下一步再次点击“直接入库 Eagle”，插件会按这些名称正式写入。" : "确认入库时会写入这些名称，并保持 package_id / batch_id 不变。");
 }
 
 async function confirmFile() {
@@ -2242,9 +2416,40 @@ function setView(view, options = {}) {
   closeMoreMenu();
   if (view === "home") updateHomeResume();
   if (view === "success" && state.importResult) {
-    const { filedCount, reusedCount, batchId } = state.importResult;
-    if (elements.successTitle) elements.successTitle.textContent = `${filedCount} 组包装已写入 Eagle`;
-    if (elements.successSummary) elements.successSummary.textContent = `批次 ${batchId} 已完成配对、命名和项目标签${reusedCount ? `，另复用 ${reusedCount} 组已有记录` : ""}。`;
+    const { filedCount, reusedCount, batchId, filed = [], reused = [], version, archivedBase, archiveError } = state.importResult;
+    const completedCount = filedCount + reusedCount;
+    if (elements.successTitle) {
+      elements.successTitle.textContent = archiveError
+        ? "新版本已写入，旧版本待归档"
+        : version
+          ? `${version.version} 已发布并写入 Eagle`
+          : filedCount
+            ? `${filedCount} 组包装已写入 Eagle`
+            : `${reusedCount} 组包装已复用`;
+    }
+    if (elements.successSummary) {
+      elements.successSummary.textContent = version
+        ? `新版本 ${version.version}（${version.packageId}）已完成命名和写入；旧版本 ${version.basePackageId}${archivedBase ? " 已移入 03_历史版本" : ""}。批次 ${batchId}。`
+        : `批次 ${batchId} 已完成配对、命名和项目标签；${filedCount} 组写入 Eagle${reusedCount ? `，${reusedCount} 组复用已有记录` : ""}。`;
+    }
+    if (elements.successRecords) {
+      const records = [
+        ...filed.map((item) => ({ ...item, outcome: "已写入 Eagle" })),
+        ...reused.map((item) => ({ ...item, outcome: "复用已有记录" })),
+      ];
+      elements.successRecords.innerHTML = records.map((item) => {
+        const sourcePair = state.scan?.packages?.find((pkg) => pkg.packageId === item.packageId);
+        const previewName = item.previewName || sourcePair?.preview?.name || (item.previewPath ? path.basename(item.previewPath) : "—");
+        const sourceName = item.sourceName || sourcePair?.source?.name || (item.sourcePath ? path.basename(item.sourcePath) : "—");
+        return `<article class="success-record"><div><strong>${escapeHtml(item.projectName || "未命名项目")} · ${escapeHtml(item.packageName || item.packageId)} · ${escapeHtml(item.version || sourcePair?.version || "v01")}</strong><code>package_id：${escapeHtml(item.packageId || "—")}${item.basePackageId || sourcePair?.basePackageId ? `<br />base_package_id：${escapeHtml(item.basePackageId || sourcePair.basePackageId)}` : ""}<br />PNG：${escapeHtml(previewName)}<br />ZIP：${escapeHtml(sourceName)}${item.revisionId ? `<br />revision_id：${escapeHtml(item.revisionId)}` : ""}</code></div><span class="status-badge status-ready">${item.outcome}</span></article>`;
+      }).join("");
+      elements.successRecords.hidden = records.length === 0;
+    }
+    if (elements.successWarning) {
+      elements.successWarning.textContent = archiveError || "";
+      elements.successWarning.hidden = !archiveError;
+    }
+    if (elements.successSummary && !completedCount) elements.successSummary.textContent = `批次 ${batchId} 已完成处理。`;
   }
   if (view === "formal") refreshBatches();
   if (view === "managed") refreshManagedPackages();
@@ -2411,6 +2616,7 @@ function scanSelectedDirectory() {
   if (!state.sourceDir) return false;
   try {
     state.importStage = 1;
+    invalidateImportNaming(true);
     if (state.activeView !== "import") setView("import");
     const scan = applyManagedDraft(scanDirectory(state.sourceDir, { projectName: elements.projectName.value.trim() || undefined }));
     render(scan);
@@ -2519,7 +2725,7 @@ document.addEventListener("click", (event) => {
     if (action === "new-version") {
       const pkg = managedPackageById(packageId);
       if (pkg) {
-        state.managedDraft = { kind: "version", basePackageId: pkg.packageId, projectName: pkg.projectName, version: nextPackageVersion(pkg.version) };
+        state.managedDraft = { kind: "version", basePackageId: pkg.packageId, projectName: pkg.projectName, packageName: pkg.packageName, packageType: pkg.packageType, aeCompName: pkg.aeCompName, version: nextPackageVersion(pkg.version) };
         elements.projectName.value = pkg.projectName;
         elements.importMode.value = "new";
         state.importStage = 1;
@@ -2696,6 +2902,7 @@ document.addEventListener("click", (event) => {
   if (type === "open-plugin-package") openDownloadedPluginPackage();
   if (type === "show-rename") openRenameModal();
   if (type === "show-duplicate") openModal(elements.duplicateModal);
+  if (type === "confirm-managed-replacement") confirmManagedReplacement();
   if (type === "toggle-theme") { document.body.dataset.theme = document.body.dataset.theme === "dark" ? "light" : "dark"; }
   if (type === "reset-rename") { elements.previewTemplate.value = "{项目}_{类型}_{包装}_{版本}"; elements.sourceTemplate.value = "{项目}_{包装}_{版本}"; applyRenameRule(); }
   if (type === "apply-rename") applyRenameRule();
@@ -2717,6 +2924,7 @@ document.addEventListener("input", (event) => {
   if (!input || !state.scan) return;
   const pkg = packageById(input.dataset.packageName);
   if (!pkg) return;
+  invalidateImportNaming(true);
   pkg.packageName = input.value;
   pkg.nameEdited = true;
   state.selectedPackageId = pkg.packageId;
@@ -2736,6 +2944,7 @@ document.addEventListener("change", (event) => {
   if (packageSelect && state.scan) {
     const pkg = packageById(packageSelect.dataset.packageSelect);
     if (!pkg) return;
+    invalidateImportNaming(false);
     if (packageSelect.checked && pkg.state === "blocked") {
       if (pkg.riskOverrideEligible) {
         pkg.riskAccepted = true;
@@ -2942,12 +3151,22 @@ bindPreviewStageInteractions(elements.aepPreviewStage, state.aep, elements.aepPr
 bindPreviewStageInteractions(elements.managedPreviewStage, state.managedPreview, elements.managedPreviewZoom);
 elements.managedProject?.addEventListener("change", () => { state.managed.project = elements.managedProject.value || "all"; renderManaged(); });
 elements.managedSearch?.addEventListener("input", () => { state.managed.search = elements.managedSearch.value || ""; renderManaged(); });
-elements.managedPreviewPicker?.addEventListener("change", () => applyManagedReplacement("preview", elements.managedPreviewPicker.files?.[0]));
-elements.managedSourcePicker?.addEventListener("change", () => applyManagedReplacement("source", elements.managedSourcePicker.files?.[0]));
-elements.projectName.addEventListener("input", () => { if (state.scan && elements.projectName.value.trim()) state.scan.projectName = elements.projectName.value.trim(); });
+elements.managedPreviewPicker?.addEventListener("change", () => prepareManagedReplacement("preview", elements.managedPreviewPicker.files?.[0]));
+elements.managedSourcePicker?.addEventListener("change", () => prepareManagedReplacement("source", elements.managedSourcePicker.files?.[0]));
+elements.managedReplacementModal?.addEventListener("click", (event) => {
+  if (event.target === elements.managedReplacementModal || event.target.closest("[data-close-modal]")) {
+    state.pendingManagedReplacement = null;
+  }
+});
+elements.projectName.addEventListener("input", () => {
+  if (!state.scan || !elements.projectName.value.trim()) return;
+  const next = elements.projectName.value.trim();
+  if (next !== state.scan.projectName) invalidateImportNaming(true);
+  state.scan.projectName = next;
+});
 elements.importBtn.addEventListener("click", runImport);
 elements.reloadBatchBtn.addEventListener("click", refreshBatches);
-elements.batchSelect.addEventListener("change", () => { state.fileOverrides = {}; state.nameOverrides = {}; state.selectedPair = null; loadFilePlan(); });
+elements.batchSelect.addEventListener("change", () => { state.fileOverrides = {}; state.nameOverrides = {}; state.manualNameOverrides = {}; state.selectedPair = null; loadFilePlan(); });
 elements.fileBtn.addEventListener("click", loadFilePlan);
 elements.confirmFileBtn.addEventListener("click", confirmFile);
 elements.packageInspector.addEventListener("change", (event) => { const select = event.target.closest("[data-inspector-type]"); if (!select || !state.fileInspection) return; state.fileOverrides[select.dataset.inspectorType] = { packageType: select.value }; loadFilePlan(); });

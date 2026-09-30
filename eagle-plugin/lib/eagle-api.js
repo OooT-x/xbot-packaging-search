@@ -918,7 +918,7 @@ const INVALID_ITEM_NAME_CHARACTERS = /[<>:"\/\\|?*\u0000-\u001F]/u;
 
 function stripKnownExtension(value, kind) {
   const extension = kind === "preview" ? ".png" : ".zip";
-  const text = String(value || "").trim();
+  const text = String(value ?? "");
   return text.toLowerCase().endsWith(extension)
     ? text.slice(0, -extension.length)
     : text;
@@ -930,22 +930,38 @@ function resolveFormalItemName(metadata, kind, options = {}) {
     : canonicalSourceName(metadata);
   const overrides = options.nameOverrides || {};
   const override = overrides[metadata.packageId]?.[kind];
-  if (override === undefined || override === null || String(override).trim() === "") {
-    return fallback;
-  }
+  if (override === undefined || override === null) return fallback;
 
   const name = stripKnownExtension(override, kind);
-  if (!name) throw new Error(`${kind === "preview" ? "预览图" : "源文件"}名称不能为空`);
+  if (!name.trim()) throw new Error(`${kind === "preview" ? "预览图" : "源文件"}名称不能为空`);
   if (INVALID_ITEM_NAME_CHARACTERS.test(name)) {
     throw new Error(`名称“${override}”包含 Windows 不允许的文件名字符`);
   }
   if (/[. ]$/u.test(name)) {
     throw new Error(`名称“${override}”不能以空格或句点结尾`);
   }
+  if (/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iu.test(name)) {
+    throw new Error(`名称“${override}”是 Windows 保留设备名，不能入库`);
+  }
   return name;
 }
 
-function validateFormalItemNames(pairs, options = {}) {
+function formalItemPackageType(item, folders = []) {
+  const folderById = new Map((folders || []).map((folder) => [folderId(folder), folder]));
+  for (const value of itemFolderIds(item)) {
+    let current = folderById.get(value);
+    while (current) {
+      const parent = folderById.get(folderId(current.parent));
+      if (parent && [FORMAL_PREVIEW_ROOT_NAME, FORMAL_SOURCE_ROOT_NAME].includes(parent.name)) {
+        return current.name || "";
+      }
+      current = parent;
+    }
+  }
+  return "";
+}
+
+function validateFormalItemNames(pairs, options = {}, existingItems = [], existingFolders = []) {
   const seen = new Map();
   for (const pair of pairs || []) {
     const metadata = pair.metadata || pair;
@@ -960,6 +976,23 @@ function validateFormalItemNames(pairs, options = {}) {
         );
       }
       seen.set(key, metadata.packageId);
+
+      for (const item of existingItems) {
+        const existingMeta = parseAnnotation(item?.annotation);
+        if (existingMeta.package_id === metadata.packageId) continue;
+        const existingType = existingMeta["包装类型"] || formalItemPackageType(item, existingFolders);
+        if (String(existingType).toLocaleLowerCase() !== String(metadata.packageType || "").toLocaleLowerCase()) continue;
+        if (/^(?:已取代|已归档|停用)/u.test(String(existingMeta["状态"] || "").trim())) continue;
+        const extension = String(item?.ext || path.extname(item?.name || "")).replace(/^\./u, "").toLocaleLowerCase();
+        const existingKind = extension === "png" ? "preview" : extension === "zip" ? "source" : null;
+        if (existingKind !== kind) continue;
+        const existingName = stripKnownExtension(item.name, kind);
+        if (existingName.toLocaleLowerCase() === name.toLocaleLowerCase()) {
+          throw new Error(
+            `正式目录“${metadata.packageType}”中已存在${kind === "preview" ? "预览图" : "源文件"}名称“${name}”，请修改后再入库`
+          );
+        }
+      }
     }
   }
 }
@@ -969,7 +1002,8 @@ async function fileBatch(adapter, batchFolderId, options = {}) {
   const { folderIds, plan } = inspection;
   const folderMeta = parseAnnotation(inspection.batchFolder?.description);
 
-  validateFormalItemNames(plan.readyPairs, options);
+  const formalLibrary = await getFormalLibraryItems(adapter);
+  validateFormalItemNames(plan.readyPairs, options, formalLibrary.items, formalLibrary.folders);
   await ensureProjectTagGroups(
     adapter,
     plan.readyPairs.map((pair) => (pair.metadata || pair).projectName)
@@ -1014,6 +1048,7 @@ async function fileBatch(adapter, batchFolderId, options = {}) {
       await adapter.saveItem(sourceItem);
       filed.push({
         packageId: pair.packageId,
+        basePackageId: metadata.basePackageId || "",
         projectName: metadata.projectName,
         packageName: metadata.packageName,
         packageType: pair.packageType,
@@ -1183,6 +1218,7 @@ async function writeFormalPair(adapter, metadata, existing = null, options = {})
 
   return {
     packageId: metadata.packageId,
+    basePackageId: metadata.basePackageId || "",
     projectName: metadata.projectName,
     packageName: metadata.packageName,
     packageType: metadata.packageType,
@@ -1312,7 +1348,7 @@ async function importFormalBatch(adapter, scanResult, options = {}) {
     sourcePath: pkg.sourcePath || pkg.source?.path,
     sourceOptional: sourceOptionalForPackage(pkg),
   }));
-  validateFormalItemNames(metadataPairs, options);
+  validateFormalItemNames(metadataPairs, options, formalLibrary.items, formalLibrary.folders);
   await ensureProjectTagGroups(adapter, [projectName]);
 
   const filed = [];
@@ -1328,12 +1364,18 @@ async function importFormalBatch(adapter, scanResult, options = {}) {
     ) {
       reused.push({
         packageId: metadata.packageId,
-        projectName,
-        packageName: metadata.packageName,
-        packageType: metadata.packageType,
+        basePackageId: existing.meta?.base_package_id || "",
+        projectName: existing.meta?.["项目"] || projectName,
+        packageName: existing.meta?.["包装名称"] || metadata.packageName,
+        packageType: existing.meta?.["包装类型"] || metadata.packageType,
+        version: existing.meta?.["版本"] || metadata.version,
         batchId: existing.meta?.batch_id || batchId,
         previewItemId: existing.preview.id,
         sourceItemId: existing.source?.id || null,
+        previewName: itemFileName(existing.preview),
+        sourceName: existing.source ? itemFileName(existing.source) : null,
+        previewPath: existing.preview.filePath || existing.preview.filepath || "",
+        sourcePath: existing.source?.filePath || existing.source?.filepath || null,
       });
       continue;
     }

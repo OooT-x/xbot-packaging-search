@@ -139,7 +139,7 @@ test("v5 pairing cards own type, asset, and status actions without a side inspec
   assert.match(script, /将同步到命名与入库记录/);
   assert.match(script, /\$\('#pairProjectName'\)\.addEventListener\('change',commitProjectName\)/);
   assert.match(script, /if\(next==='success'\)\{/);
-  assert.match(script, /\$\('#successProject'\)\.textContent=projectName/);
+  assert.match(script, /\$\('#successProject'\)\.textContent=result\?\.project\|\|projectName/);
   assert.match(html, /function openPairStatusDrawer\(p\)/);
   assert.match(html, /openReplaceDrawer\(x\.dataset\.pair,x\.dataset\.cardAsset\)/);
   assert.match(html, /data-candidate-preview="\$\{f\}"/);

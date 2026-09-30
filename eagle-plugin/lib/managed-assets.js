@@ -164,12 +164,80 @@ async function replaceFormalAsset(adapter, record, kind, filePath, options = {})
   };
 }
 
+async function archiveFormalPackageVersion(adapter, record, replacedByPackageId) {
+  if (!record?.packageId) throw new Error("缺少旧版本 package_id，无法归档");
+  if (!replacedByPackageId) throw new Error("缺少新版本 package_id，无法记录版本关系");
+  if (!record.packageType) throw new Error("缺少包装类型，无法归档旧版本");
+
+  const metadata = metadataFromEntry(record);
+  metadata.sourceOptional = !record.source;
+  const assets = [record.preview, record.source].filter(Boolean);
+  if (!assets.length) throw new Error("旧版本没有可归档的 Eagle 素材");
+
+  const historyRoot = await ensureFolder(adapter, HISTORY_ROOT_NAME, null);
+  const historyFolder = await ensureFolder(adapter, record.packageType, folderId(historyRoot));
+  const pair = {
+    previewItemId: record.preview?.id || null,
+    sourceItemId: record.source?.id || null,
+  };
+  const snapshots = [];
+  for (const asset of assets) {
+    const current = await adapter.getItem(asset.id);
+    if (!current) throw new Error(`无法读取旧版本素材 ${asset.id}，未开始归档`);
+    snapshots.push({
+      item: current,
+      annotation: current.annotation,
+      folders: [...(current.folders || [])],
+      tags: [...(current.tags || [])],
+    });
+  }
+
+  const archived = snapshots.map(({ item }) => {
+    item.annotation = buildAnnotation(metadata, pair, {
+      status: "已取代",
+      replacedBy: replacedByPackageId,
+    });
+    item.folders = [folderId(historyFolder)];
+    item.tags = managedTags(item.tags, metadata, HISTORY_ROOT_NAME);
+    return item;
+  });
+  try {
+    for (const item of archived) {
+      await adapter.saveItem(item);
+    }
+  } catch (error) {
+    const rollbackErrors = [];
+    for (const snapshot of [...snapshots].reverse()) {
+      try {
+        snapshot.item.annotation = snapshot.annotation;
+        snapshot.item.folders = snapshot.folders;
+        snapshot.item.tags = snapshot.tags;
+        await adapter.saveItem(snapshot.item);
+      } catch (rollbackError) {
+        rollbackErrors.push(`${snapshot.item.id}: ${rollbackError.message}`);
+      }
+    }
+    const rollbackNote = rollbackErrors.length
+      ? `；旧素材状态恢复不完整（${rollbackErrors.join("；")}）`
+      : "；旧版本素材状态已恢复";
+    throw new Error(`旧版本归档失败：${error.message}${rollbackNote}`);
+  }
+
+  return {
+    packageId: record.packageId,
+    replacedByPackageId,
+    archivedItemIds: archived.map((item) => item.id),
+    status: "archived",
+  };
+}
+
 module.exports = {
   DISABLED_STATUS,
   enabledAsset,
   formalPackageRecords,
   listFormalPackages,
   managedTags,
+  archiveFormalPackageVersion,
   replaceFormalAsset,
   replacementRevisionId,
 };

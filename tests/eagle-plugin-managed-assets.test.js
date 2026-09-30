@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const path = require("node:path");
 const { buildAnnotation } = require("../eagle-plugin/lib/eagle-api");
 const {
+  archiveFormalPackageVersion,
   formalPackageRecords,
   replaceFormalAsset,
 } = require("../eagle-plugin/lib/managed-assets");
@@ -105,4 +106,65 @@ test("replaces one formal asset and keeps the old item in history", async () => 
   assert.match(source.annotation, new RegExp(`配对 PNG：${result.previewItemId}`));
   assert.match(replacement.annotation, /修订号：rev-preview-test/);
   assert.equal(replacement.folders[0], "preview-bg");
+});
+
+test("archives both assets of a replaced version and records its successor", async () => {
+  const current = pair();
+  current.meta = {
+    项目: current.projectName,
+    包装名称: current.packageName,
+    包装类型: current.packageType,
+    版本: current.version,
+    batch_id: current.batchId,
+  };
+  const adapter = new FakeAdapter([current.preview, current.source]);
+  Object.setPrototypeOf(current.preview, { save() {} });
+  Object.setPrototypeOf(current.source, { save() {} });
+  const saveItem = adapter.saveItem.bind(adapter);
+  adapter.saveItem = async (item) => {
+    assert.equal(typeof item.save, "function", "archiving must preserve Eagle Item instances");
+    return saveItem(item);
+  };
+
+  const result = await archiveFormalPackageVersion(adapter, current, "pkg-managed-2");
+
+  assert.equal(result.status, "archived");
+  assert.deepEqual(result.archivedItemIds, ["png-old", "zip-old"]);
+  for (const item of adapter.items) {
+    const historyFolder = adapter.folders.find((folder) => folder.id === item.folders[0]);
+    assert.equal(adapter.folders.find((folder) => folder.id === historyFolder.parent).name, "03_历史版本");
+    assert.match(item.annotation, /状态：已取代/u);
+    assert.match(item.annotation, /取代为：pkg-managed-2/u);
+  }
+});
+
+test("rolls back the first old asset if archiving its pair fails", async () => {
+  const current = pair();
+  current.meta = {
+    项目: current.projectName,
+    包装名称: current.packageName,
+    包装类型: current.packageType,
+    版本: current.version,
+    batch_id: current.batchId,
+  };
+  const adapter = new FakeAdapter([current.preview, current.source]);
+  const saveItem = adapter.saveItem.bind(adapter);
+  let failedOnce = false;
+  adapter.saveItem = async (item) => {
+    if (item.id === "zip-old" && !failedOnce) {
+      failedOnce = true;
+      throw new Error("模拟 Eagle 保存失败");
+    }
+    return saveItem(item);
+  };
+
+  await assert.rejects(
+    archiveFormalPackageVersion(adapter, current, "pkg-managed-2"),
+    /旧版本素材状态已恢复/u
+  );
+  const preview = adapter.items.find((item) => item.id === "png-old");
+  const source = adapter.items.find((item) => item.id === "zip-old");
+  assert.equal(preview.folders[0], "preview-bg");
+  assert.equal(source.folders[0], "source-bg");
+  assert.doesNotMatch(preview.annotation, /状态：已取代/u);
 });
