@@ -156,6 +156,7 @@ const elements = {
   openPluginPackageBtn: document.getElementById("openPluginPackageBtn"),
   homeDropZone: document.getElementById("homeDropZone"),
   homeDropLabel: document.getElementById("homeDropLabel"),
+  homeResume: document.getElementById("homeResume"),
   homeResumeBtn: document.getElementById("homeResumeBtn"),
   homeResumeTitle: document.getElementById("homeResumeTitle"),
   successTitle: document.getElementById("successTitle"),
@@ -2197,6 +2198,7 @@ function updateHomeResume() {
   const importInProgress = Boolean(state.sourceDir && state.importStage < 3);
   const aepInProgress = Boolean(state.aep.aepPath && !state.aep.collecting && state.importStage < 3);
   const targetView = importInProgress ? "import" : aepInProgress ? "aep" : "";
+  if (elements.homeResume) elements.homeResume.hidden = !targetView;
   elements.homeResumeBtn.disabled = !targetView;
   if (!targetView) {
     delete elements.homeResumeBtn.dataset.view;

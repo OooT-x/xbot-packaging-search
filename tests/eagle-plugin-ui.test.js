@@ -62,7 +62,7 @@ test("production import view exposes preview-first pairing and direct naming", (
   assert.doesNotMatch(html, /写入 00_待入库/);
   assert.match(html, /id="assetModal"/);
   assert.match(html, /class="bottom-bar import-bottom"/);
-  assert.match(html, /AE → Eagle · v1\.7\.8/);
+  assert.match(html, /AE → Eagle · v1\.7\.9/);
   assert.match(html, /@keyframes view-in \{ from \{ opacity: 0; \} to \{ opacity: 1; \} \}/);
   assert.match(html, /body\[data-active-view="import"\] #view-import \{ padding-bottom: 104px; \}/);
   assert.match(html, /body\[data-active-view="import"\] #view-import \.import-bottom \{ position: fixed/);
@@ -132,7 +132,26 @@ test("production import view exposes preview-first pairing and direct naming", (
   assert.match(pluginJs, /发现缺失素材，确认风险后可入库/);
   assert.match(pluginJs, /风险入库已确认/);
   assert.match(pluginJs, /selectedForImport/);
-  assert.equal(manifest.version, "1.7.8");
+  assert.equal(manifest.version, "1.7.9");
+});
+
+test("production home matches the current split interaction preview", () => {
+  const html = fs.readFileSync(htmlPath, "utf8");
+  const pluginJs = fs.readFileSync(pluginJsPath, "utf8");
+  const home = html.match(/<section class="workspace-view active" id="view-home">[\s\S]*?<\/section>\s*<section class="workspace-view" id="view-import"/)?.[0] || "";
+
+  assert.match(home, /class="home-grid"/);
+  assert.match(home, /class="home-panel hero-card" id="homeDropZone"/);
+  assert.match(home, /class="hero-upload-icon"/);
+  assert.match(home, /data-home-pick="aep">从AEP开始/);
+  assert.match(home, /data-home-pick="folder">从文件夹开始/);
+  assert.match(home, /class="home-panel side-task"/);
+  assert.match(home, /data-view="managed">打开素材库/);
+  assert.match(home, /class="home-panel resume" id="homeResume" hidden/);
+  assert.match(pluginJs, /homeResume: document\.getElementById\("homeResume"\)/);
+  assert.match(pluginJs, /elements\.homeResume\.hidden = !targetView/);
+  assert.match(pluginJs, /\(kind === "aep" \? elements\.aepPicker : elements\.folderPicker\)\.click\(\)/);
+  assert.doesNotMatch(home, /home-task-card|home-secondary-row|<p id="homeDropDescription"/);
 });
 
 test("production import and maintenance confirm real Eagle mutations", () => {
@@ -281,7 +300,7 @@ test("adapts primary workspaces and panels to the Eagle window", () => {
   const html = fs.readFileSync(htmlPath, "utf8");
   assert.match(html, /--workspace-gutter: clamp\(10px, 1\.4vw, 24px\)/);
   assert.match(html, /\.workspace-view \{ width: min\(1920px, calc\(100% - var\(--workspace-gutter\) - var\(--workspace-gutter\)\)\)/);
-  assert.match(html, /@media \(min-width: 1400px\) \{[\s\S]*#view-home \{ display: grid; grid-template-columns:/);
+  assert.match(html, /\.home-grid \{ display: grid; grid-template-columns: minmax\(0, 1\.55fr\) minmax\(300px, \.85fr\); gap: 14px; \}/);
   assert.match(html, /\.managed-shell \{[^}]*grid-template-columns:clamp\(190px,14vw,250px\)[^}]*clamp\(300px,24vw,420px\)/);
   assert.match(html, /\.managed-grid \{ --managed-card-min:clamp\(220px,16vw,280px\)/);
   assert.match(html, /body\[data-active-view="aep"\] #view-aep \.aep-import-shell \{ min-height: 0; flex: 1; display: flex/);
