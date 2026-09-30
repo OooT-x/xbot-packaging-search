@@ -249,7 +249,23 @@
     .project-add-trigger strong,.project-add-trigger small{display:block}
     .project-add-trigger small{margin-top:2px;color:var(--ink-3);font-size:10px}
     .project-add-trigger b{transition:transform var(--motion-state) var(--ease-out-ui)}
-  </style>
+
+    *::-webkit-scrollbar-button{display:none;width:0;height:0}
+    *::-webkit-scrollbar-corner,*::-webkit-resizer{display:none;background:transparent}
+    .card-size-control{display:inline-flex;align-items:center;gap:6px;flex:none;min-height:34px;padding:0 8px;border:1px solid var(--line-2);border-radius:var(--r-sm);background:var(--panel);color:var(--ink-3);font:10px var(--mono)}
+    .card-size-control input[type=range]{width:76px;height:18px;margin:0;accent-color:var(--blue);cursor:pointer}
+    .card-size-control:focus-within{border-color:color-mix(in srgb,var(--blue) 55%,var(--line-2))}
+    #manageGrid[data-card-size="small"]{grid-template-columns:repeat(auto-fill,minmax(175px,1fr))}
+    #manageGrid[data-card-size="small"] .manage-card{padding:8px}
+    #manageGrid[data-card-size="small"] .manage-thumb{height:96px}
+    #manageGrid[data-card-size="medium"]{grid-template-columns:repeat(auto-fill,minmax(225px,1fr))}
+    #manageGrid[data-card-size="large"]{grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+    #manageGrid[data-card-size="large"] .manage-thumb{height:178px}
+    .has-actual-preview{background:transparent!important;background-image:none!important}
+    .frame-art.actual-preview-image{display:block;width:100%;height:100%;max-width:100%;max-height:100%;border:0;border-radius:0;background:transparent!important;box-shadow:none;object-fit:contain}
+    @media (max-width:840px){.manage-toolbar{align-items:flex-start;flex-wrap:wrap}.manage-toolbar-actions{width:100%;justify-content:flex-start}.manage-toolbar-actions .search{max-width:none}}
+    @media (max-width:500px){.card-size-control{order:-1}}
+</style>
 </head>
 <body data-theme="light" data-screen="home">
   <div class="app">
@@ -287,7 +303,7 @@
       </section>
 
       <section id="screen-manage" class="screen" hidden>
-        <div class="panel manage-layout"><aside class="manage-side"><h3>筛选</h3><label class="field-label">项目</label><select class="select"><option>全部项目</option><option>支付宝阿宝</option><option>华为途灵</option></select><label class="field-label">包装类型</label><div class="filter-list"><button class="active">全部类型 <em>35</em></button><button>信息条 <em>9</em></button><button>视频框 <em>8</em></button><button>背景 <em>10</em></button><button>分镜排版 <em>8</em></button></div><div class="detail-block"><h4>状态</h4><div class="pill-row"><span class="status-chip ok">当前版本</span><span class="status-chip warn">有风险</span></div></div></aside><section class="manage-main"><div class="manage-toolbar"><h2>当前素材库 <span style="color:var(--ink-3);font-size:11px;font-weight:500">35 条</span></h2><div class="manage-toolbar-actions"><input class="input search" placeholder="搜索项目、包装或合成" /><button class="ghost-btn" data-action="refresh">刷新</button></div></div><div class="package-grid" id="manageGrid"></div></section><aside class="manage-inspector" id="manageInspector"></aside></div>
+        <div class="panel manage-layout"><aside class="manage-side"><h3>筛选</h3><label class="field-label">项目</label><select class="select"><option>全部项目</option><option>支付宝阿宝</option><option>华为途灵</option></select><label class="field-label">包装类型</label><div class="filter-list"><button class="active">全部类型 <em>35</em></button><button>信息条 <em>9</em></button><button>视频框 <em>8</em></button><button>背景 <em>10</em></button><button>分镜排版 <em>8</em></button></div><div class="detail-block"><h4>状态</h4><div class="pill-row"><span class="status-chip ok">当前版本</span><span class="status-chip warn">有风险</span></div></div></aside><section class="manage-main"><div class="manage-toolbar"><h2>当前素材库 <span style="color:var(--ink-3);font-size:11px;font-weight:500">35 条</span></h2><div class="manage-toolbar-actions"><label class="card-size-control" title="调整素材卡片大小"><span aria-hidden="true">小</span><input id="manageCardSize" type="range" min="0" max="2" step="1" value="1" aria-label="素材卡片大小" aria-valuetext="中"><span aria-hidden="true">大</span></label><input class="input search" placeholder="搜索项目、包装或合成" /><button class="ghost-btn" data-action="refresh">刷新</button></div></div><div class="package-grid" id="manageGrid"></div></section><aside class="manage-inspector" id="manageInspector"></aside></div>
       </section>
 
       <section id="screen-updates" class="screen" hidden aria-labelledby="updatesTitle">
@@ -871,6 +887,9 @@
       if(url&&!retained)URL.revokeObjectURL(url);
       closeDrawerBeforePreviewCleanup();
     };
+
+    function applyManageCardSize(value, persist=false){const sizes=["small","medium","large"],labels=["小","中","大"],index=Math.min(2,Math.max(0,Number(value)||0)),size=sizes[index],input=$("#manageCardSize"),grid=$("#manageGrid");if(grid)grid.dataset.cardSize=size;if(input){input.value=String(index);input.setAttribute("aria-valuetext",labels[index])}if(persist){try{localStorage.setItem("xbot.manage-card-size.v1",size)}catch{}}}
+    const manageCardSizeInput=$("#manageCardSize");let initialManageCardSize="medium";try{initialManageCardSize=localStorage.getItem("xbot.manage-card-size.v1")||"medium"}catch{};const initialManageCardSizeIndex=["small","medium","large"].indexOf(initialManageCardSize);applyManageCardSize(initialManageCardSizeIndex<0?1:initialManageCardSizeIndex,false);manageCardSizeInput?.addEventListener("input",()=>applyManageCardSize(manageCardSizeInput.value,true));
 </script>
 </body>
 </html>

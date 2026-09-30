@@ -36,11 +36,16 @@ test("production plugin keeps the v5 preview styling and interactive DOM structu
   const plugin = read(pluginPath);
   assert.equal(inlineStyle(plugin), inlineStyle(preview), "production CSS must be copied from the latest preview");
   assert.deepEqual(bodyShape(plugin), bodyShape(preview), "production markup should retain the preview element and interaction structure");
+  assert.match(preview, /id="manageCardSize" type="range"[^>]*aria-label="素材卡片大小"/, "the library should expose an accessible card-size slider");
+  assert.match(preview, /#manageGrid\[data-card-size="small"\]/, "the slider sizes must change the card grid density");
+  assert.match(preview, /\*::-webkit-scrollbar-button\{display:none/, "custom scrollbars must suppress native scrollbar end caps");
+  assert.match(preview, /\.frame-art\.actual-preview-image\{[^}]*background:transparent!important;box-shadow:none/, "real previews must not inherit a decorative backing tile");
   assert.match(plugin, /<script src='js\/workbench\.js'><\/script><script src='js\/v5-runtime\.js'><\/script>/);
   assert.doesNotMatch(plugin, /<script>\s*[\s\S]*?<\/script>/, "production must load the runtime only once");
 });
 
 test("production runtime starts without preview fixtures and delegates real work to project services", () => {
+  const preview = read(previewPath);
   const runtime = read(runtimePath);
   const workbench = read(workbenchPath);
   assert.match(runtime, /const compositions=\[\];\s*const pairs=\[\];\s*const managed=\[\];/);
@@ -52,4 +57,8 @@ test("production runtime starts without preview fixtures and delegates real work
   assert.match(workbench, /prodEagle\.importFormalBatch/);
   assert.match(workbench, /prodManagedApi\.replaceFormalAsset/);
   assert.match(workbench, /prodManagedApi\.changeFormalPackageType/);
+  assert.match(workbench, /manageCardSizeInput\?\.addEventListener\("input"/);
+  assert.match(workbench, /has-actual-preview/);
+  assert.match(preview, /applyManageCardSize\(manageCardSizeInput\.value,true\)/, "the preview slider must apply and persist the selected density");
+  assert.match(runtime, /has-actual-preview/);
 });
