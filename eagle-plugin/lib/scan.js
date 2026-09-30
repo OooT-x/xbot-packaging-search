@@ -573,7 +573,13 @@ function metadataFromPair(png, zip, projectName) {
 
 function scanDirectory(sourceDir, options = {}) {
   const root = path.resolve(sourceDir);
-  const allEntries = walkFiles(root);
+  const selectedPaths = options.selectedPaths && new Set(options.selectedPaths.map(value => path.resolve(value)));
+  const allEntries = selectedPaths ? [...selectedPaths].map(filePath => {
+    const relative = path.relative(root, filePath);
+    if (relative.startsWith(`..${path.sep}`) || relative === ".." || path.isAbsolute(relative)) throw new Error("所选文件不在扫描目录内");
+    if (!fs.statSync(filePath).isFile()) throw new Error("所选路径不是文件");
+    return { path: filePath, relative, name: path.basename(filePath), ext: path.extname(filePath).toLowerCase() };
+  }) : walkFiles(root);
   const files = allEntries.map((entry) => ({
     path: entry.path,
     relative: entry.relative,
@@ -621,6 +627,10 @@ function scanDirectory(sourceDir, options = {}) {
 
   const registerReference = (fileName, packageId, role, entryPath) => {
     const resolved = resolveManifestFile(root, fileName);
+    if (resolved && selectedPaths && !selectedPaths.has(path.resolve(resolved))) {
+      errors.push(`manifest 引用未选择的文件：${fileName}`);
+      return null;
+    }
     if (!resolved) {
       errors.push(`manifest 条目 ${packageId} 的 ${role} 路径越界: ${fileName}`);
       return null;
@@ -800,7 +810,7 @@ function scanDirectory(sourceDir, options = {}) {
       const packageType = inferPackageType(packageName);
       const imageOnlyBackground = packageType === "背景" && !sourceName;
 
-      if (!imageOnlyBackground && (!sourcePath || !fs.existsSync(sourcePath) || path.extname(sourcePath).toLowerCase() !== ZIP_EXT)) {
+      if (!imageOnlyBackground && (!sourcePath || (selectedPaths && !selectedPaths.has(path.resolve(sourcePath))) || !fs.existsSync(sourcePath) || path.extname(sourcePath).toLowerCase() !== ZIP_EXT)) {
         entryErrors.push(`收集记录引用的 ZIP 不存在：${sourceName || "未填写"}`);
       } else if (sourcePath && usedSourcePaths.has(path.resolve(sourcePath))) {
         entryErrors.push(`ZIP 被多个收集记录引用：${sourceName}`);

@@ -569,6 +569,20 @@ class PrecompositionCollectionTests(unittest.TestCase):
 
 
 class WorkerCollectionTests(unittest.TestCase):
+    def test_selective_outputs_do_not_run_disabled_work(self):
+        compositions = tuple(SimpleNamespace(id=i, name=name) for i, name in ((1, "背景"), (2, "信息条"), (3, "不输出")))
+        result = SimpleNamespace(warnings=(), to_dict=lambda: {"zip_file": "file.zip"})
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(WORKER, "inspect_project", return_value=SimpleNamespace(compositions=compositions)), mock.patch.object(WORKER, "collect_composition", return_value=result) as collect, mock.patch.object(WORKER, "preview_payload", return_value={"preview_file": "image.png"}) as preview, mock.patch.object(WORKER, "render_preview") as render:
+            output = WORKER.collect_payload("input.aep", [1, 2, 3], directory, collection_modes={1: "image", 2: "file", 3: "none"})
+            self.assertEqual(len(output), 2)
+            collect.assert_called_once_with("input.aep", 2, directory)
+            self.assertEqual(preview.call_count, 1)
+            render.assert_not_called()
+            self.assertEqual(output[0]["zip_file"], "")
+            manifests = list(Path(directory).glob("*/manifest.json"))
+            self.assertEqual(len(manifests), 1)
+            self.assertEqual(json.loads(manifests[0].read_text(encoding="utf-8"))["composition"]["name"], "背景")
+
     def test_collect_payload_deduplicates_ids_before_progress_and_collection(self):
         compositions = tuple(
             SimpleNamespace(

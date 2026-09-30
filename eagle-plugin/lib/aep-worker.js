@@ -185,6 +185,10 @@ function collectAep(aepPath, compositionIds, outputRoot, options = {}) {
   if (!ids.length) throw new Error("请至少选择一个要收集的合成。");
   const args = ["collect", path.resolve(aepPath)];
   ids.forEach((id) => args.push("--comp-id", String(id)));
+  ids.forEach(id => {
+    const rule = options.collectionRules?.[id];
+    if (rule) args.push("--collect-mode", `${id}=${rule.image && rule.file ? "both" : rule.image ? "image" : rule.file ? "file" : "none"}`);
+  });
   Object.entries(options.previewTimes || {}).forEach(([id, seconds]) => {
     if (Number.isFinite(Number(seconds)) && Number(seconds) >= 0) {
       args.push("--preview-time", `${Number(id)}=${Number(seconds)}`);

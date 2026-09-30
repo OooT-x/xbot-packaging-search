@@ -1,5 +1,5 @@
 const { normalizeText } = require("./eagle-sync");
-const { PACKAGE_TYPE_ALIASES } = require("../../eagle-plugin/lib/package-types");
+const { PACKAGE_TYPE_ALIASES, refreshPackageTypes } = require("../../eagle-plugin/lib/package-types");
 
 const TYPE_SYNONYMS = new Map(PACKAGE_TYPE_ALIASES);
 TYPE_SYNONYMS.get("信息条").push("小标注");
@@ -15,7 +15,10 @@ function hasPackagingAction(content) {
 }
 
 function hasPackagingDomain(content) {
-  return DOMAIN_WORDS.test(normalizeText(content));
+  refreshPackageTypes();
+  for (const [name, aliases] of PACKAGE_TYPE_ALIASES) TYPE_SYNONYMS.set(name, aliases);
+  const text = normalizeText(content);
+  return DOMAIN_WORDS.test(text) || [...TYPE_SYNONYMS.values()].some(aliases => aliases.some(alias => text.includes(normalizeText(alias))));
 }
 
 function isPackagingQueryText(content) {
@@ -50,6 +53,8 @@ function isProjectCatalogInquiry(content) {
 }
 
 function extractPackageType(content) {
+  refreshPackageTypes();
+  for (const [name, aliases] of PACKAGE_TYPE_ALIASES) TYPE_SYNONYMS.set(name, aliases);
   const text = normalizeText(content);
   for (const [type, synonyms] of TYPE_SYNONYMS) {
     if (synonyms.some((synonym) => text.includes(normalizeText(synonym)))) return type;

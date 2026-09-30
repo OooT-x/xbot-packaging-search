@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import uuid
 from pathlib import Path
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -134,14 +135,21 @@ def collect_payload(
     output_root: str,
     preview_times: dict[int, float] | None = None,
     progress=None,
+    collection_modes: dict[int, str] | None = None,
 ) -> list[dict]:
     project = inspect_project(aep_path)
     by_id = {item.id: item for item in project.compositions}
     preview_times = preview_times or {}
+    collection_modes = collection_modes or {}
     unique_ids: list[int] = []
     seen_ids: set[int] = set()
     for composition_id in composition_ids:
         normalized_id = int(composition_id)
+        mode = collection_modes.get(normalized_id, "both")
+        if mode not in {"both", "image", "file", "none"}:
+            raise CollectorError(f"无效收集模式：{mode}")
+        if mode == "none":
+            continue
         if normalized_id in seen_ids:
             continue
         seen_ids.add(normalized_id)
@@ -154,6 +162,7 @@ def collect_payload(
         target = by_id.get(composition_id)
         if target is None:
             raise CollectorError(f"找不到合成 ID：{composition_id}")
+        mode = collection_modes.get(composition_id, "both")
         if progress:
             progress({
                 "command": "collect",
@@ -165,7 +174,38 @@ def collect_payload(
                 "composition_id": target.id,
                 "composition_name": target.name,
             })
+        if mode == "image":
+            # Image-only never reduces or copies an AEP and never creates a ZIP.
+            root = Path(output_root).expanduser().resolve()
+            root.mkdir(parents=True, exist_ok=True)
+            stem = f"preview-{target.id}-{uuid.uuid4().hex[:10]}"
+            preview_target = root / f"{stem}.png"
+            try:
+                payload = preview_payload(aep_path, target.id, str(preview_target), preview_times.get(target.id))
+            except Exception:
+                preview_target.unlink(missing_ok=True)
+                raise
+            manifest = {
+                "manifest_type": "xbot-collection", "schema_version": 1,
+                "composition": {"id": target.id, "name": target.name},
+                "source_project": str(aep_path), "source_file": "",
+                "preview_file": preview_target.name, "collection_mode": "image",
+                "missing_files": [], "warnings": [], "dependency_status": "完整",
+            }
+            manifest_directory = root / stem
+            manifest_directory.mkdir()
+            manifest_path = manifest_directory / "manifest.json"
+            manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+            results.append({**payload, "zip_file": "", "manifest_file": str(manifest_path), "missing_files": [], "warnings": [], "collection_mode": "image"})
+            if progress:
+                progress({"command": "collect", "event": "composition", "phase": "complete", "total": total, "completed": index + 1, "composition_id": target.id, "composition_name": target.name, "status": "ready"})
+            continue
         result = collect_composition(aep_path, target.id, output_root)
+        if mode == "file":
+            results.append({**result.to_dict(), "collection_mode": "file"})
+            if progress:
+                progress({"command": "collect", "event": "composition", "phase": "complete", "total": total, "completed": index + 1, "composition_id": target.id, "composition_name": target.name, "status": "warning" if result.warnings else "ready"})
+            continue
         if progress:
             progress({
                 "command": "collect",
@@ -247,6 +287,7 @@ def build_parser() -> argparse.ArgumentParser:
     collect_parser.add_argument("aep")
     collect_parser.add_argument("--comp-id", type=int, action="append", required=True)
     collect_parser.add_argument("--output", required=True)
+    collect_parser.add_argument("--collect-mode", action="append", default=[], metavar="COMP_ID=MODE", help="逐合成选择 both / image / file / none")
     collect_parser.add_argument(
         "--preview-time",
         action="append",
@@ -272,7 +313,11 @@ def main(argv: list[str] | None = None) -> int:
                     preview_times[int(comp_id)] = float(seconds)
                 except ValueError as exc:
                     raise CollectorError(f"预览时间格式无效：{value}，应为 COMP_ID=SECONDS") from exc
-            result = collect_payload(args.aep, args.comp_id, args.output, preview_times, progress=emit_progress)
+            collection_modes = {}
+            for value in args.collect_mode:
+                comp_id, mode = value.split("=", 1)
+                collection_modes[int(comp_id)] = mode
+            result = collect_payload(args.aep, args.comp_id, args.output, preview_times, progress=emit_progress, collection_modes=collection_modes)
         # Keep the process protocol ASCII-safe on Windows consoles (some
         # PyInstaller console hosts still expose a GBK stdout encoding).
         print(json.dumps(result, ensure_ascii=True, indent=2))

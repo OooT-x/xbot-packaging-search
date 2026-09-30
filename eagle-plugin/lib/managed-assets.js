@@ -12,7 +12,9 @@ const {
   parseAnnotation,
   resolveFormalItemName,
   folderId,
+  validateFormalItemNames,
 } = require("./eagle-api");
+const { normalizePackageType } = require("./package-types");
 
 const DISABLED_STATUS = /^(?:已取代|已归档|停用)/u;
 
@@ -232,6 +234,7 @@ async function archiveFormalPackageVersion(adapter, record, replacedByPackageId)
 }
 
 module.exports = {
+  changeFormalPackageType,
   DISABLED_STATUS,
   enabledAsset,
   formalPackageRecords,
@@ -241,3 +244,37 @@ module.exports = {
   replaceFormalAsset,
   replacementRevisionId,
 };
+
+async function changeFormalPackageType(adapter, record, value) {
+  const packageType = normalizePackageType(value);
+  if (!packageType || !record?.packageId) throw new Error("包装或类型无效");
+  if (!record.source && packageType !== "背景") throw new Error("仅图片包装只能归入背景；请先补齐 ZIP");
+  const metadata = { ...metadataFromEntry(record), ...record, packageType, sourceOptional: !record.source };
+  const library = await getFormalLibraryItems(adapter);
+  validateFormalItemNames([metadata], {}, library.items, library.folders);
+  const folders = await formalFolders(adapter, packageType);
+  const revisionId = replacementRevisionId(record, "type");
+  const originals = [record.preview, record.source].filter(Boolean).map(item => ({ item, name: item.name, annotation: item.annotation, tags: [...(item.tags || [])], folders: [...(item.folders || [])] }));
+  try {
+    for (const { item } of originals) {
+      const kind = item.id === record.preview?.id ? "preview" : "source";
+      item.name = resolveFormalItemName(metadata, kind);
+      item.folders = [folderId(kind === "preview" ? folders.previewFolder : folders.sourceFolder)];
+      item.tags = managedTags((item.tags || []).filter(tag => tag !== record.packageType), metadata, kind === "preview" ? FORMAL_PREVIEW_ROOT_NAME : FORMAL_SOURCE_ROOT_NAME);
+      // Preserve dependency/risk facts and every existing stable reference.
+      item.annotation = String(item.annotation || "").replace(/^包装类型[：:].*$/mu, `包装类型：${packageType}`);
+      if (!/^包装类型[：:]/mu.test(item.annotation)) item.annotation += `\n包装类型：${packageType}`;
+      item.annotation = item.annotation.replace(/^revision_id[：:].*\n?/mu, "") + `\nrevision_id: ${revisionId}`;
+      await adapter.saveItem(item);
+    }
+  } catch (error) {
+    const rollback = [];
+    for (const { item, ...original } of originals) {
+      Object.assign(item, original);
+      try { await adapter.saveItem(item); } catch (failure) { rollback.push(failure.message); }
+    }
+    if (rollback.length) throw new Error(`${error.message}；回滚未完成：${rollback.join("；")}`);
+    throw error;
+  }
+  return { ...metadata, revisionId, previewItemId: record.preview?.id, sourceItemId: record.source?.id, previewPath: record.preview?.filePath || record.preview?.filepath || "", sourcePath: record.source?.filePath || record.source?.filepath || "", status: "updated" };
+}

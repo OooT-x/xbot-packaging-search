@@ -1,9 +1,15 @@
 {
   "id": "LB5UL2P0Q9FFF",
-  "version": "1.7.9",
+  "version": "1.8.0",
   "name": "X.bot 包装素材收集与入库助手",
   "logo": "/logo.png",
-  "keywords": ["包装", "入库", "AEP", "After Effects", "Eagle"],
+  "keywords": [
+    "包装",
+    "入库",
+    "AEP",
+    "After Effects",
+    "Eagle"
+  ],
   "main": {
     "devTools": true,
     "url": "index.html",

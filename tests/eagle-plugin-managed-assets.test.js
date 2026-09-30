@@ -6,7 +6,29 @@ const {
   archiveFormalPackageVersion,
   formalPackageRecords,
   replaceFormalAsset,
+  changeFormalPackageType,
 } = require("../eagle-plugin/lib/managed-assets");
+
+test("type migration preserves IDs and risk facts and rolls back partial saves", async () => {
+  const pkg = pair();
+  pkg.preview.annotation += "\n依赖缺失: missing.psd";
+  const adapter = new FakeAdapter([pkg.preview, pkg.source]);
+  const result = await changeFormalPackageType(adapter, pkg, "信息条");
+  assert.equal(result.previewItemId, "png-old");
+  assert.equal(result.sourceItemId, "zip-old");
+  assert.equal(result.packageName, pkg.packageName);
+  assert.match(pkg.preview.annotation, /包装类型[：:]\s*信息条/);
+  assert.match(pkg.preview.annotation, /missing.psd/);
+  assert.ok(pkg.preview.tags.includes("信息条"));
+  assert.ok(!pkg.preview.tags.includes("背景"));
+  const before = JSON.stringify([pkg.preview, pkg.source]);
+  const save = adapter.saveItem.bind(adapter);
+  let count = 0;
+  adapter.saveItem = async item => { if (++count === 2) throw new Error("save failed"); return save(item); };
+  await assert.rejects(changeFormalPackageType(adapter, { ...pkg, packageType: "信息条" }, "视频框"), /save failed/);
+  assert.equal(JSON.stringify([pkg.preview, pkg.source]), before);
+  await assert.rejects(changeFormalPackageType(adapter, { ...pkg, source: null }, "信息条"), /只能归入背景/);
+});
 
 function metadata(overrides = {}) {
   return {
