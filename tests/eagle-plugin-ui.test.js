@@ -16,7 +16,7 @@ test("production Eagle entry uses the preview-native page and dedicated controll
   assert.doesNotMatch(html, /<script src=['"]js\/plugin\.js['"]/);
   assert.doesNotMatch(html, /<script src=['"]js\/v5-workspace\.js['"]/);
   assert.match(runtime, /const compositions=\[\];\s*const pairs=\[\];\s*const managed=\[\];/);
-  assert.equal(manifest.version, "1.8.0");
+  assert.equal(manifest.version, "1.8.1");
 
   for (const action of ["open-manage", "choose-aep", "collect", "open-rename", "import", "check-plugin-updates", "download-plugin-update"]) {
     assert.match(html, new RegExp(`data-action=["']${action}["']`), `${action} remains available in the preview-native UI`);
