@@ -306,6 +306,16 @@
     #drawer:has(.file-picker-body) .drawer-footer{margin-top:24px;padding-top:20px}
     @media(max-width:500px){#drawer:has(.file-picker-body){padding:18px}.file-candidate-list>.candidate{grid-template-columns:64px minmax(0,1fr) 22px;gap:12px;padding:12px}.file-candidate-list .candidate-thumb{width:64px;height:56px}}
 
+
+    .type-management-list{display:grid;gap:14px;margin-top:18px}
+    .type-management-row{padding:16px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2)}
+    .type-management-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+    .type-management-row label{min-width:0;display:grid;gap:7px;font-size:11px;color:var(--ink-2)}
+    .type-management-row input{width:100%;min-width:0}
+    .type-management-actions{display:flex;justify-content:flex-end;gap:12px;margin-top:14px}
+    [data-type-manager-error]{color:var(--red)}
+    @media(max-width:560px){.type-management-row .form-grid{grid-template-columns:1fr}}
+
 </style></head><body data-theme="light" data-screen="home">
   <div class="app">
     <header class="topbar">
@@ -370,7 +380,7 @@
   <div class="modal-wrap" id="modal" hidden><div class="modal" id="modalContent" role="dialog" aria-modal="true"></div></div>
   <aside class="drawer" id="drawer" role="dialog" aria-modal="false" hidden></aside>
   <div class="bottom-sheet-backdrop" id="bottomSheetBackdrop" aria-hidden="true"></div>
-  <div class="tweaks" id="tweaks" role="dialog" aria-label="设置"><h3>设置</h3><button class="settings-update" type="button" data-action="open-updates"><span class="settings-update-copy"><strong>版本更新</strong><small>检查版本状态</small></span><span class="settings-update-badge" hidden></span></button><div class="tweak-row"><span>减少动效</span><button class="toggle" id="motionToggle" type="button" aria-label="减少动效" aria-pressed="false"></button></div></div>
+  <div class="tweaks" id="tweaks" role="dialog" aria-label="设置"><h3>设置</h3><button class="settings-update" type="button" data-action="open-updates"><span class="settings-update-copy"><strong>版本更新</strong><small>检查版本状态</small></span><span class="settings-update-badge" hidden></span></button><button class="settings-update" type="button" data-action="manage-types"><span class="settings-update-copy"><strong>管理包装类型</strong><small>修改名称、别名，停用或恢复类型</small></span></button><div class="tweak-row"><span>减少动效</span><button class="toggle" id="motionToggle" type="button" aria-label="减少动效" aria-pressed="false"></button></div></div>
   <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"><strong id="toastTitle"></strong><span id="toastText"></span></div>
 
 <script src='js/workbench.js'></script><script src='js/v5-runtime.js'></script></body></html>

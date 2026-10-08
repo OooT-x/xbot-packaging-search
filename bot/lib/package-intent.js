@@ -1,5 +1,5 @@
 const { normalizeText } = require("./eagle-sync");
-const { PACKAGE_TYPE_ALIASES, refreshPackageTypes } = require("../../eagle-plugin/lib/package-types");
+const { PACKAGE_TYPE_ALIASES, refreshPackageTypes, normalizePackageType } = require("../../eagle-plugin/lib/package-types");
 
 const TYPE_SYNONYMS = new Map(PACKAGE_TYPE_ALIASES);
 TYPE_SYNONYMS.get("信息条").push("小标注");
@@ -16,7 +16,9 @@ function hasPackagingAction(content) {
 
 function hasPackagingDomain(content) {
   refreshPackageTypes();
-  for (const [name, aliases] of PACKAGE_TYPE_ALIASES) TYPE_SYNONYMS.set(name, aliases);
+  TYPE_SYNONYMS.clear();
+  for (const [name, aliases] of PACKAGE_TYPE_ALIASES) TYPE_SYNONYMS.set(name, [...aliases]);
+  TYPE_SYNONYMS.get("信息条")?.push("小标注"); TYPE_SYNONYMS.get("视频框")?.push("框");
   const text = normalizeText(content);
   return DOMAIN_WORDS.test(text) || [...TYPE_SYNONYMS.values()].some(aliases => aliases.some(alias => text.includes(normalizeText(alias))));
 }
@@ -54,7 +56,9 @@ function isProjectCatalogInquiry(content) {
 
 function extractPackageType(content) {
   refreshPackageTypes();
-  for (const [name, aliases] of PACKAGE_TYPE_ALIASES) TYPE_SYNONYMS.set(name, aliases);
+  TYPE_SYNONYMS.clear();
+  for (const [name, aliases] of PACKAGE_TYPE_ALIASES) TYPE_SYNONYMS.set(name, [...aliases]);
+  TYPE_SYNONYMS.get("信息条")?.push("小标注"); TYPE_SYNONYMS.get("视频框")?.push("框");
   const text = normalizeText(content);
   for (const [type, synonyms] of TYPE_SYNONYMS) {
     if (synonyms.some((synonym) => text.includes(normalizeText(synonym)))) return type;
@@ -101,10 +105,10 @@ function searchPackages(packages, content, limit = 3) {
   const text = normalizeText(content);
   const candidates = preferCurrentVersions(packages, content)
     .filter((item) => item.project_id === project.project_id)
-    .filter((item) => !packageType || item.package_type === packageType)
+    .filter((item) => !packageType || normalizePackageType(item.package_type) === packageType)
     .map((item) => {
       let score = project.exact ? 100 : 80;
-      if (packageType && item.package_type === packageType) score += 25;
+      if (packageType && normalizePackageType(item.package_type) === packageType) score += 25;
       if (text.includes(normalizeText(item.package_name))) score += 12;
       score += (item.tags || []).filter((tag) => text.includes(normalizeText(tag))).length * 4;
       score += Math.min(5, Math.floor(Number(item.eagle_modified_at || 0) / 1e12));

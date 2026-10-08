@@ -14,7 +14,7 @@ const {
   folderId,
   validateFormalItemNames,
 } = require("./eagle-api");
-const { normalizePackageType } = require("./package-types");
+const { normalizePackageType, isPackageTypeActive } = require("./package-types");
 
 const DISABLED_STATUS = /^(?:已取代|已归档|停用)/u;
 
@@ -247,7 +247,7 @@ module.exports = {
 
 async function changeFormalPackageType(adapter, record, value) {
   const packageType = normalizePackageType(value);
-  if (!packageType || !record?.packageId) throw new Error("包装或类型无效");
+  if (!isPackageTypeActive(packageType) || !record?.packageId) throw new Error("包装或类型无效（类型未注册或已停用）");
   if (!record.source && packageType !== "背景") throw new Error("仅图片包装只能归入背景；请先补齐 ZIP");
   const metadata = { ...metadataFromEntry(record), ...record, packageType, sourceOptional: !record.source };
   const library = await getFormalLibraryItems(adapter);

@@ -30,6 +30,7 @@ let prodPairRenderer = null;
 let prodManageRenderer = null;
 let prodOutputNames = {};
 let prodPendingManagedTypeId = "";
+let prodPendingPairTypeId = "";
 let prodManageProjectFilter = "";
 let prodManageTypeFilter = "";
 let prodManageSearch = "";
@@ -72,7 +73,7 @@ function prodRefreshTypes() {
   packageTypes.splice(0, packageTypes.length, ...prodTypes.PACKAGE_TYPES);
   for (const type of Object.keys(packageTypeAliases)) delete packageTypeAliases[type];
   for (const [type, aliases] of prodTypes.PACKAGE_TYPE_ALIASES) packageTypeAliases[type] = [...aliases];
-  prodTypeFile = process.env.XBOT_PACKAGE_TYPES_FILE || prodPath.join(process.env.APPDATA || process.env.USERPROFILE || process.cwd(), "Xbot", "package-types.json");
+  prodTypeFile = prodTypes.registryPath();
 }
 
 function prodSetScreen(next) {
@@ -103,6 +104,7 @@ function prodRefreshPairState(pair) {
   if (!pkg) return;
   pkg.packageName = pair.name;
   pkg.packageType = prodTypes.normalizePackageType(pair.type) || pair.type;
+  pair.type = pkg.packageType;
   pkg.version = pair.version || "v01";
   pkg.selectedForImport = Boolean(pair.selected);
   pkg.riskAccepted = Boolean(pair.riskAccepted);
@@ -110,17 +112,18 @@ function prodRefreshPairState(pair) {
   else pkg.previewPath = "";
   if (pair.sourcePath) pkg.sourcePath = pair.sourcePath;
   else pkg.sourcePath = "";
-  const hard = !pkg.previewPath || (!pkg.sourcePath && pkg.packageType !== "背景") || !prodTypes.PACKAGE_TYPES.includes(pkg.packageType) || pair.conflict;
+  const hard = !pkg.previewPath || (!pkg.sourcePath && pkg.packageType !== "背景") || !prodTypes.isPackageTypeActive(pkg.packageType) || pair.conflict;
   const riskPending = Boolean((pkg.missingFiles || pkg.missingFootage || []).length && !pkg.riskAccepted);
   pkg.state = hard || riskPending ? "blocked" : "ready";
   pkg.riskOverrideEligible = Boolean((pkg.missingFiles || pkg.missingFootage || []).length);
-  pkg.errors = hard ? [!pkg.previewPath ? "缺少配对 PNG" : !pkg.sourcePath && pkg.packageType !== "背景" ? "缺少配对 ZIP" : !prodTypes.PACKAGE_TYPES.includes(pkg.packageType) ? "请选择有效的包装类型" : "文件配对存在冲突"] : riskPending ? ["发现缺失素材，确认风险后可入库"] : [];
+  pkg.errors = hard ? [!pkg.previewPath ? "缺少配对 PNG" : !pkg.sourcePath && pkg.packageType !== "背景" ? "缺少配对 ZIP" : !prodTypes.isPackageTypeActive(pkg.packageType) ? (prodTypes.normalizePackageType(pkg.packageType) ? "该包装类型已停用，请更换类型或在设置中恢复" : "该类型尚未保存到共享配置，请在设置中新增包装类型") : "文件配对存在冲突"] : riskPending ? ["发现缺失素材，确认风险后可入库"] : [];
   pkg.matchError = pkg.errors[0] || "";
   pair.state = pkg.state === "ready" ? "ready" : "review";
   pair.note = pair.state === "ready" ? (pkg.riskAccepted ? `风险已确认 · ${pkg.missingFiles?.join("、") || pkg.missingFootage?.join("、") || "依赖缺失"}` : "扫描通过 · 可写入 Eagle 正式目录") : pkg.errors.join("；");
 }
 
 function prodRenderPairs() {
+  prodRefreshTypes();
   pairs.forEach(prodRefreshPairState);
   prodPairRenderer?.();
   const visible = pairs.filter(p => pairFilter === "all" || (pairFilter === "ready" && p.state === "ready") || (pairFilter === "review" && p.state !== "ready") || (pairFilter === "risk" && p.risk) || (pairFilter === "conflict" && p.conflict));
@@ -565,14 +568,56 @@ async function prodCheckUpdates(force = false) {
     prodRenderUpdates(); return prodLatestRelease;
   } catch (error) { if (status) status.textContent = `检查失败：${error.message}`; const heading = document.querySelector("#updateStatusTitle"); if (heading) heading.textContent = "无法读取版本信息"; if (force) prodToast("检查更新失败", error.message, "error"); return null; }
 }
+
+function prodAddTypeFromMenu(menu, input) {
+  const picker = menu._xbotPicker || menu.closest(".package-type-picker");
+  const trigger = picker?.querySelector("[data-package-type-trigger]");
+  const scope = trigger?.dataset.packageTypeScope || "card";
+  try {
+    const name = prodTypes.registerPackageType(input.value.trim());
+    prodRefreshTypes();
+    closePackageTypePickers();
+    if (scope === "managed" || scope === "migration") {
+      const item = trigger?._managedPackage || trigger?._migrationPackage;
+      if (item) { prodChangeManagedType(item.id, name); return; }
+    }
+    const pair = prodPair(trigger?.dataset.packageTypeTrigger);
+    if (pair) { pair.type = name; delete prodOutputNames[pair.id]; }
+    prodRenderPairs();
+    prodToast("包装类型已创建", name + " · 已保存共享配置", "success");
+  } catch (error) { prodToast("无法创建包装类型", error.message, "error"); }
+}
+
+function prodOpenTypeManager() {
+  prodRefreshTypes();
+  const types = prodTypes.listPackageTypes();
+  openModal('<div class="modal-head"><div><h2>管理包装类型</h2><p>改名纠正错误，停用不再使用的类型。</p></div><button class="icon-btn" data-close aria-label="关闭类型管理">×</button></div><div class="modal-body"><p class="form-help">自定义类型可改名；旧名称保留为别名。停用后不可新入库，已有素材仍可检索。内置类型名称固定。</p><div class="type-management-list">' + types.map(type => '<section class="type-management-row" data-type-record="' + prodEsc(type.name) + '"><div class="type-management-heading"><strong>' + prodEsc(type.name) + '</strong><span class="status-chip ' + (type.enabled ? 'ok' : 'warn') + '">' + (type.enabled ? '使用中' : '已停用') + '</span></div><div class="form-grid"><label>类型名称<input class="input" data-type-name value="' + prodEsc(type.name) + '" ' + (type.builtin ? 'readonly aria-readonly="true"' : '') + ' aria-label="' + prodEsc(type.name) + ' 类型名称"></label><label>别名（逗号分隔）<input class="input" data-type-aliases value="' + prodEsc(type.aliases.filter(alias => alias !== type.name).join('，')) + '" aria-label="' + prodEsc(type.name) + ' 别名"></label></div><div class="type-management-actions"><button class="ghost-btn" data-type-save>保存修改</button><button class="quiet" data-type-enabled="' + String(!type.enabled) + '">' + (type.enabled ? '停用类型' : '恢复使用') + '</button></div></section>').join('') + '</div><p class="form-help">配置管理不会批量重命名或移动 Eagle 中的素材；已有包装可在素材库单独更改类型。</p><p data-type-manager-error role="alert"></p><div class="drawer-footer"><button class="ghost-btn" data-close aria-label="关闭类型管理">关闭</button><button class="primary-btn" data-type-add>新增包装类型</button></div></div>');
+  document.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', closeModal));
+  document.querySelector('[data-type-add]')?.addEventListener('click', () => { closeModal(); prodOpenAddType(); });
+  document.querySelectorAll('[data-type-record]').forEach(row => {
+    const apply = changes => {
+      try {
+        prodTypes.updatePackageType(row.dataset.typeRecord, changes);
+        prodRefreshTypes(); pairs.forEach(pair => { pair.type = prodTypes.normalizePackageType(pair.type) || pair.type; delete prodOutputNames[pair.id]; });
+        if (screen === 'pair') prodRenderPairs();
+        if (screen === 'manage') renderManage();
+        prodOpenTypeManager(); prodToast('包装类型已更新', '已保存共享配置', 'success');
+      } catch (error) { document.querySelector('[data-type-manager-error]').textContent = error.message; }
+    };
+    row.querySelector('[data-type-save]').addEventListener('click', () => apply({ name: row.querySelector('[data-type-name]').value, aliases: row.querySelector('[data-type-aliases]').value.split(/[,，、]/).map(value => value.trim()).filter(Boolean) }));
+    row.querySelector('[data-type-enabled]').addEventListener('click', event => apply({ enabled: event.currentTarget.dataset.typeEnabled === 'true' }));
+  });
+}
+
 function prodOpenAddType() {
-  const pendingManagedId = prodPendingManagedTypeId; prodPendingManagedTypeId = "";
+  const pendingManagedId = prodPendingManagedTypeId, pendingPairId = prodPendingPairTypeId; prodPendingManagedTypeId = ""; prodPendingPairTypeId = "";
   openModal(`<div class="modal-head"><div><h2>新增包装类型</h2><p>保存后会同步到插件、扫描和 X.bot 类型配置。</p></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="form-grid"><div class="form-group"><label for="newTypeName">类型名称</label><input class="input" id="newTypeName" autocomplete="off" placeholder="例如：章节标题"></div><div class="form-group"><label for="newTypeAliases">常用别名</label><input class="input" id="newTypeAliases" autocomplete="off" placeholder="用逗号分隔，可留空"></div></div><div class="drawer-footer"><button class="ghost-btn" data-close>取消</button><button class="primary-btn" data-prod-save-type>创建并同步</button></div></div>`);
   document.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", closeModal));
   document.querySelector("[data-prod-save-type]")?.addEventListener("click", () => {
     const name = document.querySelector("#newTypeName").value.trim(), aliases = document.querySelector("#newTypeAliases").value.split(/[,，、]/).map(value => value.trim()).filter(Boolean);
     try {
-      prodTypes.registerPackageType(name, aliases); prodRefreshTypes(); closeModal();
+      const created = prodTypes.registerPackageType(name, aliases); prodRefreshTypes(); closeModal();
+      const pendingPair = prodPair(pendingPairId); if (pendingPair) { pendingPair.type = created; delete prodOutputNames[pendingPair.id]; }
       if (pendingManagedId) prodChangeManagedType(pendingManagedId, name);
       else { if (screen === "pair") prodRenderPairs(); if (screen === "manage") renderManage(); prodToast("包装类型已创建", `${name} · 已写入共享类型配置`, "success"); }
     }
@@ -616,7 +661,7 @@ async function prodDownloadUpdate() {
 async function prodAction(event) {
   const action = event.target.closest("[data-action]"); if (!action) return;
   const key = action.dataset.action;
-  const handled = new Set(["open-manage", "refresh", "choose-aep", "start-from-aep", "open-folder", "replace-folder", "choose-output-path", "collect", "stop-collect", "open-rename", "import", "go-home", "new-version", "new-package", "repair-current", "managed-preview", "change-managed-type", "check-plugin-updates", "download-plugin-update", "resume", "clear-selection", "select-visible", "expand", "open-updates"]);
+  const handled = new Set(["open-manage", "refresh", "choose-aep", "start-from-aep", "open-folder", "replace-folder", "choose-output-path", "collect", "stop-collect", "open-rename", "import", "go-home", "new-version", "new-package", "repair-current", "managed-preview", "change-managed-type", "check-plugin-updates", "download-plugin-update", "resume", "clear-selection", "select-visible", "expand", "open-updates", "manage-types", "add-type"]);
   if (!handled.has(key)) return;
   event.preventDefault(); event.stopImmediatePropagation();
   try {
@@ -636,6 +681,8 @@ async function prodAction(event) {
     else if (key === "change-managed-type") { const item = managed.find(p => p.id === managedId); if (item) prodOpenManagedTypeModal(item); }
     else if (key === "check-plugin-updates") await prodCheckUpdates(true);
     else if (key === "download-plugin-update") await prodDownloadUpdate();
+    else if (key === "manage-types") { closeTweaks(); prodOpenTypeManager(); }
+    else if (key === "add-type") prodOpenAddType();
     else if (key === "open-updates") { prodSetScreen("updates"); await prodCheckUpdates(); }
     else if (key === "resume") { prodSetScreen(workflowDraft?.stage || "home"); }
     else if (key === "clear-selection") { prodAepSelectedOccurrences.clear(); prodRenderAep(); }
@@ -660,6 +707,15 @@ function prodInteraction(event) {
   const managedAsset = target.closest("[data-managed-asset]");
   if (managedAsset) { event.preventDefault(); event.stopImmediatePropagation(); const card = managed.find(item => item.id === managedAsset.dataset.managed); if (card?.isCurrent) prodReplaceManaged(card.packageId, managedAsset.dataset.managedAsset); return; }
   const typeOption = target.closest("[data-package-type-option]");
+  if (event.type === "click" && typeOption && typeOption.dataset.packageTypeScope === "card") {
+    event.preventDefault(); event.stopImmediatePropagation();
+    const pair = prodPair(typeOption.dataset.packageTypeOption);
+    if (!pair) return;
+    closePackageTypePickers();
+    if (typeOption.dataset.packageTypeValue === "__add_type__") { prodPendingPairTypeId = pair.id; prodOpenAddType(); }
+    else { prodRefreshTypes(); pair.type = typeOption.dataset.packageTypeValue; delete prodOutputNames[pair.id]; prodRenderPairs(); }
+    return;
+  }
   if (typeOption && typeOption.dataset.packageTypeScope === "managed") {
     event.preventDefault(); event.stopImmediatePropagation();
     const menu = typeOption.closest("[data-package-type-menu]"), picker = menu?._xbotPicker || typeOption.closest(".package-type-picker"), cardId = picker?.dataset.managedTypeSplit;
@@ -674,7 +730,7 @@ function prodInteraction(event) {
   const name = target.closest("[data-card-name]");
   if (name) { event.stopImmediatePropagation(); if (event.type === "change") { const pair = prodPair(name.dataset.cardName); if (pair) { pair.name = name.value.trim() || pair.name; prodRenderPairs(); } } return; }
   const type = target.closest("[data-card-type]");
-  if (type instanceof HTMLSelectElement) { event.stopImmediatePropagation(); if (event.type === "change") { const pair = prodPair(type.dataset.cardType); if (pair && type.value === "__add_type__") { type.value = pair.type || ""; prodOpenAddType(); } else if (pair) { pair.type = type.value; prodRenderPairs(); } } return; }
+  if (type instanceof HTMLSelectElement) { event.stopImmediatePropagation(); if (event.type === "change") { const pair = prodPair(type.dataset.cardType); if (pair && type.value === "__add_type__") { type.value = pair.type || ""; prodPendingPairTypeId = pair.id; prodOpenAddType(); } else if (pair) { pair.type = type.value; prodRenderPairs(); } } return; }
   const preview = target.closest("[data-preview-pair]");
   if (preview) { event.preventDefault(); event.stopImmediatePropagation(); const pair = prodPair(preview.dataset.previewPair); if (pair) pair.previewPath ? prodOpenImage(pair.name, pair.previewPath) : prodOpenEmptyImage(pair.name); return; }
   const zip = target.closest("[data-zip-pair]");

@@ -12,6 +12,7 @@ const {
 const {
   PACKAGE_TYPES,
   PACKAGE_TYPE_SET,
+  isPackageTypeActive,
 } = require("./package-types");
 
 const INGEST_ROOT_NAME = "00_待入库";
@@ -1269,7 +1270,7 @@ async function importFormalBatch(adapter, scanResult, options = {}) {
   const projectName = String(scanResult.projectName || "").trim();
   if (!projectName) throw new Error("项目名称不能为空");
   const missingTypes = readyPackages.filter(
-    (pkg) => !KNOWN_PACKAGE_TYPES.includes(String(pkg.packageType || ""))
+    (pkg) => !isPackageTypeActive(pkg.packageType)
   );
   if (missingTypes.length) {
     throw new Error(

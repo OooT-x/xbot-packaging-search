@@ -1,7 +1,7 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
-const { PACKAGE_TYPE_SET } = require("../../eagle-plugin/lib/package-types");
+const { normalizePackageType, PACKAGE_TYPE_SET } = require("../../eagle-plugin/lib/package-types");
 const PACKAGE_TYPES = PACKAGE_TYPE_SET;
 
 function normalizeText(value) {
@@ -188,7 +188,7 @@ function buildCatalog(items, libraryPath, aliasConfig = {}) {
     const version = fields["版本"];
     const statusText = fields["状态"];
 
-    if (!projectName || !packageName || !version || !PACKAGE_TYPES.has(packageType)) {
+    if (!projectName || !packageName || !version || !normalizePackageType(packageType)) {
       errors.push(`${packageId}: missing or invalid project/package/type/version metadata`);
       continue;
     }
