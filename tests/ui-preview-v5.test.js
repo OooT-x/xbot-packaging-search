@@ -169,7 +169,7 @@ test("v5 preview exposes the plugin update entry and demo update flow", () => {
   const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] || "";
 
   assert.doesNotMatch(html, /id="updateEntry"/);
-  assert.match(html, /id="tweakBtn"[^>]*data-update-available="true"/);
+  assert.match(html, /id="tweakBtn"[^>]*data-update-available="false"/);
   assert.match(html, /class="settings-update"[^>]*data-action="open-updates"/);
   assert.match(html, /id="homeBtn"[^>]*aria-label="返回首页"[^>]*hidden><svg/);
   assert.doesNotMatch(html, /id="darkToggle"|id="compactToggle"/);

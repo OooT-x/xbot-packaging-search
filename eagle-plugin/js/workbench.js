@@ -44,6 +44,13 @@ const prodComp = id => prodAllComps().find(item => String(item.id) === String(id
 const prodPair = id => pairs.find(item => String(item.id) === String(id));
 const prodName = pkg => pkg.packageName || pkg.compName || pkg.name || "未命名包装";
 const prodImageUrl = value => value ? `file:///${String(value).replace(/\\/g, "/").replace(/^\/+/, "")}` : "";
+function prodSetApiStatus(state) {
+  const indicator = document.querySelector(".api"), label = indicator?.querySelector("span");
+  if (!indicator || !label) return;
+  indicator.classList.toggle("ready", state === "ready");
+  indicator.classList.toggle("error", state === "error" || state === "unavailable");
+  label.textContent = state === "ready" ? "Eagle API · 已就绪" : state === "error" ? "Eagle API · 读取失败" : state === "unavailable" ? "Eagle API · 不可用" : "Eagle API · 检查中";
+}
 const prodManageCardSizeOptions = ["small", "medium", "large"];
 function prodSetManageCardSize(value, persist = false) {
   const size = prodManageCardSizeOptions.includes(value) ? value : "medium";
@@ -125,10 +132,10 @@ function prodRenderPairs() {
     if (previewButton && p.previewPath) {
       previewButton.replaceChildren(Object.assign(document.createElement("img"), { src: prodImageUrl(p.previewPath), alt: `${p.name} PNG 预览` }));
       previewButton.querySelector("img")?.classList.add("frame-art", "actual-preview-image");
-    } else previewButton?.replaceChildren();
+    } else if (previewButton) previewButton.innerHTML = '<span class="preview-empty">暂无预览图</span>';
     card.querySelector(".row-meta")?.replaceChildren(document.createTextNode(`${prodProject} · ${p.type || "待补充类型"} · ${p.version}`));
     const chips = card.querySelector(".row-chips");
-    if (chips) chips.innerHTML = `<button class="tiny-pill asset-chip-button" data-card-asset="preview" data-pair="${prodEsc(p.id)}">PNG · ${prodEsc(p.preview || "缺失")}</button><button class="tiny-pill asset-chip-button" data-card-asset="source" data-pair="${prodEsc(p.id)}">ZIP · ${prodEsc(p.source || "缺失")}</button>`;
+    if (chips) chips.innerHTML = [["preview", "PNG", p.preview], ["source", "ZIP", p.source]].map(([kind, label, file]) => `<button type="button" class="tiny-pill asset-chip-button${file ? "" : " is-missing"}" data-card-asset="${kind}" data-pair="${prodEsc(p.id)}" title="${prodEsc(file || `${label} 缺失`)}" aria-label="更换 ${prodEsc(p.name)} 的 ${label}：${prodEsc(file || "缺失")}"><span class="asset-chip-label">${label}</span><span class="asset-chip-name">${prodEsc(file || "缺失")}</span></button>`).join("");
     const note = card.querySelector(".pair-note");
     if (note) note.textContent = p.note;
   });
@@ -277,10 +284,10 @@ function prodRenderAep() {
   document.querySelectorAll("[data-comp-check]").forEach(input => input.addEventListener("change", () => { if (input.checked) prodAepSelectedOccurrences.add(input.dataset.compCheck); else prodAepSelectedOccurrences.delete(input.dataset.compCheck); prodActiveOccurrence = input.dataset.compCheck; prodActiveId = prodAepOccurrenceMap.get(input.dataset.compCheck)?.id ?? prodActiveId; prodRenderCollectionSheet(); prodRenderAep(); }));
   document.querySelectorAll("[data-prod-toggle-tree]").forEach(button => button.addEventListener("click", () => { const key = button.closest("[data-occurrence]")?.dataset.occurrence; if (!key) return; if (prodCollapsedTreeOccurrences.has(key)) prodCollapsedTreeOccurrences.delete(key); else prodCollapsedTreeOccurrences.add(key); prodRenderAep(); document.querySelector(`[data-occurrence="${CSS.escape(key)}"]`)?.focus(); }));
   const c = prodComp(prodActiveId); const inspector = document.querySelector("#aepInspector");
-  if (c && inspector) { const size = `${c.width} × ${c.height}`, duration = Number(c.duration || 0), time = Number(c.previewTime || 0).toFixed(2); inspector.innerHTML = `<div class="inspector-head"><div><strong>${prodEsc(c.name)}</strong><small>${prodEsc(c.role || "AE 合成")}</small></div><span class="status-chip ${c.missing_files?.length ? "warn" : "ok"}">${c.missing_files?.length ? "需复核" : "可收集"}</span></div><div class="preview-frame ${c.prodPreviewPath ? "has-actual-preview" : ""}">${c.prodPreviewPath ? `<img class="frame-art actual-preview-image" src="${prodImageUrl(c.prodPreviewPath)}" alt="${prodEsc(c.name)} 代表帧">` : '<div class="frame-art"></div>'}</div><div class="preview-actions"><label class="preview-time"><span>预览帧</span><input data-prod-preview-time type="number" min="0" max="${duration}" step="0.01" value="${time}"><span>秒</span></label><button class="primary-btn" data-prod-render-preview>${c.prodPreviewPath ? "重新生成" : "生成预览"}</button></div><div class="detail-block"><h4>Composition facts</h4><div class="detail-grid"><div><span>尺寸</span><strong>${size}</strong></div><div><span>时长</span><strong>${duration.toFixed(2)} 秒 · ${Number(c.frame_rate || 0)} fps</strong></div><div><span>预览来源</span><strong>${prodEsc(c.name)}</strong></div><div><span>代表帧</span><strong data-prod-time-label>${time} 秒</strong></div></div></div><div class="detail-block"><h4>收集状态</h4><p>${prodActiveOccurrence && prodAepSelectedOccurrences.has(prodActiveOccurrence) ? "已加入当前层级的收集队列" : "尚未加入当前层级的收集队列"} · 重复引用将按合成 ID 去重</p></div>`;
+  if (c && inspector) { const size = `${c.width} × ${c.height}`, duration = Number(c.duration || 0), time = Number(c.previewTime || 0).toFixed(2); inspector.innerHTML = `<div class="inspector-head"><div><strong>${prodEsc(c.name)}</strong><small>${prodEsc(c.role || "AE 合成")}</small></div><span class="status-chip ${c.missing_files?.length ? "warn" : "ok"}">${c.missing_files?.length ? "需复核" : "可收集"}</span></div><button type="button" class="preview-frame ${c.prodPreviewPath ? "has-actual-preview" : "is-empty"}" aria-label="查看 ${prodEsc(c.name)} 的预览大图">${c.prodPreviewPath ? `<img class="frame-art actual-preview-image" src="${prodImageUrl(c.prodPreviewPath)}" alt="${prodEsc(c.name)} 代表帧">` : '<span class="preview-empty">暂无预览图</span>'}</button><div class="preview-actions"><label class="preview-time"><span>预览帧</span><input data-prod-preview-time type="number" min="0" max="${duration}" step="0.01" value="${time}"><span>秒</span></label><button class="primary-btn" data-prod-render-preview>${c.prodPreviewPath ? "重新生成" : "生成预览"}</button></div><div class="detail-block"><h4>Composition facts</h4><div class="detail-grid"><div><span>尺寸</span><strong>${size}</strong></div><div><span>时长</span><strong>${duration.toFixed(2)} 秒 · ${Number(c.frame_rate || 0)} fps</strong></div><div><span>预览来源</span><strong>${prodEsc(c.name)}</strong></div><div><span>代表帧</span><strong data-prod-time-label>${time} 秒</strong></div></div></div><div class="detail-block"><h4>收集状态</h4><p>${prodActiveOccurrence && prodAepSelectedOccurrences.has(prodActiveOccurrence) ? "已加入当前层级的收集队列" : "尚未加入当前层级的收集队列"} · 重复引用将按合成 ID 去重</p></div>`;
     inspector.querySelector("[data-prod-preview-time]").addEventListener("change", event => { c.previewTime = Math.min(duration, Math.max(0, Number(event.target.value) || 0)); event.target.value = c.previewTime.toFixed(2); inspector.querySelector("[data-prod-time-label]").textContent = `${c.previewTime.toFixed(2)} 秒`; });
     inspector.querySelector("[data-prod-render-preview]").addEventListener("click", () => prodRenderPreview(c));
-    inspector.querySelector(".preview-frame")?.addEventListener("click", () => c.prodPreviewPath && prodOpenImage(c.name, c.prodPreviewPath));
+    inspector.querySelector(".preview-frame")?.addEventListener("click", () => prodOpenAepPreview(c));
   }
   const selectedComps = [...new Set([...prodAepSelectedOccurrences].map(key => prodAepOccurrenceMap.get(key)?.id).filter(value => value !== undefined).map(String))].map(prodComp).filter(Boolean);
   const count = prodAepSelectedOccurrences.size;
@@ -399,12 +406,13 @@ async function prodRunImport(mode = "prompt") {
 async function prodRefreshManaged() {
   try {
     const result = await prodManagedApi.listFormalPackages(prodAdapter());
+    prodSetApiStatus("ready");
     prodManagedRecords = result.packages || [];
     prodManagedCards.splice(0, prodManagedCards.length, ...prodManagedRecords.map((p, index) => ({ id: `${p.packageId}-${index}`, packageId: p.packageId, basePackageId: p.basePackageId, name: p.packageName, project: p.projectName, type: p.packageType, version: p.version, comp: p.aeCompName, preview: p.preview?.name || "", source: p.source?.name || "", previewPath: p.preview?.filePath || p.preview?.filepath || "", sourcePath: p.source?.filePath || p.source?.filepath || "", isCurrent: !/^(已取代|已归档|停用)/u.test(p.meta?.["状态"] || ""), risk: /警告|缺失|风险/u.test(p.meta?.["状态"] || ""), revision: p.meta?.revision_id || "" })));
     prodRenderManageFilters(); prodApplyManageFilters(); renderManage();
     prodToast("素材库已刷新", `${managed.length} 组正式包装`, "success");
   }
-  catch (error) { prodToast("读取素材库失败", error.message, "error"); }
+  catch (error) { prodSetApiStatus("error"); prodToast("读取素材库失败", error.message, "error"); }
 }
 
 function prodRenderManageFilters() {
@@ -422,8 +430,6 @@ function prodRenderManageFilters() {
     filterList.innerHTML = `<button type="button" data-prod-manage-type="">全部类型 <em>${prodManagedCards.length}</em></button>${types.map(type => `<button type="button" data-prod-manage-type="${prodEsc(type)}">${prodEsc(type)} <em>${counts.get(type)}</em></button>`).join("")}`;
     filterList.querySelectorAll("[data-prod-manage-type]").forEach(button => { button.classList.toggle("active", button.dataset.prodManageType === prodManageTypeFilter); button.addEventListener("click", () => { prodManageTypeFilter = button.dataset.prodManageType; filterList.querySelectorAll("button").forEach(item => item.classList.toggle("active", item === button)); prodApplyManageFilters(); renderManage(); }); });
   }
-  const riskChip = [...document.querySelectorAll(".manage-side .status-chip")].find(item => item.textContent.includes("风险"));
-  if (riskChip) riskChip.textContent = `有风险 ${prodManagedCards.filter(item => item.risk).length}`;
   const currentChip = [...document.querySelectorAll(".manage-side .status-chip")].find(item => item.textContent.includes("当前版本"));
   if (currentChip) currentChip.textContent = `当前版本 ${prodManagedCards.filter(item => item.isCurrent).length}`;
   const search = document.querySelector(".manage-toolbar .search");
@@ -461,6 +467,18 @@ function prodOpenRepairChoice(item) {
 
 function prodOpenImage(name, file) {
   openModal(`<div class="modal-head"><div><h2>${prodEsc(name)} · 预览大图</h2><p>${prodEsc(file)}</p></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="viewer has-actual-preview"><img class="frame-art actual-preview-image" src="${prodImageUrl(file)}" alt="${prodEsc(name)}"></div><div class="viewer-tools"><small>滚轮缩放 · 左键拖拽 · 双击适应/放大</small><div class="tool-group"><button class="tool-btn">−</button><button class="tool-btn">适应</button><button class="tool-btn">＋</button></div></div></div>`); bindClose(); bindPreviewViewer();
+}
+
+function prodOpenEmptyImage(name) {
+  openModal(`<div class="modal-head"><div><h2>${prodEsc(name)} · 预览大图</h2><p>当前没有可查看的 PNG 预览图</p></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="viewer is-empty"><span class="preview-empty">暂无预览图</span></div></div>`);
+  bindClose();
+}
+
+function prodOpenAepPreview(comp) {
+  if (comp.prodPreviewPath) { prodOpenImage(comp.name, comp.prodPreviewPath); return; }
+  openModal(`<div class="modal-head"><div><h2>${prodEsc(comp.name)} · 预览大图</h2><p>当前合成尚未生成代表帧</p></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="viewer is-empty"><span class="preview-empty">暂无预览图</span></div><div class="drawer-footer"><button class="primary-btn" type="button" data-prod-render-empty-preview>生成预览</button></div></div>`);
+  bindClose();
+  document.querySelector("[data-prod-render-empty-preview]")?.addEventListener("click", () => { closeModal(); prodRenderPreview(comp); });
 }
 
 async function prodCheckUpdates(force = false) {
@@ -540,7 +558,7 @@ async function prodAction(event) {
     else if (key === "go-home") prodSetScreen("home");
     else if (key === "new-version" || key === "new-package") { const item = managed.find(p => p.id === managedId); if (!item) return; const base = key === "new-version" ? prodManagedRecords.find(p => p.packageId === item.packageId) : null; prodSetWorkflow(key === "new-version" ? "new-version" : "managed-add", base, item.project); const paths = await prodSelectPaths(key === "new-version" ? "选择新版本交付文件夹" : `项目新增包装 · ${item.project}`, ["openFile", "openDirectory", "multiSelections"], [{ name: "包装文件", extensions: ["aep", "png", "zip", "json"] }]); if (paths.length) await prodRouteSelection(paths, { kind: key === "new-version" ? "new-version" : "managed-add", base, projectName: item.project }); }
     else if (key === "repair-current") { const item = managed.find(p => p.id === managedId); if (item) prodOpenRepairChoice(item); }
-    else if (key === "managed-preview") { const item = managed.find(p => p.id === managedId); if (item?.previewPath) prodOpenImage(item.name, item.previewPath); }
+    else if (key === "managed-preview") { const item = managed.find(p => p.id === managedId); if (item) item.previewPath ? prodOpenImage(item.name, item.previewPath) : prodOpenEmptyImage(item.name); }
     else if (key === "change-managed-type") { const item = managed.find(p => p.id === managedId); if (item) prodOpenManagedTypeModal(item); }
     else if (key === "check-plugin-updates") await prodCheckUpdates(true);
     else if (key === "download-plugin-update") await prodDownloadUpdate();
@@ -554,6 +572,15 @@ async function prodAction(event) {
 
 function prodInteraction(event) {
   const target = event.target instanceof Element ? event.target : null; if (!target) return;
+  if (event.type === "click") {
+    const row = target.closest("#pairList .pair-row");
+    if (row) { selectedPair = row.dataset.pair; document.querySelectorAll("#pairList .pair-row").forEach(card => card.classList.toggle("selected", card === row)); }
+    const thumb = target.closest("#manageGrid .manage-thumb");
+    if (thumb) {
+      const item = managed.find(card => card.id === thumb.closest("[data-managed-card]")?.dataset.managedCard);
+      if (item) { event.preventDefault(); event.stopImmediatePropagation(); item.previewPath ? prodOpenImage(item.name, item.previewPath) : prodOpenEmptyImage(item.name); return; }
+    }
+  }
   const asset = target.closest("[data-card-asset]");
   if (asset) { event.preventDefault(); event.stopImmediatePropagation(); const pair = prodPair(asset.dataset.pair); if (pair) prodOpenPairFileDrawer(pair.id, asset.dataset.cardAsset); return; }
   const managedAsset = target.closest("[data-managed-asset]");
@@ -573,9 +600,9 @@ function prodInteraction(event) {
   const name = target.closest("[data-card-name]");
   if (name) { event.stopImmediatePropagation(); if (event.type === "change") { const pair = prodPair(name.dataset.cardName); if (pair) { pair.name = name.value.trim() || pair.name; prodRenderPairs(); } } return; }
   const type = target.closest("[data-card-type]");
-  if (type) { event.stopImmediatePropagation(); if (event.type === "change") { const pair = prodPair(type.dataset.cardType); if (pair && type.value === "__add_type__") { type.value = pair.type || ""; prodOpenAddType(); } else if (pair) { pair.type = type.value; prodRenderPairs(); } } return; }
+  if (type instanceof HTMLSelectElement) { event.stopImmediatePropagation(); if (event.type === "change") { const pair = prodPair(type.dataset.cardType); if (pair && type.value === "__add_type__") { type.value = pair.type || ""; prodOpenAddType(); } else if (pair) { pair.type = type.value; prodRenderPairs(); } } return; }
   const preview = target.closest("[data-preview-pair]");
-  if (preview) { event.preventDefault(); event.stopImmediatePropagation(); const pair = prodPair(preview.dataset.previewPair); if (pair?.previewPath) prodOpenImage(pair.name, pair.previewPath); return; }
+  if (preview) { event.preventDefault(); event.stopImmediatePropagation(); const pair = prodPair(preview.dataset.previewPair); if (pair) pair.previewPath ? prodOpenImage(pair.name, pair.previewPath) : prodOpenEmptyImage(pair.name); return; }
   const zip = target.closest("[data-zip-pair]");
   if (zip) { event.preventDefault(); event.stopImmediatePropagation(); const pair = prodPair(zip.dataset.zipPair); if (pair?.sourcePath) prodToast("ZIP 源文件", pair.sourcePath); return; }
 }
@@ -610,7 +637,7 @@ async function initializeProductionWorkbench() {
       const pills = card.querySelector(".pill-row"); if (pills) pills.innerHTML = `<button type="button" class="tiny-pill asset-chip-button" data-managed-asset="preview" data-managed="${prodEsc(id)}" ${item.isCurrent ? "" : "disabled"}>PNG ✓</button><button type="button" class="tiny-pill asset-chip-button" data-managed-asset="source" data-managed="${prodEsc(id)}" ${item.isCurrent ? "" : "disabled"}>ZIP ✓</button>`;
     });
   };
-  managedArt = item => item?.previewPath ? `<img class="frame-art actual-preview-image" src="${prodImageUrl(item.previewPath)}" alt="${prodEsc(item.name)} 的 PNG 预览">` : previewArt(item?.tone || "");
+  managedArt = item => item?.previewPath ? `<img class="frame-art actual-preview-image" src="${prodImageUrl(item.previewPath)}" alt="${prodEsc(item.name)} 的 PNG 预览">` : '<span class="preview-empty">暂无预览图</span>';
   document.addEventListener("click", prodInteraction, true);
   document.addEventListener("change", prodInteraction, true);
   document.addEventListener("click", prodAction, true);
@@ -626,7 +653,7 @@ async function initializeProductionWorkbench() {
   document.querySelector("#pairTabs")?.addEventListener("click", event => { const tab = event.target.closest("[data-pair-filter]"); if (!tab) return; pairFilter = tab.dataset.pairFilter; document.querySelectorAll("#pairTabs [data-pair-filter]").forEach(item => item.classList.toggle("active", item === tab)); prodRenderPairs(); }, true);
   document.querySelector("#aepOutputPath")?.addEventListener("change", event => { prodAepOutput = event.target.value.trim(); });
   document.body.dataset.theme = localStorage.getItem("xbot.theme") || "light";
-  document.querySelector(".api span")?.replaceChildren(document.createTextNode("Eagle API · 当前活动素材库"));
+  prodSetApiStatus(window.eagle?.item && window.eagle?.folder ? "ready" : "unavailable");
   document.querySelector("#pairProjectName").value = "";
   document.querySelector("#aepOutputPath").value = "";
   document.querySelector("#pairSourceName").textContent = "尚未选择包装来源";
