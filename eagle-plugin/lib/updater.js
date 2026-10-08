@@ -35,7 +35,8 @@ function validateHttpsUrl(value) {
   } catch (_) {
     throw new Error("GitHub 更新信息中的下载地址无效。");
   }
-  if (url.protocol !== "https:" || !ALLOWED_DOWNLOAD_HOSTS.has(url.hostname)) {
+  if (url.protocol !== "https:" || !ALLOWED_DOWNLOAD_HOSTS.has(url.hostname)
+    || url.username || url.password || (url.port && url.port !== "443")) {
     throw new Error("更新地址不是受支持的 GitHub HTTPS 地址。");
   }
   return url;
@@ -61,15 +62,15 @@ function requestBuffer(value, options = {}) {
           reject(new Error("GitHub 下载跳转次数过多。"));
           return;
         }
-        requestBuffer(new URL(location, url).toString(), {
+        Promise.resolve().then(() => requestBuffer(new URL(location, url).toString(), {
           ...options,
           redirectsRemaining: redirectsRemaining - 1,
-        }).then(resolve, reject);
+        })).then(resolve, reject);
         return;
       }
 
       if (status !== 200) {
-        const message = status === 403
+        const message = status === 403 || status === 429
           ? "GitHub 暂时限制了更新查询频率，请稍后重试。"
           : status === 404
             ? "GitHub 尚未发布可用的插件更新。"
@@ -97,7 +98,9 @@ function requestBuffer(value, options = {}) {
           return;
         }
         chunks.push(chunk);
+        options.onProgress?.({ received, total: contentLength || options.expectedSize || 0 });
       });
+      response.on("aborted", () => reject(new Error("GitHub 下载连接中断，请重试。")));
       response.on("end", () => resolve(Buffer.concat(chunks, received)));
       response.on("error", reject);
     });
@@ -107,13 +110,14 @@ function requestBuffer(value, options = {}) {
   });
 }
 
-async function fetchLatestRelease() {
+async function fetchLatestRelease(options = {}) {
+  let latest = null;
   for (let page = 1; page <= 10; page += 1) {
     const url = new URL(RELEASES_API_URL);
     url.searchParams.set("page", String(page));
     let response;
     try {
-      response = await requestBuffer(url.toString(), { maxBytes: MAX_RELEASE_RESPONSE_BYTES });
+      response = await (options.request || requestBuffer)(url.toString(), { maxBytes: MAX_RELEASE_RESPONSE_BYTES });
     } catch (error) {
       if (error.statusCode === 404) return null;
       throw error;
@@ -127,9 +131,8 @@ async function fetchLatestRelease() {
     }
     if (!Array.isArray(releases)) throw new Error("GitHub 返回的 Release 列表格式无效。");
 
-    const pluginRelease = selectLatestPluginRelease(releases);
-    if (pluginRelease) return pluginRelease;
-    if (releases.length < 100) return null;
+    latest = selectLatestPluginRelease([latest, ...releases]);
+    if (releases.length < 100) return latest;
   }
   throw new Error("GitHub Release 数量超过查询范围，无法定位插件版本。");
 }
@@ -187,7 +190,8 @@ function inspectLatestRelease(release, currentVersion) {
 }
 
 function rebaseUpdateInfo(info, currentVersion) {
-  if (!info || !info.releaseFound) return info;
+  if (!info || typeof info.releaseFound !== "boolean") return null;
+  if (!info.releaseFound) return { releaseFound: false, updateAvailable: false, currentVersion };
   if (!parseStableVersion(info.version) || !parseStableVersion(currentVersion)) return null;
   return {
     ...info,
@@ -196,8 +200,18 @@ function rebaseUpdateInfo(info, currentVersion) {
   };
 }
 
+function readUpdateCache(storage, currentVersion, now = Date.now()) {
+  try {
+    const cached = JSON.parse(storage.getItem("xbot.pluginUpdate.cache.v1") || "null");
+    const info = rebaseUpdateInfo(cached?.info, currentVersion);
+    const age = now - cached?.checkedAt;
+    if (!info || !Number.isFinite(cached.checkedAt) || age < 0) return null;
+    return { info, checkedAt: cached.checkedAt, fresh: age < 24 * 60 * 60 * 1000 };
+  } catch (_) { return null; }
+}
+
 async function checkForUpdate(currentVersion, options = {}) {
-  const release = await (options.fetchRelease || fetchLatestRelease)();
+  const release = await (options.fetchRelease || fetchLatestRelease)(options);
   return inspectLatestRelease(release, currentVersion);
 }
 
@@ -208,10 +222,18 @@ async function downloadPluginUpdate(update, downloadsDirectory, options = {}) {
   const expectedName = `xbot-eagle-plugin-v${version}.eagleplugin`;
   if (update.asset.name !== expectedName) throw new Error("插件安装包文件名与版本信息不匹配。");
 
+  if (!Number.isSafeInteger(update.asset.size) || update.asset.size <= 0 || update.asset.size > MAX_PLUGIN_PACKAGE_BYTES) {
+    throw new Error("插件安装包大小无效。");
+  }
+  if (!/^[a-f\d]{64}$/i.test(String(update.asset.digest || ""))) {
+    throw new Error("该安装包缺少有效的 SHA-256 摘要，请等待发布者补齐后重试。");
+  }
   const url = validateHttpsUrl(update.asset.url).toString();
   const buffer = await (options.downloadAsset || ((downloadUrl) => requestBuffer(downloadUrl, {
     accept: "application/octet-stream",
     maxBytes: MAX_PLUGIN_PACKAGE_BYTES,
+    expectedSize: update.asset.size,
+    onProgress: options.onProgress,
   })))(url);
   if (!Buffer.isBuffer(buffer) || buffer.length === 0 || buffer.length > MAX_PLUGIN_PACKAGE_BYTES) {
     throw new Error("下载的插件安装包为空或超过大小限制。");
@@ -221,7 +243,7 @@ async function downloadPluginUpdate(update, downloadsDirectory, options = {}) {
   }
 
   const sha256 = crypto.createHash("sha256").update(buffer).digest("hex");
-  if (update.asset.digest && sha256 !== update.asset.digest) {
+  if (update.asset.digest && sha256 !== update.asset.digest.toLowerCase()) {
     throw new Error("插件安装包 SHA-256 校验失败，文件未保存。");
   }
 
@@ -247,5 +269,6 @@ module.exports = {
   inspectLatestRelease,
   parseStableVersion,
   rebaseUpdateInfo,
+  readUpdateCache,
   selectLatestPluginRelease,
 };

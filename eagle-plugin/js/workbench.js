@@ -25,6 +25,7 @@ let prodCollectionAbort = null;
 let prodManagedCards = [];
 let prodManagedRecords = [];
 let prodLatestRelease = null;
+const prodUpdateState = { checking: false, downloading: false, checkedAt: 0, error: "", progress: "", file: null };
 let prodTypeFile = "";
 let prodPairRenderer = null;
 let prodManageRenderer = null;
@@ -559,14 +560,22 @@ function prodOpenAepPreview(comp) {
 }
 
 async function prodCheckUpdates(force = false) {
-  const status = document.querySelector("#previewUpdateStatus"); if (status) status.textContent = "正在查询 GitHub Releases…";
-  const cacheKey = "xbot.pluginUpdate.cache.v1", ttl = 24 * 60 * 60 * 1000;
+  if (prodUpdateState.checking || prodUpdateState.downloading) return prodLatestRelease;
+  const cached = prodUpdater.readUpdateCache(window.localStorage, prodManifest.version);
+  if (cached) { prodLatestRelease = cached.info; prodUpdateState.checkedAt = cached.checkedAt; }
+  if (!force && cached?.fresh) { prodRenderUpdates(); return prodLatestRelease; }
+  prodUpdateState.checking = true; prodUpdateState.error = ""; prodRenderUpdates();
   try {
-    const cached = !force && JSON.parse(localStorage.getItem(cacheKey) || "null");
-    if (cached?.checkedAt && Date.now() - cached.checkedAt < ttl) prodLatestRelease = cached.info;
-    else { prodLatestRelease = await prodUpdater.checkForUpdate(prodManifest.version); localStorage.setItem(cacheKey, JSON.stringify({ checkedAt: Date.now(), info: prodLatestRelease })); }
-    prodRenderUpdates(); return prodLatestRelease;
-  } catch (error) { if (status) status.textContent = `检查失败：${error.message}`; const heading = document.querySelector("#updateStatusTitle"); if (heading) heading.textContent = "无法读取版本信息"; if (force) prodToast("检查更新失败", error.message, "error"); return null; }
+    prodLatestRelease = await prodUpdater.checkForUpdate(prodManifest.version);
+    prodUpdateState.checkedAt = Date.now();
+    // Storage failures must not turn a successful network check into an error.
+    try { localStorage.setItem("xbot.pluginUpdate.cache.v1", JSON.stringify({ checkedAt: prodUpdateState.checkedAt, info: prodLatestRelease })); } catch (_) {}
+    return prodLatestRelease;
+  } catch (error) {
+    prodUpdateState.error = error.message;
+    if (force) prodToast("检查更新失败", error.message, "error");
+    return null;
+  } finally { prodUpdateState.checking = false; prodRenderUpdates(); }
 }
 
 function prodAddTypeFromMenu(menu, input) {
@@ -638,24 +647,68 @@ async function prodChangeManagedType(managedIdValue, value) {
   catch (error) { prodToast("包装类型更新失败", error.message, "error"); }
 }
 function prodRenderUpdates() {
-  if (!prodLatestRelease) return;
-  const update = prodLatestRelease.update || prodLatestRelease;
-  document.querySelector("#updatesTitle")?.scrollIntoView({ block: "nearest" });
-  const versions = [...document.querySelectorAll(".update-version-row strong")]; if (versions[0]) versions[0].textContent = `v${prodManifest.version}`; if (versions[1]) versions[1].textContent = `v${update.version || update.tag || "最新"}`;
-  const heading = document.querySelector("#updateStatusTitle"); if (heading) heading.textContent = update.updateAvailable ? "发现可用更新" : "已是最新版本";
-  const status = document.querySelector("#previewUpdateStatus"); if (status) status.textContent = update.releaseFound ? `${update.title || `Eagle 插件 v${update.version}`} · ${update.updateAvailable ? "发现可用更新" : "当前版本已是最新"}` : "GitHub 尚未发布可用的稳定版插件。";
-  const download = document.querySelector('[data-action="download-plugin-update"]'); if (download) download.disabled = !update.updateAvailable;
-  const channel = document.querySelector(".update-channel"); if (channel) channel.textContent = update.releaseFound ? `发布渠道 · GitHub Releases · eagle-plugin-v${update.version}` : "发布渠道 · GitHub Releases";
-  const notesHeading = document.querySelector(".update-card:nth-of-type(2) .update-card-head p"); if (notesHeading) notesHeading.textContent = update.releaseFound ? `v${update.version} · GitHub Release` : "GitHub Release";
-  document.querySelectorAll(".update-demo-tag").forEach(tag => { tag.textContent = "GitHub Release"; tag.classList.remove("update-demo-tag"); });
-  const notes = document.querySelector(".update-notes"); if (notes) notes.textContent = update.releaseFound ? (update.notes || "该 Release 未附版本说明。") : "GitHub 尚未发布可用的稳定版插件。";
-  const settingsCopy = document.querySelector(".settings-update-copy small"); if (settingsCopy) settingsCopy.textContent = update.updateAvailable ? `v${update.version} 可用 · 查看版本说明` : `当前版本 v${prodManifest.version} · 查看更新状态`;
+  const update = prodLatestRelease || {};
+  const state = prodUpdateState, busy = state.checking || state.downloading;
+  const title = state.checking ? "正在查询版本" : state.downloading ? "正在下载更新"
+    : state.error ? "更新操作失败" : !prodLatestRelease ? "等待检查"
+    : !update.releaseFound ? "暂无稳定版发布"
+    : update.updateAvailable ? "发现可用更新"
+    : prodUpdater.compareVersions(prodManifest.version, update.version) > 0 ? "本地版本领先于发布版" : "已是最新版本";
+  const setText = (selector, value) => { const element = document.querySelector(selector); if (element) element.textContent = value; };
+  const versions = [...document.querySelectorAll(".update-version-row strong")];
+  if (versions[0]) versions[0].textContent = `v${prodManifest.version}`;
+  if (versions[1]) versions[1].textContent = update.version ? `v${update.version}` : "暂无";
+  setText("#updateStatusTitle", title);
+  setText("#previewUpdateStatus", state.checking ? "正在查询 GitHub Releases…"
+    : state.downloading ? state.progress || "正在连接下载服务…"
+    : state.error ? `${state.error}${prodLatestRelease ? " · 保留上次查询结果，可重试。" : " · 请重试。"}`
+    : update.releaseFound ? `${update.title} · ${title}` : prodLatestRelease ? "GitHub 尚未发布可用的稳定版插件。" : "检查后显示发布信息。");
+  const check = document.querySelector('[data-action="check-plugin-updates"]');
+  if (check) { check.disabled = busy; check.textContent = state.checking ? "正在检查…" : "检查更新"; }
+  const download = document.querySelector('[data-action="download-plugin-update"]');
+  const hasDigest = /^[a-f\d]{64}$/i.test(update.asset?.digest || "");
+  if (download) {
+    download.disabled = busy || !update.updateAvailable || !hasDigest;
+    download.textContent = state.downloading ? "正在下载并校验…" : "下载并打开安装包";
+  }
+  const lastCheck = state.checkedAt ? `上次成功检查：${new Date(state.checkedAt).toLocaleString()}` : "尚未完成检查";
+  setText(".update-channel", `发布渠道 · GitHub Releases · ${lastCheck}`);
+  const published = update.publishedAt && Number.isFinite(Date.parse(update.publishedAt))
+    ? new Date(update.publishedAt).toLocaleString() : "未提供日期";
+  setText(".update-card:nth-of-type(2) .update-card-head p", update.releaseFound ? `v${update.version} · 发布于 ${published}` : "GitHub Release");
+  document.querySelectorAll(".update-demo-tag").forEach(tag => { tag.textContent = title; });
+  setText(".update-notes", update.releaseFound ? update.notes || "该 Release 未附版本说明。" : "GitHub 尚未发布可用的稳定版插件。");
+  setText(".update-install-hint", state.file ? `安装包已保存：${state.file.path}。请在 Eagle 确认安装，然后重新打开插件。`
+    : update.updateAvailable && !hasDigest ? "安装包缺少 SHA-256 摘要，等待发布者补齐后才能下载。"
+    : "大小与 SHA-256 校验通过后交给 Eagle 安装；安装完成后请重新打开插件。");
+  const settingsCopy = document.querySelector(".settings-update-copy small");
+  if (settingsCopy) settingsCopy.textContent = update.updateAvailable ? `v${update.version} 可用 · 查看版本说明` : `当前版本 v${prodManifest.version} · 查看更新状态`;
   const settingsBadge = document.querySelector(".settings-update-badge"); if (settingsBadge) { settingsBadge.textContent = update.updateAvailable ? "新" : ""; settingsBadge.hidden = !update.updateAvailable; }
   const settingsTrigger = document.querySelector("#tweakBtn"); if (settingsTrigger) { settingsTrigger.dataset.updateAvailable = String(Boolean(update.updateAvailable)); settingsTrigger.setAttribute("aria-label", update.updateAvailable ? "设置，有新版本" : "设置"); }
 }
 async function prodDownloadUpdate() {
-  try { if (!prodLatestRelease) await prodCheckUpdates(); const update = prodLatestRelease?.update || prodLatestRelease; if (!update?.updateAvailable || !update.asset) throw new Error("当前没有可下载的稳定版 Release 安装包。"); const downloads = prodPath.join(require("os").homedir(), "Downloads", "Xbot Eagle Plugin Updates"); const file = await prodUpdater.downloadPluginUpdate(update, downloads); await window.eagle.shell.openPath(file.path); prodToast("安装包已校验", "Eagle 将接管安装确认。", "success"); }
-  catch (error) { prodToast("下载更新失败", error.message, "error"); }
+  if (prodUpdateState.checking || prodUpdateState.downloading) return;
+  if (!prodLatestRelease && !await prodCheckUpdates()) return;
+  prodUpdateState.downloading = true; prodUpdateState.error = ""; prodUpdateState.progress = "";
+  prodUpdateState.file = null; prodRenderUpdates();
+  try {
+    const update = prodLatestRelease;
+    if (!update?.updateAvailable || !update.asset) throw new Error("当前没有可下载的稳定版 Release 安装包。");
+    const downloads = prodPath.join(require("os").homedir(), "Downloads", "Xbot Eagle Plugin Updates");
+    const file = await prodUpdater.downloadPluginUpdate(update, downloads, { onProgress: ({ received, total }) => {
+      const mb = value => (value / 1024 / 1024).toFixed(1);
+      prodUpdateState.progress = `已下载 ${mb(received)} / ${mb(total)} MB · ${Math.min(100, Math.floor(received / total * 100))}%`;
+      prodRenderUpdates();
+    } });
+    prodUpdateState.file = file;
+    if (typeof window.eagle?.shell?.openPath !== "function") throw new Error("安装包已保存，请从上述路径手动打开。");
+    const openError = await window.eagle.shell.openPath(file.path);
+    if (typeof openError === "string" && openError) throw new Error(`安装包已保存，Eagle 打开失败：${openError}`);
+    prodToast("安装包已校验", "请在 Eagle 确认安装，然后重新打开插件。", "success");
+  } catch (error) {
+    prodUpdateState.error = error.message;
+    prodToast(prodUpdateState.file ? "安装包打开失败" : "下载更新失败", error.message, "error");
+  } finally { prodUpdateState.downloading = false; prodRenderUpdates(); }
 }
 
 async function prodAction(event) {
@@ -820,6 +873,9 @@ async function initializeProductionWorkbench() {
   document.querySelector("#updateStatusTitle").textContent = "正在查询版本";
   document.querySelector("#previewUpdateStatus").textContent = "正在读取 GitHub Releases…";
   document.querySelector("#updatesTitle")?.parentElement?.querySelector("p")?.replaceChildren(document.createTextNode("查看插件版本和 Release 说明，下载后由 Eagle 接管安装。"));
+  document.querySelector(".update-notes").style.whiteSpace = "pre-wrap";
+  document.querySelector(".update-notes").style.overflowWrap = "anywhere";
+  document.querySelector(".update-install-hint").style.overflowWrap = "anywhere";
   document.querySelector(".update-notes").textContent = "版本更新信息会在检查 GitHub Releases 后显示。";
   prodCheckUpdates();
 }
