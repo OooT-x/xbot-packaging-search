@@ -137,3 +137,39 @@ test("AEP preview opens an empty viewer before rendering and the image viewer af
   open(comp);
   assert.deepEqual(calls.opened, [{ name: "视频框", file: "C:/preview.png" }]);
 });
+
+test("AEP review explains only matching name and reference heuristics", () => {
+  const source = fs.readFileSync(workbenchPath, "utf8");
+  const start = source.indexOf("function prodAepReviewReasons(c) {");
+  const end = source.indexOf("\nfunction prodOpenAepReview(", start);
+  const reasons = vm.runInNewContext(source.slice(start, end) + "\nprodAepReviewReasons", { prodComp: id => ({ name: "父合成" + id }) });
+  assert.equal(reasons({name:"背景",parent_ids:[1,1]}).length, 0);
+  const video = reasons({name:"视频框-01",parent_ids:[1]});
+  assert.equal(video.length, 1);
+  assert.match(video[0].detail, /尚未证明工程存在错误/);
+  assert.match(video[0].advice, /生成预览/);
+  const shared = reasons({name:"临时视频框",parent_ids:[1,2]});
+  assert.equal(shared.length, 3);
+  assert.match(shared[1].detail, /父合成1、父合成2/);
+  assert.match(shared[1].advice, /按 ID 去重/);
+});
+
+test("review drawer offers preview generation and viewing without changing collection", () => {
+  const source = fs.readFileSync(workbenchPath, "utf8");
+  const start = source.indexOf("function prodOpenAepReview(c) {");
+  const end = source.indexOf("\nfunction prodRenderAep(", start);
+  let html, action, closed = 0;
+  const rendered = [], viewed = [];
+  const open = vm.runInNewContext(source.slice(start, end) + "\nprodOpenAepReview", {
+    prodAepReviewReasons: () => [{title:"取景",detail:"名称提示",advice:"核对代表帧"}],
+    prodEsc: value => String(value), openDrawer: value => {html=value;},
+    closeDrawer: () => {closed++;},
+    prodRenderPreview: comp => rendered.push(comp), prodOpenAepPreview: comp => viewed.push(comp),
+    document: {querySelectorAll: () => [], querySelector: () => ({addEventListener: (_, listener) => {action=listener;}})}
+  });
+  const comp = {name:"视频框-01"};
+  open(comp); assert.match(html, /不是工程错误检测结果/); assert.match(html, /生成预览/);
+  action(); assert.deepEqual(rendered, [comp]); assert.equal(closed, 1);
+  comp.prodPreviewPath = "preview.png"; open(comp); assert.match(html, /查看预览/);
+  action(); assert.deepEqual(viewed, [comp]);
+});
