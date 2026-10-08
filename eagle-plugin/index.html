@@ -273,7 +273,19 @@
     .row-chips .asset-chip-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     #aepInspector .preview-frame{min-height:0;aspect-ratio:1.55}
     #aepInspector .preview-frame.is-empty{cursor:zoom-in}
-</style></head><body data-theme="light" data-screen="home">
+    .drawer-body > .candidate{display:grid;grid-template-columns:64px minmax(0,1fr) 22px;align-items:center;width:100%;min-width:0;gap:10px}
+    .drawer-body > .candidate > span:nth-child(2){min-width:0;overflow:hidden}
+    .drawer-body > .candidate > span:nth-child(2) strong,.drawer-body > .candidate > span:nth-child(2) small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .candidate .check{justify-self:end;flex:none}
+    .candidate-list > .candidate{grid-template-columns:64px minmax(0,1fr)}
+    .candidate-list > .candidate .candidate-choice,.candidate-list > .candidate .candidate-choice>span:first-child{min-width:0;overflow:hidden}
+    .candidate-list > .candidate .candidate-choice strong,.candidate-list > .candidate .candidate-choice small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .preview-frame.is-rendering{cursor:progress}
+    .preview-rendering-overlay{position:absolute;inset:0;z-index:3;display:grid;place-content:center;justify-items:center;gap:10px;background:color-mix(in srgb,var(--panel) 78%,transparent);color:var(--ink-2);font-size:11px;font-weight:800;pointer-events:none}
+    .preview-rendering-spinner{display:block;width:26px;height:26px;border:2px solid color-mix(in srgb,var(--line-2) 82%,transparent);border-top-color:var(--blue);border-radius:50%;animation:aep-preview-spin .8s linear infinite}
+    @keyframes aep-preview-spin{to{transform:rotate(1turn)}}
+    @media (prefers-reduced-motion:reduce){.preview-rendering-spinner{animation:none}}
+  </style></head><body data-theme="light" data-screen="home">
   <div class="app">
     <header class="topbar">
       <div class="nav-buttons" id="navButtons" hidden><button class="icon-btn" id="backBtn" type="button" aria-label="返回上一页" hidden>←</button><button class="icon-btn topbar-home" id="homeBtn" type="button" aria-label="返回首页" title="返回首页" hidden><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 10 9-7 9 7"/><path d="M5 9v11h14V9"/><path d="M9 20v-7h6v7"/></svg></button></div>

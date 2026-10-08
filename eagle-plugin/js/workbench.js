@@ -243,14 +243,53 @@ function prodRenderAep() {
   const comps = prodAllComps(), list = document.querySelector("#treeList"); if (!list) return;
   const query = String(document.querySelector("#aepSearch")?.value || "").trim().toLocaleLowerCase();
   const activeFilter = document.querySelector("#aepFilters .active")?.dataset.filter || "candidate";
-  const matches = c => { const warning = Boolean(c.missing_files?.length || c.warnings?.length); return (!query || `${c.name} ${c.width}x${c.height} ${c.role || ""}`.toLocaleLowerCase().includes(query)) && (activeFilter === "all" || activeFilter === "candidate" || activeFilter === "root" && !(c.parent_ids || []).length || activeFilter === "child" && (c.parent_ids || []).length || activeFilter === "warning" && warning); };
   const children = new Map();
   comps.forEach(c => (c.parent_ids || []).forEach(parent => { if (!children.has(String(parent))) children.set(String(parent), []); children.get(String(parent)).push(c); }));
   const roots = comps.filter(c => !(c.parent_ids || []).length);
+  const isCandidate = c => /(包装|背景|视频框|竖屏框|横屏框|信息条|人名条|标注|分镜)/u.test(String(c.name || ""));
+  const hasWarning = c => (c.parent_ids || []).length > 1 || /(测试|临时|视频框|横屏框|竖屏框)/u.test(String(c.name || ""));
+  const matchesCategory = c => activeFilter === "all"
+    || activeFilter === "candidate" && isCandidate(c)
+    || activeFilter === "root" && !(c.parent_ids || []).length
+    || activeFilter === "child" && (c.parent_ids || []).length > 0
+    || activeFilter === "warning" && hasWarning(c);
+  const counts = {
+    all: comps.length,
+    candidate: comps.filter(isCandidate).length,
+    root: roots.length,
+    child: comps.filter(c => (c.parent_ids || []).length > 0).length,
+    warning: comps.filter(hasWarning).length,
+  };
+  Object.entries(counts).forEach(([filter, count]) => {
+    const badge = document.querySelector(`#aepFilters [data-filter="${filter}"] em`);
+    if (badge) badge.textContent = String(count);
+  });
+  const matches = c => (!query || `${c.name} ${c.width}x${c.height} ${c.role || ""}`.toLocaleLowerCase().includes(query)) && matchesCategory(c);
+  const activeComp = prodComp(prodActiveId);
+  if (activeComp && !matches(activeComp)) {
+    const nextActive = comps.find(matches);
+    prodActiveId = nextActive?.id ?? null;
+    prodActiveOccurrence = "";
+  }
   const expanded = window.prodTreeExpanded !== false;
   const hasVisible = (c, trail = new Set()) => { const id = String(c.id); if (trail.has(id)) return matches(c); const next = new Set(trail); next.add(id); return matches(c) || (children.get(id) || []).some(item => hasVisible(item, next)); };
-  const row = (c, depth, kind, key, nodeExpanded) => { const status = c.missing_files?.length ? "需复核" : (c.parent_ids || []).length ? "直属预合成" : "顶层合成"; const checked = prodAepSelectedOccurrences.has(key) ? "checked" : ""; const active = key === prodActiveOccurrence || (!prodActiveOccurrence && String(c.id) === String(prodActiveId)); const hasChildren = children.has(String(c.id)); return `<div class="tree-row ${active ? "active" : ""}" data-comp="${prodEsc(c.id)}" data-occurrence="${prodEsc(key)}" role="treeitem" tabindex="${active ? 0 : -1}" aria-level="${depth}" ${hasChildren ? `aria-expanded="${nodeExpanded}"` : ""}><button class="tree-disclosure" data-prod-toggle-tree aria-label="${nodeExpanded ? "收起" : "展开"} ${prodEsc(c.name)}" aria-expanded="${nodeExpanded}" ${hasChildren ? "" : "disabled"}>${hasChildren ? nodeExpanded ? "⌄" : "›" : ""}</button><input type="checkbox" data-comp-check="${prodEsc(key)}" ${checked} aria-label="选择 ${prodEsc(c.name)}"><span class="kind ${kind}">${kind === "root" ? "ROOT" : kind === "link" ? "LINK" : "PRE"}</span><div class="tree-name"><strong>${prodEsc(c.name)}</strong><small>${prodEsc(status)}</small></div><span class="tree-meta">${Number(c.width || 0)} × ${Number(c.height || 0)}</span><span class="tree-meta">${Number(c.duration || 0).toFixed(2)}s</span><span class="status-chip ${c.missing_files?.length ? "warn" : "ok"}">${c.missing_files?.length ? "需复核" : "可收集"}</span></div>`; };
-  const renderNode = (c, depth, ancestors = [], trail = new Set()) => { const id = String(c.id), key = [...ancestors, id].join("/"); prodAepOccurrenceMap.set(key, c); const next = new Set(trail); next.add(id); const kind = depth === 1 ? "root" : (c.parent_ids || []).length > 1 ? "link" : "pre"; const descendants = (children.get(id) || []).filter(item => !next.has(String(item.id)) && hasVisible(item)); const nodeExpanded = expanded && !prodCollapsedTreeOccurrences.has(key); return `<div class="tree-node">${matches(c) ? row(c, depth, kind, key, nodeExpanded) : ""}${nodeExpanded && descendants.length ? `<div class="tree-node-children" role="group">${descendants.map(child => renderNode(child, depth + 1, [...ancestors, id], next)).join("")}</div>` : ""}</div>`; };
+  const row = (c, depth, kind, key, nodeExpanded) => {
+    const needsReview = hasWarning(c);
+    const status = needsReview ? "需复核" : (c.parent_ids || []).length ? "直属预合成" : "顶层合成";
+    const checked = prodAepSelectedOccurrences.has(key) ? "checked" : "";
+    const active = key === prodActiveOccurrence || (!prodActiveOccurrence && String(c.id) === String(prodActiveId));
+    const hasChildren = children.has(String(c.id));
+    return `<div class="tree-row ${active ? "active" : ""}" data-comp="${prodEsc(c.id)}" data-occurrence="${prodEsc(key)}" role="treeitem" tabindex="${active ? 0 : -1}" aria-level="${depth}" ${hasChildren ? `aria-expanded="${nodeExpanded}"` : ""}><button class="tree-disclosure" data-prod-toggle-tree aria-label="${nodeExpanded ? "收起" : "展开"} ${prodEsc(c.name)}" aria-expanded="${nodeExpanded}" ${hasChildren ? "" : "disabled"}>${hasChildren ? nodeExpanded ? "⌄" : "›" : ""}</button><input type="checkbox" data-comp-check="${prodEsc(key)}" ${checked} aria-label="选择 ${prodEsc(c.name)}"><span class="kind ${kind}">${kind === "root" ? "ROOT" : kind === "link" ? "LINK" : "PRE"}</span><div class="tree-name"><strong>${prodEsc(c.name)}</strong><small>${prodEsc(status)}</small></div><span class="tree-meta">${Number(c.width || 0)} × ${Number(c.height || 0)}</span><span class="tree-meta">${Number(c.duration || 0).toFixed(2)}s</span><span class="status-chip ${needsReview ? "warn" : "ok"}">${needsReview ? "需复核" : "可收集"}</span></div>`;
+  };
+  const renderNode = (c, depth, ancestors = [], trail = new Set()) => {
+    const id = String(c.id), key = [...ancestors, id].join("/");
+    prodAepOccurrenceMap.set(key, c);
+    const next = new Set(trail); next.add(id);
+    const kind = depth === 1 ? "root" : (c.parent_ids || []).length > 1 ? "link" : "pre";
+    const descendants = (children.get(id) || []).filter(item => !next.has(String(item.id)) && hasVisible(item));
+    const nodeExpanded = !matches(c) && descendants.length > 0 || expanded && !prodCollapsedTreeOccurrences.has(key);
+    return `<div class="tree-node">${matches(c) ? row(c, depth, kind, key, nodeExpanded) : ""}${nodeExpanded && descendants.length ? `<div class="tree-node-children" role="group">${descendants.map(child => renderNode(child, depth + 1, [...ancestors, id], next)).join("")}</div>` : ""}</div>`;
+  };
   const visibleRoots = roots.filter(item => hasVisible(item));
   list.setAttribute("role", "tree"); list.setAttribute("aria-label", "AEP 合成结构");
   const head = document.querySelector(".tree-head"); if (head && head.children.length === 6) head.insertBefore(document.createElement("span"), head.firstElementChild);
@@ -284,10 +323,12 @@ function prodRenderAep() {
   document.querySelectorAll("[data-comp-check]").forEach(input => input.addEventListener("change", () => { if (input.checked) prodAepSelectedOccurrences.add(input.dataset.compCheck); else prodAepSelectedOccurrences.delete(input.dataset.compCheck); prodActiveOccurrence = input.dataset.compCheck; prodActiveId = prodAepOccurrenceMap.get(input.dataset.compCheck)?.id ?? prodActiveId; prodRenderCollectionSheet(); prodRenderAep(); }));
   document.querySelectorAll("[data-prod-toggle-tree]").forEach(button => button.addEventListener("click", () => { const key = button.closest("[data-occurrence]")?.dataset.occurrence; if (!key) return; if (prodCollapsedTreeOccurrences.has(key)) prodCollapsedTreeOccurrences.delete(key); else prodCollapsedTreeOccurrences.add(key); prodRenderAep(); document.querySelector(`[data-occurrence="${CSS.escape(key)}"]`)?.focus(); }));
   const c = prodComp(prodActiveId); const inspector = document.querySelector("#aepInspector");
-  if (c && inspector) { const size = `${c.width} × ${c.height}`, duration = Number(c.duration || 0), time = Number(c.previewTime || 0).toFixed(2); inspector.innerHTML = `<div class="inspector-head"><div><strong>${prodEsc(c.name)}</strong><small>${prodEsc(c.role || "AE 合成")}</small></div><span class="status-chip ${c.missing_files?.length ? "warn" : "ok"}">${c.missing_files?.length ? "需复核" : "可收集"}</span></div><button type="button" class="preview-frame ${c.prodPreviewPath ? "has-actual-preview" : "is-empty"}" aria-label="查看 ${prodEsc(c.name)} 的预览大图">${c.prodPreviewPath ? `<img class="frame-art actual-preview-image" src="${prodImageUrl(c.prodPreviewPath)}" alt="${prodEsc(c.name)} 代表帧">` : '<span class="preview-empty">暂无预览图</span>'}</button><div class="preview-actions"><label class="preview-time"><span>预览帧</span><input data-prod-preview-time type="number" min="0" max="${duration}" step="0.01" value="${time}"><span>秒</span></label><button class="primary-btn" data-prod-render-preview>${c.prodPreviewPath ? "重新生成" : "生成预览"}</button></div><div class="detail-block"><h4>Composition facts</h4><div class="detail-grid"><div><span>尺寸</span><strong>${size}</strong></div><div><span>时长</span><strong>${duration.toFixed(2)} 秒 · ${Number(c.frame_rate || 0)} fps</strong></div><div><span>预览来源</span><strong>${prodEsc(c.name)}</strong></div><div><span>代表帧</span><strong data-prod-time-label>${time} 秒</strong></div></div></div><div class="detail-block"><h4>收集状态</h4><p>${prodActiveOccurrence && prodAepSelectedOccurrences.has(prodActiveOccurrence) ? "已加入当前层级的收集队列" : "尚未加入当前层级的收集队列"} · 重复引用将按合成 ID 去重</p></div>`;
+  if (c && inspector) { const size = `${c.width} × ${c.height}`, duration = Number(c.duration || 0), time = Number(c.previewTime || 0).toFixed(2), needsReview = hasWarning(c); inspector.innerHTML = `<div class="inspector-head"><div><strong>${prodEsc(c.name)}</strong><small>${prodEsc(c.role || "AE 合成")}</small></div><span class="status-chip ${needsReview ? "warn" : "ok"}">${needsReview ? "需复核" : "可收集"}</span></div><button type="button" class="preview-frame ${c.prodPreviewPath ? "has-actual-preview" : "is-empty"} ${c.prodPreviewRendering ? "is-rendering" : ""}" aria-busy="${Boolean(c.prodPreviewRendering)}" aria-label="查看 ${prodEsc(c.name)} 的预览大图">${c.prodPreviewPath ? `<img class="frame-art actual-preview-image" src="${prodImageUrl(c.prodPreviewPath)}" alt="${prodEsc(c.name)} 代表帧">` : '<span class="preview-empty">暂无预览图</span>'}${c.prodPreviewRendering ? '<span class="preview-rendering-overlay" role="status"><i class="preview-rendering-spinner"></i><span>正在生成预览…</span></span>' : ''}</button><div class="preview-actions"><label class="preview-time"><span>预览帧</span><input data-prod-preview-time type="number" min="0" max="${duration}" step="0.01" value="${time}"><span>秒</span></label><button class="primary-btn" data-prod-render-preview ${c.prodPreviewRendering ? "disabled" : ""}>${c.prodPreviewRendering ? "正在渲染…" : c.prodPreviewPath ? "重新生成" : "生成预览"}</button></div><div class="detail-block"><h4>Composition facts</h4><div class="detail-grid"><div><span>尺寸</span><strong>${size}</strong></div><div><span>时长</span><strong>${duration.toFixed(2)} 秒 · ${Number(c.frame_rate || 0)} fps</strong></div><div><span>预览来源</span><strong>${prodEsc(c.prodPreviewSourceName || c.name)}</strong></div><div><span>代表帧</span><strong data-prod-time-label>${time} 秒</strong></div></div></div><div class="detail-block"><h4>收集状态</h4><p>${prodActiveOccurrence && prodAepSelectedOccurrences.has(prodActiveOccurrence) ? "已加入当前层级的收集队列" : "尚未加入当前层级的收集队列"} · 重复引用将按合成 ID 去重</p></div>`;
     inspector.querySelector("[data-prod-preview-time]").addEventListener("change", event => { c.previewTime = Math.min(duration, Math.max(0, Number(event.target.value) || 0)); event.target.value = c.previewTime.toFixed(2); inspector.querySelector("[data-prod-time-label]").textContent = `${c.previewTime.toFixed(2)} 秒`; });
     inspector.querySelector("[data-prod-render-preview]").addEventListener("click", () => prodRenderPreview(c));
     inspector.querySelector(".preview-frame")?.addEventListener("click", () => prodOpenAepPreview(c));
+  } else if (inspector) {
+    inspector.innerHTML = '<div class="bottom-sheet-empty">没有符合当前筛选条件的合成。</div>';
   }
   const selectedComps = [...new Set([...prodAepSelectedOccurrences].map(key => prodAepOccurrenceMap.get(key)?.id).filter(value => value !== undefined).map(String))].map(prodComp).filter(Boolean);
   const count = prodAepSelectedOccurrences.size;
@@ -305,9 +346,24 @@ function prodRenderCollectionSheet() {
 }
 
 async function prodRenderPreview(comp) {
-  const button = document.querySelector("[data-prod-render-preview]"); if (button) { button.disabled = true; button.textContent = "正在渲染…"; }
-  try { const result = await prodWorker.previewAep(prodAepPath, comp.id, { time: comp.previewTime }); comp.prodPreviewPath = result.output_file || result.output || result.preview_path || result.path; prodRenderAep(); prodToast("预览已生成", `${comp.name} · ${Number(result.preview_time || comp.previewTime).toFixed(2)} 秒`, "success"); }
-  catch (error) { prodToast("预览失败", error.message, "error"); if (button) { button.disabled = false; button.textContent = "重新生成"; } }
+  if (!comp || comp.prodPreviewRendering) return;
+  comp.prodPreviewRendering = true;
+  prodRenderAep();
+  try {
+    const result = await prodWorker.previewAep(prodAepPath, comp.id, { time: comp.previewTime });
+    const previewPath = result.preview_file || result.output_file || result.output || result.preview_path || result.path;
+    if (!previewPath) throw new Error("AEP Worker 没有返回预览图路径。");
+    comp.prodPreviewPath = previewPath;
+    comp.prodPreviewSourceName = result.preview_source_name || comp.name;
+    comp.previewTime = Number(result.preview_time ?? comp.previewTime);
+    comp.prodPreviewRendering = false;
+    prodRenderAep();
+    prodToast("预览已生成", `${comp.name} · ${Number(result.preview_time ?? comp.previewTime).toFixed(2)} 秒`, "success");
+  } catch (error) {
+    comp.prodPreviewRendering = false;
+    prodRenderAep();
+    prodToast("预览失败", error.message, "error");
+  }
 }
 
 async function prodCollectAep(confirmDuplicates = false) {
@@ -618,8 +674,27 @@ function prodOpenManagedTypeModal(item) {
   });
 }
 
+function prodInstallBottomSheetGrabbers() {
+  const namespace = "http://www.w3.org/2000/svg";
+  document.querySelectorAll(".bottom-sheet-peek").forEach(peek => {
+    if (peek.querySelector(".bottom-sheet-grabber-svg")) return;
+    const svg = document.createElementNS(namespace, "svg");
+    svg.classList.add("bottom-sheet-grabber-svg");
+    svg.setAttribute("viewBox", "0 0 18 8");
+    svg.setAttribute("aria-hidden", "true");
+    [["grabber-collapsed", "2,4 9,4 16,4"], ["grabber-expanded", "2,2 9,6 16,2"]].forEach(([className, points]) => {
+      const line = document.createElementNS(namespace, "polyline");
+      line.classList.add(className);
+      line.setAttribute("points", points);
+      svg.appendChild(line);
+    });
+    peek.appendChild(svg);
+  });
+}
+
 async function initializeProductionWorkbench() {
   window.prodWorkbenchReady = true;
+  prodInstallBottomSheetGrabbers();
   compositions.splice(0, compositions.length); pairs.splice(0, pairs.length); managed.splice(0, managed.length);
   prodPairRenderer = renderPairs; prodManageRenderer = renderManage;
   prodRefreshTypes(); packageTypes.splice(0, packageTypes.length, ...prodTypes.PACKAGE_TYPES);
