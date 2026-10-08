@@ -57,6 +57,10 @@
 
 Eagle 插件使用独立的 `eagle-plugin/manifest.json` 版本，不等同于仓库根目录软件版本。插件 GitHub Release 使用 `eagle-plugin-vX.Y.Z` tag 和同版本 `.eagleplugin` 资产，不占用根项目的 `vX.Y.Z` 标签空间。
 
+## Eagle 插件发布流程
+
+详见 [Eagle 插件发布与客户端更新流程](EAGLE_PLUGIN_RELEASE.md)：包含现有手动发布步骤、待实现的标签触发自动发布流水线、安装包与 SHA-256 校验，以及客户端启动/按钮检查规则与远端验收清单。发布流水线未落地前，推送代码或标签不会自动生成可下载的 Release。
+
 ## 需求反复和实验管理
 
 - 不通过删除历史掩盖方向变化。

@@ -74,3 +74,21 @@ test("production download prevents duplicate requests, shows progress and retain
   c.prodLatestRelease.asset.digest = null; c.prodRenderUpdates();
   assert.equal(node('[data-action="download-plugin-update"]').disabled, true);
 });
+
+test("fresh cache does not skip explicit checks and opening the update page never queries", async () => {
+  let requests = 0;
+  const { context: c } = harness({ checkForUpdate: async () => { requests++; return available(); } },
+    { getItem: () => JSON.stringify({ info: available(), checkedAt: Date.now() }), setItem() {} });
+  const source = fs.readFileSync(path.join(__dirname, "../eagle-plugin/js/workbench.js"), "utf8");
+  vm.runInContext(source.slice(source.indexOf("async function prodAction("), source.indexOf("\nfunction prodInteraction(")), c);
+  c.prodSetScreen = () => {};
+  const click = key => ({ target: { closest: () => ({ dataset: { action: key } }) },
+    preventDefault() {}, stopImmediatePropagation() {} });
+  // Same forced query used by the production initializer.
+  await c.prodCheckUpdates(true); assert.equal(requests, 1);
+  await c.prodAction(click("open-updates"));
+  await c.prodAction(click("open-updates")); assert.equal(requests, 1);
+  await c.prodAction(click("check-plugin-updates")); assert.equal(requests, 2);
+  c.prodLatestRelease = null;
+  await c.prodDownloadUpdate(); assert.equal(requests, 2);
+});

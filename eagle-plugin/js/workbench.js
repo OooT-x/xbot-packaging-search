@@ -688,7 +688,7 @@ function prodRenderUpdates() {
 }
 async function prodDownloadUpdate() {
   if (prodUpdateState.checking || prodUpdateState.downloading) return;
-  if (!prodLatestRelease && !await prodCheckUpdates()) return;
+  if (!prodLatestRelease) return;
   prodUpdateState.downloading = true; prodUpdateState.error = ""; prodUpdateState.progress = "";
   prodUpdateState.file = null; prodRenderUpdates();
   try {
@@ -736,7 +736,7 @@ async function prodAction(event) {
     else if (key === "download-plugin-update") await prodDownloadUpdate();
     else if (key === "manage-types") { closeTweaks(); prodOpenTypeManager(); }
     else if (key === "add-type") prodOpenAddType();
-    else if (key === "open-updates") { prodSetScreen("updates"); await prodCheckUpdates(); }
+    else if (key === "open-updates") { prodSetScreen("updates"); prodRenderUpdates(); }
     else if (key === "resume") { prodSetScreen(workflowDraft?.stage || "home"); }
     else if (key === "clear-selection") { prodAepSelectedOccurrences.clear(); prodRenderAep(); }
     else if (key === "select-visible") { const visible = [...document.querySelectorAll("#treeList [data-comp-check]")].map(input => input.dataset.compCheck); const all = visible.length && visible.every(keyValue => prodAepSelectedOccurrences.has(keyValue)); visible.forEach(keyValue => all ? prodAepSelectedOccurrences.delete(keyValue) : prodAepSelectedOccurrences.add(keyValue)); prodRenderAep(); }
@@ -877,5 +877,6 @@ async function initializeProductionWorkbench() {
   document.querySelector(".update-notes").style.overflowWrap = "anywhere";
   document.querySelector(".update-install-hint").style.overflowWrap = "anywhere";
   document.querySelector(".update-notes").textContent = "版本更新信息会在检查 GitHub Releases 后显示。";
-  prodCheckUpdates();
+  // Each plugin window queries once on initialization; the update page only renders this result.
+  prodCheckUpdates(true);
 }
