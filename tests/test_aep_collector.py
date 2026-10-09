@@ -59,7 +59,7 @@ class SafeFilenameTests(unittest.TestCase):
 
             resolved, rewrite = CORE._resolve_footage_path(moved, root / "project.aep")
 
-            self.assertEqual(resolved, actual.resolve())
+            self.assertTrue(resolved.samefile(actual), "recovered path must identify the same footage file")
             self.assertIn("Photos.jpg", rewrite or "")
 
     def test_does_not_guess_ambiguous_moved_footage(self):
@@ -953,3 +953,35 @@ class PreviewBridgeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class EagleBundleTests(unittest.TestCase):
+    def load_builder(self):
+        source = PACKAGE_ROOT.parent / "scripts" / "package-eagle-plugin.py"
+        spec = importlib.util.spec_from_file_location("xbot_bundle", source)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_deterministic_bundle_and_worker_validation(self):
+        import hashlib
+        builder = self.load_builder()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            worker = root / "worker.exe"
+            worker.write_bytes(b"MZ-test-worker")
+            digest = hashlib.sha256(worker.read_bytes()).hexdigest()
+            first, first_record = builder.build(worker, digest, root / "one")
+            second, second_record = builder.build(worker, digest, root / "two")
+            self.assertEqual(first.read_bytes(), second.read_bytes())
+            self.assertEqual(first_record["sha256"], second_record["sha256"])
+            self.assertFalse(first_record["worktree_review_only"])
+            with zipfile.ZipFile(first) as archive:
+                self.assertIsNone(archive.testzip())
+                self.assertIn("workers/XbotAepWorker.exe", archive.namelist())
+                self.assertIn("js/workbench.js", archive.namelist())
+                self.assertFalse(any("\\" in name for name in archive.namelist()))
+            with self.assertRaises(ValueError):
+                builder.build(worker, "0" * 64, root / "bad")
+            self.assertFalse((root / "bad").exists())
+            with self.assertRaises(FileExistsError):
+                builder.build(worker, digest, root / "one")
