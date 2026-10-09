@@ -173,3 +173,49 @@ test("review drawer offers preview generation and viewing without changing colle
   comp.prodPreviewPath = "preview.png"; open(comp); assert.match(html, /查看预览/);
   action(); assert.deepEqual(viewed, [comp]);
 });
+
+test("production import keeps Eagle success separate from a failed queue and retries only the event", async () => {
+  const source = fs.readFileSync(workbenchPath, "utf8");
+  const start = source.indexOf("function prodSubmitIngest(result) {");
+  const end = source.indexOf("\nasync function prodRefreshManaged(", start);
+  const nodes = new Map(); let queueFails = true, imports = 0;
+  const element = () => ({
+    children: [], text: "", innerHTML: "",
+    set textContent(value) { this.text = value; this.children = []; },
+    get textContent() { return this.text; },
+    appendChild(child) { this.children.push(child); },
+    addEventListener(_, fn) { this.click = fn; },
+  });
+  const document = {querySelector(selector) {
+    if (!nodes.has(selector)) nodes.set(selector, element());
+    return nodes.get(selector);
+  }, createElement:element, querySelectorAll: () => []};
+  const context = {document, pairs:[{selected:true,state:"ready",_package:{},name:"包装",type:"背景"}],
+    prodProject:"验收",prodScanResult:{},prodOutputNames:{},workflowDraft:{},
+    prodRefreshPairState:() => {},prodAdapter:() => ({}),prodEsc:String,
+    closeModal:() => {},prodSetScreen:() => {},prodToast:() => {},
+    prodEagle:{async importFormalBatch() {
+      imports++; return {filed:[{packageId:"p",packageName:"包装",version:"v01",previewName:"p.png",sourceName:"p.zip"}]};
+    }},
+    prodIngest:{publishIngestEvent() {
+      if (queueFails) throw new Error("queue denied");
+      return {state:"queued"};
+    }},
+  };
+  const run = vm.runInNewContext(source.slice(start,end) + "\nprodRunImport",context);
+  await run();
+  const boundary = document.querySelector("#successBoundary");
+  assert.equal(imports,1);
+  assert.match(boundary.textContent,/Eagle 已写入正式目录/);
+  assert.match(boundary.textContent,/未入队/);
+  assert.doesNotMatch(boundary.textContent,/已提交|已入队/);
+  assert.match(boundary.children[1].textContent,/尚未保存/);
+  queueFails = false; boundary.children[0].click();
+  assert.equal(imports,1,"event retry must not write Eagle again");
+  assert.match(boundary.textContent,/已入队/);
+  assert.match(boundary.textContent,/结果仍待核对/);
+  assert.equal(boundary.children.length,0);
+  context.prodRenderIngestBoundary({state:"queued"},{archiveError:"archive denied"});
+  assert.match(boundary.textContent,/已入队/);
+  assert.match(boundary.textContent,/旧版本归档未完成/);
+});

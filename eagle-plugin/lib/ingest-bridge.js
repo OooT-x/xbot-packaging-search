@@ -75,11 +75,42 @@ function buildIngestEvent(fileResult) {
 
 function publishIngestEvent(fileResult, options = {}) {
   const event = buildIngestEvent(fileResult);
-  if (!event) return { skipped: true, event: null, filePath: null };
+  if (!event) return { state: "skipped", skipped: true, event: null, filePath: null };
   const filePath = path.resolve(options.filePath || defaultEventFile());
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.appendFileSync(filePath, `${JSON.stringify(event)}\n`, "utf8");
-  return { skipped: false, event, filePath };
+  try {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.appendFileSync(filePath, `${JSON.stringify(event)}\n`, "utf8");
+    return { state: "queued", skipped: false, event, filePath };
+  } catch (error) {
+    const outbox = path.resolve(options.outboxDir || defaultOutboxDir());
+    fs.mkdirSync(outbox, { recursive: true });
+    const recoveryPath = path.join(outbox, `${event.event_id}.json`);
+    fs.writeFileSync(recoveryPath, JSON.stringify({ event, filePath }), "utf8");
+    return { state: "pending", skipped: false, event, filePath, recoveryPath, error: error.message };
+  }
+}
+
+function defaultOutboxDir() {
+  return envValue("LARK_BOT_INGEST_OUTBOX_DIR") ||
+    path.join(envValue("APPDATA") || defaultRuntimeRoot(), "XbotPackaging", "ingest-outbox");
+}
+
+function retryPendingIngestEvents(options = {}) {
+  const outbox = path.resolve(options.outboxDir || defaultOutboxDir());
+  if (!fs.existsSync(outbox)) return [];
+  return fs.readdirSync(outbox).filter(name => /^ingest-[a-f0-9]{24}\.json$/u.test(name)).map(name => {
+    const recoveryPath = path.join(outbox, name);
+    try {
+      const { event, filePath } = JSON.parse(fs.readFileSync(recoveryPath, "utf8"));
+      if (event?.event_id !== name.slice(0, -5) || event?.event_type !== "eagle.batch.filed") {
+        throw new Error("invalid outbox event");
+      }
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.appendFileSync(filePath, `${JSON.stringify(event)}\n`, "utf8");
+      fs.unlinkSync(recoveryPath);
+      return { state: "queued", event, filePath, recoveryPath };
+    } catch (error) { return { state: "pending", recoveryPath, error: error.message }; }
+  });
 }
 
 module.exports = {
@@ -87,7 +118,9 @@ module.exports = {
   EVENT_SCHEMA_VERSION,
   buildIngestEvent,
   defaultEventFile,
+  defaultOutboxDir,
   defaultRuntimeRoot,
+  retryPendingIngestEvents,
   publishIngestEvent,
   stableEventId,
 };

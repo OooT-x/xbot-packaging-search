@@ -442,6 +442,44 @@ function prodOpenRename() {
   });
 }
 
+function prodSubmitIngest(result) {
+  try { return prodIngest.publishIngestEvent(result); }
+  catch (error) { return { state: "pending", error: error.message, result }; }
+}
+
+function prodRetryIngest(sync) {
+  if (sync.result) return prodSubmitIngest(sync.result);
+  try {
+    const results = prodIngest.retryPendingIngestEvents();
+    return results.find(item => (sync.recoveryPath && item.recoveryPath === sync.recoveryPath) || (sync.event?.event_id && item.event?.event_id === sync.event.event_id))
+      || { ...sync, error: "未找到待同步记录，请维护者核对事件队列。" };
+  } catch (error) { return { ...sync, state: "pending", error: error.message }; }
+}
+
+function prodRenderIngestBoundary(sync, options = {}, selector = "#successBoundary") {
+  const boundary = document.querySelector(selector); if (!boundary) return;
+  const queued = sync.state === "queued";
+  const text = queued ? "入库事件已入队，bot 索引同步结果仍待核对。"
+    : sync.skipped ? "本次复用已有记录，无需提交新入库事件。"
+    : "入库事件未入队，索引同步待重试。不要重复入库。";
+  boundary.textContent = `Eagle 已写入正式目录。${options.archivedBase ? "旧版本已归档。" : ""}${text}${options.archiveError ? "旧版本归档未完成：" + options.archiveError : ""}`;
+  if (!queued && !sync.skipped) {
+    const button = document.createElement("button");
+    button.type = "button"; button.className = "ghost-btn"; button.textContent = "重试索引同步";
+    button.addEventListener("click", () => prodRenderIngestBoundary(prodRetryIngest(sync), options, selector));
+    boundary.appendChild(button);
+    const detail = document.createElement("small");
+    detail.textContent = sync.recoveryPath ? `待同步记录：${sync.recoveryPath}。${sync.error || ""}`
+      : `待同步记录尚未保存，请保持窗口打开后重试。${sync.error || ""}`;
+    boundary.appendChild(detail);
+  }
+}
+
+function prodShowIngestRetry(sync) {
+  openModal('<div class="modal-head"><h2>Eagle 已写入，索引同步待重试</h2><button class="icon-btn" data-close>×</button></div><div class="modal-body"><p id="prodIngestBoundary"></p></div>');
+  bindClose(); prodRenderIngestBoundary(sync, {}, "#prodIngestBoundary");
+}
+
 async function prodRunImport(mode = "prompt") {
   const selected = pairs.filter(p => p.selected); selected.forEach(prodRefreshPairState);
   if (!selected.length || selected.some(p => p.state !== "ready")) return prodToast("还有包装需要处理", "请补全类型、PNG / ZIP 配对并确认依赖风险。", "error");
@@ -469,14 +507,14 @@ async function prodRunImport(mode = "prompt") {
       if (!base || !completed) archiveError = "新版本已写入，但未找到旧版或新版本记录以完成归档。";
       else try { archivedBase = await prodManagedApi.archiveFormalPackageVersion(adapter, base, completed.packageId); } catch (error) { archiveError = error.message; }
     }
-    try { prodIngest.publishIngestEvent(result); } catch (error) { prodToast("入库完成，索引同步待重试", error.message, "normal"); }
+    const sync = prodSubmitIngest(result);
     const completed = [...(result.filed || []), ...(result.reused || [])];
     const count = completed.length;
     lastPreviewImport = { kind: workflowDraft?.kind, project: prodProject, filedCount: count, packages: completed.map(item => ({ name: item.packageName, version: item.version, packageId: item.packageId, preview: item.previewName, source: item.sourceName })) };
     closeModal(); prodSetScreen("success");
     document.querySelector("#successTitle").textContent = `入库完成 · ${count} 组包装`;
     document.querySelector("#successSummary").textContent = `项目 ${prodProject} 的包装记录已通过 Eagle API 写入正式目录。`;
-    document.querySelector("#successBoundary").textContent = archiveError ? `旧版本归档未完成：${archiveError}` : `Eagle 已写入正式目录。${archivedBase ? "旧版本已归档。" : ""}入库事件已提交给 bot 同步队列。`;
+    prodRenderIngestBoundary(sync, { archiveError, archivedBase });
     document.querySelector("#successRecords").innerHTML = completed.map(item => `<div class="success-record"><div><strong>${prodEsc(item.packageName)} · ${prodEsc(item.version)}</strong><code>package_id: ${prodEsc(item.packageId)}<br>PNG: ${prodEsc(item.previewName)}<br>ZIP: ${prodEsc(item.sourceName || "—")}</code></div><span class="status-chip ok">Eagle 正式目录</span></div>`).join(""); document.querySelector("#successRecords").hidden = false;
   } catch (error) { prodToast("入库失败", error.message, "error"); if (button) { button.disabled = false; button.textContent = "确认命名并写入 Eagle"; } }
 }
@@ -531,9 +569,10 @@ async function prodReplaceManaged(packageId, kind) {
     const accepted = await new Promise(resolve => { openModal(`<div class="modal-head"><div><h2>确认修订已入库素材</h2><p>${prodEsc(record.packageName)} · ${prodEsc(record.packageId)}</p></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><p>将通过 Eagle API 新增 ${kind === "preview" ? "PNG" : "ZIP"} 并保留旧文件作为历史修订。</p><div class="warning-box">${prodEsc(paths[0])}</div><div class="drawer-footer"><button class="ghost-btn" data-prod-cancel>取消</button><button class="primary-btn" data-prod-accept>确认修订</button></div></div>`); document.querySelector("[data-prod-cancel]").onclick = () => { closeModal(); resolve(false); }; document.querySelector("[data-prod-accept]").onclick = () => { closeModal(); resolve(true); }; });
     if (!accepted) return;
     const result = await prodManagedApi.replaceFormalAsset(prodAdapter(), record, kind, paths[0]);
-    try { prodIngest.publishIngestEvent({ batchId: result.batchId, projectName: result.projectName, sourcePath: result.sourcePath, importMode: "update", filed: [result] }); }
-    catch (error) { prodToast("修订完成，索引同步待处理", error.message, "normal"); }
-    await prodRefreshManaged(); prodToast("素材修订完成", `${record.packageName} · ${kind === "preview" ? "PNG" : "ZIP"}`, "success");
+    const sync = prodSubmitIngest({ batchId: result.batchId, projectName: result.projectName, sourcePath: result.sourcePath, importMode: "update", filed: [result] });
+    await prodRefreshManaged();
+    if (sync.state === "pending") prodShowIngestRetry(sync);
+    else prodToast("素材修订完成", `${record.packageName} · ${kind === "preview" ? "PNG" : "ZIP"}。事件已入队，bot 索引结果待核对。`, "success");
   } catch (error) { prodToast("素材修订失败", error.message, "error"); }
 }
 
@@ -639,9 +678,10 @@ async function prodChangeManagedType(managedIdValue, value) {
   if (!record) return prodToast("无法修改包装类型", "找不到素材库中的包装记录，请刷新后重试。", "error");
   try {
     const result = await prodManagedApi.changeFormalPackageType(prodAdapter(), record, value);
-    try { prodIngest.publishIngestEvent({ batchId: result.batchId, projectName: result.projectName, sourcePath: result.sourcePath, importMode: "update", filed: [result] }); }
-    catch (error) { prodToast("类型已更新，索引同步待处理", error.message, "normal"); }
-    await prodRefreshManaged(); prodToast("包装类型已更新", `${record.packageName} → ${value}`, "success");
+    const sync = prodSubmitIngest({ batchId: result.batchId, projectName: result.projectName, sourcePath: result.sourcePath, importMode: "update", filed: [result] });
+    await prodRefreshManaged();
+    if (sync.state === "pending") prodShowIngestRetry(sync);
+    else prodToast("包装类型已更新", `${record.packageName} → ${value}。事件已入队，bot 索引结果待核对。`, "success");
   }
   catch (error) { prodToast("包装类型更新失败", error.message, "error"); }
 }
@@ -820,6 +860,10 @@ function prodInstallBottomSheetGrabbers() {
 
 async function initializeProductionWorkbench() {
   window.prodWorkbenchReady = true;
+  try {
+    const retry = prodIngest.retryPendingIngestEvents().find(item => item.state === "pending");
+    if (retry) prodShowIngestRetry(retry);
+  } catch (error) { prodToast("索引同步待重试", error.message, "normal"); }
   prodInstallBottomSheetGrabbers();
   compositions.splice(0, compositions.length); pairs.splice(0, pairs.length); managed.splice(0, managed.length);
   prodPairRenderer = renderPairs; prodManageRenderer = renderManage;

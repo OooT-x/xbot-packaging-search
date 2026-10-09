@@ -83,3 +83,22 @@ test("keeps revision metadata and allows image-only background updates", () => {
   assert.equal(event.details[0].replaced_eagle_id, "png-old");
   assert.equal(event.details[0].replaced_kind, "preview");
 });
+
+test("failed queue append survives reopening and retries with the same event id", () => {
+  const {retryPendingIngestEvents} = require("../eagle-plugin/lib/ingest-bridge");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(),"xbot-outbox-"));
+  try {
+    const filePath = path.join(root,"blocked"), outboxDir = path.join(root,"outbox");
+    fs.mkdirSync(filePath);
+    const sync = publishIngestEvent({batchId:"outbox-batch",projectName:"验收",
+      filed:[{packageId:"p",previewItemId:"png",sourceItemId:"zip"}]}, {filePath,outboxDir});
+    assert.equal(sync.state,"pending"); assert.ok(fs.existsSync(sync.recoveryPath));
+    assert.equal(retryPendingIngestEvents({outboxDir})[0].state,"pending");
+    fs.rmdirSync(filePath);
+    const retry = retryPendingIngestEvents({outboxDir})[0];
+    assert.equal(retry.state,"queued"); assert.equal(retry.event.event_id,sync.event.event_id);
+    assert.equal(JSON.parse(fs.readFileSync(filePath)).event_id,sync.event.event_id);
+    assert.equal(fs.existsSync(sync.recoveryPath),false);
+    assert.deepEqual(retryPendingIngestEvents({outboxDir}),[]);
+  } finally {fs.rmSync(root,{recursive:true,force:true});}
+});
