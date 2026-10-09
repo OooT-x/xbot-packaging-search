@@ -8,9 +8,10 @@ X.bot 包装素材检索：在飞书里按项目名/别名/包装类型/标签�
 机器人先回复静态 PNG 候选，原查询人在候选消息下回复确认后，才把对应 AE 源文件 ZIP 发回原消息。
 
 ## 当前状态（以 docs/STATUS.md 为准）
+- 筛选计数已修复并随 1.8.12 安装，18 文件与包一致，179 项 JS、34 项 Python 和静态检查通过；详情见 STATUS 的 UI-04。
 - 项目筛选菜单样式已优化并通过浏览器验证，1.8.11 已安装且 18 文件与包一致；详情见 STATUS 的 UI-02/UI-03。
 - 本轮插件文案已替换，保留“合成”及业务类型名；178 项 JS 与静态检查通过，1.8.10 已打包安装，17 文件与包哈希一致，详见 STATUS 的 COPY-01/COPY-02。
-- 核心文档 v1.43；Eagle 插件源码 1.8.11，公开发布版本 1.8.9，标题栏与导航合并；本机已安装 1.8.11（18 文件与包哈希一致）。178 项 JS、34 项 Python 与静态检查通过，main 发行提交 14b2e5d 的 Windows CI 已通过；[稳定 Release](https://github.com/OooT-x/xbot-packaging-search/releases/tag/eagle-plugin-v1.8.9) 的 3 份资产大小/摘要一致。真实 Eagle 窗口及 Eagle→bot 闭环待验收，S1 修复与本机运行证据见 STATUS。
+- 核心文档 v1.43；Eagle 插件源码 1.8.12，公开发布版本 1.8.9，标题栏与导航合并；本机已安装 1.8.12（18 文件与包哈希一致）。178 项 JS、34 项 Python 与静态检查通过，main 发行提交 14b2e5d 的 Windows CI 已通过；[稳定 Release](https://github.com/OooT-x/xbot-packaging-search/releases/tag/eagle-plugin-v1.8.9) 的 3 份资产大小/摘要一致。真实 Eagle 窗口及 Eagle→bot 闭环待验收，S1 修复与本机运行证据见 STATUS。
 - M1 文字检索闭环已完成并实测稳定；M5 本机 AEP Worker→PNG/ZIP/manifest→配对预检→Eagle 正式入库与素材维护已实现。正式入口使用 v5 页面、`js/workbench.js` 与 `js/v5-runtime.js`，不加载旧 `plugin.js` 控制器。
 - 最新优化涵盖 AEP 筛选与预览回填、复核原因、PNG/ZIP 候选布局、类型持久化与生命周期管理、更新缓存与下载校验；查询失败只在版本页显示原因，不弹提示。HTTPS 请求使用 options 对象加回调，覆盖宿主双参数接口兼容风险。启动/按钮按 D-059 主动检查，版本页不额外查询。
 - 旧 UI 草稿完整提交于 `codex/archive-legacy-v5-draft` / `3587e0f`，正式包排除其未接入实现。见 `docs/deferred/legacy-v5-ui-draft.md`。
