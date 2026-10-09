@@ -709,7 +709,7 @@ class CollectionArchiveTests(unittest.TestCase):
                 ),
             )
 
-            self.assertEqual(updated.preview_file, str(preview_file))
+            self.assertTrue(Path(updated.preview_file).samefile(preview_file), "preview metadata must identify the same generated PNG")
             self.assertEqual(updated.preview_time, 2.0)
             payload = json.loads(manifest.read_text(encoding="utf-8"))
             self.assertEqual(payload["preview_file"], preview_file.name)
