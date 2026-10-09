@@ -12,12 +12,22 @@
 | 客户端版本查询、下载校验与 Eagle 接管 | 1.8.7 已实现并安装失败静默和宿主请求兼容；真实页面交互待复核 |
 | 真实 Release → 另一端下载 → Eagle 安装 | 待验收；不得把本地测试通过写成线上闭环完成 |
 
+## 1.8.8 正式发行记录（2026-10-09）
+
+- [稳定公开 Release](https://github.com/OooT-x/xbot-packaging-search/releases/tag/eagle-plugin-v1.8.8)；不是草稿或预发布。
+- 标签 `eagle-plugin-v1.8.8` 指向已通过主分支 CI 的 `6d977353973f87aefdb82d529d54dd3046e4a781`，不随后续文档提交移动。
+- 正式包 `dist/release-1.8.8/xbot-eagle-plugin-v1.8.8.eagleplugin`：16 文件，25,194,338 字节，SHA-256 `19e9ce6fdc6ff2141d1fbbdcc982e3d93bb7d87178cc3c60d505e76f5c89a439`。
+- 使用 Git ref 重新构建，worktree_review_only=false；复用未变更且已验证的 Worker（SHA-256 `9fa0d77087e1c0abfb2b1a6e3a9167e6e740e71dd4f21c994ab0521732d12e1b`），Worker --help、ZIP CRC、逐文件内容校验通过。
+- 与已安装评审包仅 index.html、js/v5-runtime.js、manifest.json 的换行不同，业务内容一致；摘要/字节数因此不同，评审包记录保留。
+- 安装包、sha256、逐文件 JSON 共 3 个资产，GitHub API 的大小与 digest 全部与本地一致；发布后确认 draft=false、prerelease=false。
+- 另一端旧版插件下载/确认安装及真实 Eagle→bot 现场闭环仍待验收；自动发布流水线仍未实现。
+
 ## 1.8.8 本地评审包（2026-10-09）
 
 - 本轮源码 1.8.8，修复入库事件失败反馈与重试；已通过 Eagle 官方入口安装 1.8.8，安装目录 16 文件哈希与包一致；真实页面和现场闭环仍需验收。
 - 评审包：dist/stability-review/xbot-eagle-plugin-v1.8.8.eagleplugin，16 文件，25,194,367 字节，SHA-256 bef114696cf4c88833934f8dc3e2f116c5e677627ea5f6fdc93b68458fb9cc2b。
 - Worker 未变更，SHA-256 9fa0d77087e1c0abfb2b1a6e3a9167e6e740e71dd4f21c994ab0521732d12e1b；包、CRC、逐文件内容均通过。
-- worktree_review_only=true 是明确的本地评审快照，不能作为已提交的公开发布物。修复代码已提交并推送至 `codex/single-machine-stability`（最新代码 `f94eda3`）；未创建 Release；自动公开发布继续暂缓。
+- worktree_review_only=true 是明确的本地评审快照，不能作为已提交的公开发布物。修复代码已提交并推送至 `codex/single-machine-stability`（最新代码 `f94eda3`）；此评审包不作为发行资产，正式包记录见上；自动发布流水线继续暂缓。
 
 ## 已安装 1.8.7 基线记录（2026-10-09）
 

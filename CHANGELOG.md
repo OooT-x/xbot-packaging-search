@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+- 插件 1.8.8 正式发布（2026-10-09）：`eagle-plugin-v1.8.8` 指向 `6d97735`；Git ref 重新生成含原 Worker 的 16 文件正式包（25,194,338 字节，SHA-256 `19e9ce6fdc6ff2141d1fbbdcc982e3d93bb7d87178cc3c60d505e76f5c89a439`）；包/sha256/逐文件记录共 3 个资产大小与 GitHub 摘要一致，已发布稳定 Release；另一端自动更新与业务闭环仍待验收。
+
 - 远端验收（2026-10-09）：`f94eda3` 的 GitHub Windows CI 已通过，175 项 JS、34 项 Python 与静态检查全部成功；S1 剩余真实 Eagle→bot 现场验收与历史交付对账。
 
 - 远端 Windows CI 补修（2026-10-09）：预览元数据测试同样使用 samefile 比较文件身份，避免 runneradmin / RUNNER~1 路径别名导致误报；生产逻辑不变。
