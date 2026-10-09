@@ -12,6 +12,14 @@
 | 客户端版本查询、下载校验与 Eagle 接管 | 1.8.7 已实现并安装失败静默和宿主请求兼容；真实页面交互待复核 |
 | 真实 Release → 另一端下载 → Eagle 安装 | 待验收；不得把本地测试通过写成线上闭环完成 |
 
+## 1.8.10 本地安装记录（2026-10-09）
+
+- COPY-02（P2，打包与安装完成）：文案更新安装包由源码提交 d6c5ca0 构建，保留 ID LB5UL2P0Q9FFF；Eagle 官方安装入口已完成安装，实时 manifest 为 1.8.10，显示名“包装助手”。
+- 安装包：dist/local-1.8.10/xbot-eagle-plugin-v1.8.10.eagleplugin；17 文件，25,193,730 字节，SHA-256 e738779af30482a65bae31aa8b58c59e3efb24a3f18ba99894cb386ee15c945d。Git ref 构建，worktree_review_only=false，CRC、逐文件内容和安装目录全部 17 文件 SHA-256 一致。
+- 验证：178 项 JavaScript、34 项 Python 和静态检查通过；Worker 未变更，摘要 9fa0d77087e1c0abfb2b1a6e3a9167e6e740e71dd4f21c994ab0521732d12e1b，与包和安装目录一致。
+- 本轮仅本机安装，未推送、创建标签或公开 Release；公开版仍为 1.8.9。请重新打开插件加载新界面，真实 Eagle 文案/窗口与 Eagle→bot 现场流程继续单独验收。
+- 偏差与下一步：本次实时确认安装前已为 1.8.9，修正旧“已安装 1.8.8”快照；本轮完成本机 1.8.10，保留预览类型管理已有问题和真实宿主验收债务。
+
 ## 1.8.9 正式发行记录（2026-10-09）
 
 - [稳定公开 Release](https://github.com/OooT-x/xbot-packaging-search/releases/tag/eagle-plugin-v1.8.9)，draft=false、prerelease=false。
