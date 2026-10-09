@@ -50,3 +50,6 @@ Desktop.ini
 ae-tool/runtime-probe-result.json
 ~$*
 /包装功能流程图.png
+
+# Browser verification artifacts
+.playwright-mcp/
