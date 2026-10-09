@@ -7,23 +7,23 @@
 | 项目 | 当前值 |
 | --- | --- |
 | 当前里程碑 | S1 单机稳定性收尾：修复已实施，远端 CI 已通过，真实 Eagle→bot 验收待完成 |
-| 分支 / 基线 | 当前标题栏工作分支 `codex/merged-window-titlebar`，基线 `d205bb2`；S1 修复分支 `codex/single-machine-stability`，从 `01b4ad1` 开始；修复代码已提交并推送，最新代码提交 `f94eda3`；状态文档随当前分支维护 |
-| 源码 / 已安装 / 发布 | 插件源码 `1.8.9`（标题栏合并，已测试未安装）；Eagle 已安装及公开发布版本为 `1.8.8`；安装目录 16 文件与评审包哈希一致；正式发行包从 `6d97735` 重新生成并公开发布，标签 `eagle-plugin-v1.8.8` |
+| 分支 / 基线 | 当前 main，标题栏分支 codex/merged-window-titlebar 已快进合入并推送；发行提交 14b2e5d，功能提交 41abb3d；S1 修复基线 f94eda3 |
+| 源码 / 已安装 / 发布 | 插件源码及公开发布版本 1.8.9，标签 eagle-plugin-v1.8.9 指向 14b2e5d；本机已安装 1.8.8（16 文件哈希一致），1.8.9 尚未安装，真实窗口待验收 |
 | 核心文档 / 软件 | 文档 `v1.43`；根软件 `0.0.0`，无正式软件标签 |
 | 本机 bot | 11:44 加载修复后在线：唯一监听器、事件服务 running=true、active_consumers=1；DeepSeek 已启用 |
 | 常驻配置 | FeishuBot 隐藏窗口、登录启动、5 分钟保活、失败重试、单实例；无 7 天执行时限。依赖 Windows 用户会话，关机/注销不承诺在线 |
 | Eagle 索引 | 11:44 只读同步：8 个项目、39 组活动包装、配对错误 0；此前 7/35 是历史快照 |
-| 验证 | 175 项 JS、34 项 Python、静态检查通过；远端 Windows CI（`f94eda3`）通过；队列失败重试覆盖生产控制器实际函数 |
+| 验证 | 178 项 JS、34 项 Python 与静态检查通过；发行提交 14b2e5d 的 [Windows CI](https://github.com/OooT-x/xbot-packaging-search/actions/runs/37890928520) 已通过；标题栏浏览器模拟通过，真实宿主待验收 |
 | 生产数据迁移 | 006 已加载；19 条已完成交付保持完成，1 条历史失败保守标记 uncertain，17 条入库事件保持完成；2 条中断的 preparing 查询标记 failed |
 | 待核对 | 历史失败交付需维护者核对；10:27 后停止记录为 0xC000013A，Task Scheduler Operational 日志未启用，不能确定终止来源 |
 | 评审安装包 | `dist/stability-review/xbot-eagle-plugin-v1.8.8.eagleplugin`；16 文件含原 Worker，CRC/逐文件哈希验证通过，worktree_review_only=true |
-| 正式发行包 | [GitHub Release](https://github.com/OooT-x/xbot-packaging-search/releases/tag/eagle-plugin-v1.8.8)；25,194,338 字节，SHA-256 `19e9ce6fdc6ff2141d1fbbdcc982e3d93bb7d87178cc3c60d505e76f5c89a439`；Git ref 构建，review_only=false；3 个上传资产大小/摘要全部一致 |
+| 正式发行包 | [1.8.9 GitHub Release](https://github.com/OooT-x/xbot-packaging-search/releases/tag/eagle-plugin-v1.8.9)；17 文件、25,195,933 字节，SHA-256 84ffd7a27603e36b62547c987d9421b2e146139526b74c849d53af03ed34e5d1；Git ref 构建，review_only=false；3 份上传资产大小/digest 全部一致，稳定公开版 |
 
 ## 窗口标题栏合并（2026-10-09）
 
 - UI-01（P2）：插件 1.8.9 使用 Eagle 官方无边框模式，把标题栏与现有导航合并为 48px 单栏；保留导航、设置及主题入口，窗口控制仅最小化、最大化/还原、关闭，不增加品牌栏。
 - 验证：14 项窗口控制/生产页面回归及静态检查通过；HTTP 浏览器模拟 Eagle window API 验证三个按钮、还原图标、深浅主题、导航；1280×860 和 980×700 均无横向溢出。生产与预览 CSS/DOM 一致。
-- 交付边界：代码本地提交 `41abb3d`，分支 `codex/merged-window-titlebar`；已从该提交生成 `dist/titlebar-review/xbot-eagle-plugin-v1.8.9.eagleplugin`（17 文件，25,195,933 字节，含未变更 Worker），CRC 与逐文件内容验证通过，SHA-256 `84ffd7a27603e36b62547c987d9421b2e146139526b74c849d53af03ed34e5d1`。未安装、未推送、未发布，本机安装和线上仍是 1.8.8。
+- 交付边界：功能提交 41abb3d 与文档提交 14b2e5d 已合入并推送 main；标签 eagle-plugin-v1.8.9 固定指向 14b2e5d，远端 CI 通过。正式包 dist/release-1.8.9/xbot-eagle-plugin-v1.8.9.eagleplugin（17 文件，25,195,933 字节，含原 Worker），CRC/逐文件内容验证通过；SHA-256 84ffd7a27603e36b62547c987d9421b2e146139526b74c849d53af03ed34e5d1。已公开发布，3 份上传资产大小与摘要一致；本机仍为 1.8.8，未安装 1.8.9。
 - 待现场验收：Eagle 真实窗口拖动、双击最大化、边缘缩放、最小化/还原、关闭及系统快捷键；浏览器模拟不能代替宿主验收。回滚可重新安装已发布 1.8.8。
 
 ## S1 任务与优先级

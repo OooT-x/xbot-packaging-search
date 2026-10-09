@@ -8,7 +8,7 @@ X.bot 包装素材检索：在飞书里按项目名/别名/包装类型/标签�
 机器人先回复静态 PNG 候选，原查询人在候选消息下回复确认后，才把对应 AE 源文件 ZIP 发回原消息。
 
 ## 当前状态（以 docs/STATUS.md 为准）
-- 2026-10-09 S1 单机稳定性修复：插件源码 `1.8.9`（标题栏合并，已测试未安装），核心文档 `v1.43`；175 项 JS、34 项 Python、静态检查通过。本机 bot 已加载修复并在线；Eagle 已安装 `1.8.8` 评审包，16 文件含原 Worker且安装目录哈希全部一致，真实页面/现场闭环仍待验收；修复代码已提交并推送至 `codex/single-machine-stability`（最新代码提交 `f94eda3`）；插件 1.8.8 已公开发布（标签 `eagle-plugin-v1.8.8`，发行源码 `6d97735`）；`f94eda3` 的远端 Windows CI 已通过。
+- 核心文档 v1.43；Eagle 插件源码与公开发布版本 1.8.9，标题栏与导航合并；已安装仍为 1.8.8。178 项 JS、34 项 Python 与静态检查通过，main 发行提交 14b2e5d 的 Windows CI 已通过；[稳定 Release](https://github.com/OooT-x/xbot-packaging-search/releases/tag/eagle-plugin-v1.8.9) 的 3 份资产大小/摘要一致。真实 Eagle 窗口及 Eagle→bot 闭环待验收，S1 修复与本机运行证据见 STATUS。
 - M1 文字检索闭环已完成并实测稳定；M5 本机 AEP Worker→PNG/ZIP/manifest→配对预检→Eagle 正式入库与素材维护已实现。正式入口使用 v5 页面、`js/workbench.js` 与 `js/v5-runtime.js`，不加载旧 `plugin.js` 控制器。
 - 最新优化涵盖 AEP 筛选与预览回填、复核原因、PNG/ZIP 候选布局、类型持久化与生命周期管理、更新缓存与下载校验；查询失败只在版本页显示原因，不弹提示。HTTPS 请求使用 options 对象加回调，覆盖宿主双参数接口兼容风险。启动/按钮按 D-059 主动检查，版本页不额外查询。
 - 旧 UI 草稿完整提交于 `codex/archive-legacy-v5-draft` / `3587e0f`，正式包排除其未接入实现。见 `docs/deferred/legacy-v5-ui-draft.md`。

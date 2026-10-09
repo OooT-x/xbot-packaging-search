@@ -12,6 +12,15 @@
 | 客户端版本查询、下载校验与 Eagle 接管 | 1.8.7 已实现并安装失败静默和宿主请求兼容；真实页面交互待复核 |
 | 真实 Release → 另一端下载 → Eagle 安装 | 待验收；不得把本地测试通过写成线上闭环完成 |
 
+## 1.8.9 正式发行记录（2026-10-09）
+
+- [稳定公开 Release](https://github.com/OooT-x/xbot-packaging-search/releases/tag/eagle-plugin-v1.8.9)，draft=false、prerelease=false。
+- 标题栏分支已快进合入并推送 main；标签 eagle-plugin-v1.8.9 固定指向发行提交 14b2e5d5ac25cd6e224cb530c781e448c786c729，[Windows CI](https://github.com/OooT-x/xbot-packaging-search/actions/runs/37890928520) 已通过，178 项 JS、34 项 Python 与静态检查通过。
+- 正式包 dist/release-1.8.9/xbot-eagle-plugin-v1.8.9.eagleplugin：17 文件，25,195,933 字节，SHA-256 84ffd7a27603e36b62547c987d9421b2e146139526b74c849d53af03ed34e5d1；从 Git ref 重新构建，worktree_review_only=false，ZIP CRC/逐文件内容通过。
+- Worker 未变更，SHA-256 9fa0d77087e1c0abfb2b1a6e3a9167e6e740e71dd4f21c994ab0521732d12e1b；--help 启动通过。
+- 安装包、sha256、逐文件 JSON 共 3 份资产，公开发布前后均核对 GitHub API 大小/digest 与本地一致。
+- 本机仍为 1.8.8；1.8.9 原生拖动/双击最大化/边缘缩放及另一端自动下载安装仍待现场验收。自动发布流水线仍未实现。
+
 ## 1.8.8 正式发行记录（2026-10-09）
 
 - [稳定公开 Release](https://github.com/OooT-x/xbot-packaging-search/releases/tag/eagle-plugin-v1.8.8)；不是草稿或预发布。
