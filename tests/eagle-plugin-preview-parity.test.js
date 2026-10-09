@@ -36,7 +36,7 @@ test("production plugin keeps the v5 preview styling and interactive DOM structu
   const plugin = read(pluginPath);
   assert.equal(inlineStyle(plugin), inlineStyle(preview), "production CSS must be copied from the latest preview");
   assert.deepEqual(bodyShape(plugin), bodyShape(preview), "production markup should retain the preview element and interaction structure");
-  assert.match(preview, /id="manageCardSize" type="range"[^>]*aria-label="素材卡片大小"/, "the library should expose an accessible card-size slider");
+  assert.match(preview, /id="manageCardSize" type="range"[^>]*aria-label="卡片大小"/, "the library should expose an accessible card-size slider");
   assert.match(preview, /#manageGrid\[data-card-size="small"\]/, "the slider sizes must change the card grid density");
   assert.match(preview, /\*::-webkit-scrollbar-button\{display:none/, "custom scrollbars must suppress native scrollbar end caps");
   assert.match(preview, /\.frame-art\.actual-preview-image\{[^}]*background:transparent!important;box-shadow:none/, "real previews must not inherit a decorative backing tile");

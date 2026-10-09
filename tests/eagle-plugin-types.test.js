@@ -56,7 +56,7 @@ test("registered custom type satisfies production pair validation; retired type 
   const pair={type:"卡片",name:"BG-02",previewPath:"preview.png",sourcePath:"source.zip",selected:true,_package:{}};
   refresh(pair);assert.equal(pair.state,"review");
   types.registerPackageType("卡片");refresh(pair);assert.equal(pair.state,"ready");assert.equal(pair._package.packageType,"卡片");
-  pair.sourcePath="";refresh(pair);assert.equal(pair.state,"review");assert.match(pair.note,/缺少配对 ZIP/);
+  pair.sourcePath="";refresh(pair);assert.equal(pair.state,"review");assert.match(pair.note,/缺少工程包/);
   pair.sourcePath="source.zip";types.updatePackageType("卡片",{enabled:false});refresh(pair);assert.equal(pair.state,"review");assert.match(pair.note,/已停用/);
   types.updatePackageType("卡片",{enabled:true});refresh(pair);assert.equal(pair.state,"ready");
 });

@@ -26,10 +26,10 @@ test("Eagle buttons minimize, toggle maximize/restore, and close the window", as
   assert.equal(h.controls.hidden, false);
   await h.minimize.handlers.click();
   await h.maximize.handlers.click();
-  assert.equal(h.maximize["aria-label"], "还原窗口");
+  assert.equal(h.maximize["aria-label"], "还原");
   assert.equal(h.maximize.dataset.maximized, "true");
   await h.maximize.handlers.click();
-  assert.equal(h.maximize["aria-label"], "最大化窗口");
+  assert.equal(h.maximize["aria-label"], "最大化");
   h.close.handlers.click();
   assert.deepEqual(h.calls, ["minimize", "maximize", "unmaximize", "close"]);
 });

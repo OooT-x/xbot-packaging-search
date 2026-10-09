@@ -34,7 +34,7 @@ test("production update page preserves offline cache and recovers from query fai
   assert.equal(node('[data-action="download-plugin-update"]').disabled, false);
   c.prodUpdater.checkForUpdate = async () => ({ releaseFound: false, updateAvailable: false });
   await c.prodCheckUpdates(true);
-  assert.equal(node("#updateStatusTitle").textContent, "暂无稳定版发布");
+  assert.equal(node("#updateStatusTitle").textContent, "暂无新版");
   assert.equal(node('[data-action="download-plugin-update"]').disabled, true);
   assert.equal(c.prodUpdateState.error, "");
 });
@@ -44,12 +44,12 @@ test("production cache rebases after installation and invalid storage falls back
   const { context: c, node } = harness({ checkForUpdate: async () => { throw new Error("should not query"); } },
     { getItem: () => JSON.stringify({ info, checkedAt: Date.now() }) });
   await c.prodCheckUpdates();
-  assert.equal(node("#updateStatusTitle").textContent, "已是最新版本");
+  assert.equal(node("#updateStatusTitle").textContent, "已是最新");
   assert.equal(node('[data-action="download-plugin-update"]').disabled, true);
   c.localStorage = c.window.localStorage = { getItem: () => "{bad", setItem() { throw new Error("quota"); } };
   c.prodUpdater.checkForUpdate = async () => available();
   await c.prodCheckUpdates();
-  assert.equal(node("#updateStatusTitle").textContent, "发现可用更新");
+  assert.equal(node("#updateStatusTitle").textContent, "有新版本");
 });
 
 test("production download prevents duplicate requests, shows progress and retains a package after open failure", async () => {
