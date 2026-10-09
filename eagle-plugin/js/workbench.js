@@ -573,7 +573,6 @@ async function prodCheckUpdates(force = false) {
     return prodLatestRelease;
   } catch (error) {
     prodUpdateState.error = error.message;
-    if (force) prodToast("检查更新失败", error.message, "error");
     return null;
   } finally { prodUpdateState.checking = false; prodRenderUpdates(); }
 }
