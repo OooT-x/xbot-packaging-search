@@ -9,7 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED = {"manifest.json", "index.html", "logo.png", "README.md",
-            "js/workbench.js", "js/v5-runtime.js", "lib/ingest-bridge.js", "lib/eagle-api.js"}
+            "js/window-controls.js", "js/workbench.js", "js/v5-runtime.js", "lib/ingest-bridge.js", "lib/eagle-api.js"}
 
 def git(*args):
     return subprocess.check_output(["git", "-C", str(ROOT), *args])

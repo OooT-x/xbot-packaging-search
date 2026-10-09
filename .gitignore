@@ -53,3 +53,5 @@ ae-tool/runtime-probe-result.json
 
 # Browser verification artifacts
 .playwright-mcp/
+
+output/playwright/

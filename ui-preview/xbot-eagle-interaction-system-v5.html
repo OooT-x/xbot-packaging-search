@@ -321,6 +321,25 @@
     [data-type-manager-error]{color:var(--red)}
     @media(max-width:560px){.type-management-row .form-grid{grid-template-columns:1fr}}
 
+
+    /* One navigation/title bar; native buttons are only shown inside Eagle. */
+    .topbar{height:48px;padding:0 0 0 22px;gap:12px;background:var(--panel);backdrop-filter:none}
+    .eagle-window .topbar{-webkit-app-region:drag;user-select:none}
+    .topbar :is(button,input,select,a,.nav-buttons,.top-actions,.window-controls){-webkit-app-region:no-drag}
+    .topbar .icon-btn{border-color:transparent;background:transparent}
+    .topbar .icon-btn:hover{background:var(--panel-3);border-color:transparent}
+    .top-actions{gap:6px;padding-right:12px}
+    .window-controls{display:flex;align-items:stretch;align-self:stretch;flex:none;border-left:1px solid var(--line)}
+    .window-control{display:grid;place-items:center;width:44px;padding:0;border:0;border-radius:0;background:transparent;color:var(--ink-2);cursor:default;transition:background .12s ease,color .12s ease}
+    .window-control:hover{background:var(--panel-3);color:var(--ink)}
+    .window-control:focus-visible{outline:2px solid var(--blue);outline-offset:-4px}
+    .window-control.window-close:hover{background:#c42b1c;color:#fff}
+    .window-control svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1;shape-rendering:geometricPrecision}
+    .window-control .restore-icon{display:none}
+    .window-control[data-maximized="true"] .maximize-icon{display:none}
+    .window-control[data-maximized="true"] .restore-icon{display:block}
+    .eagle-window .tweaks{top:54px;right:154px}
+    @media(max-width:840px){.topbar{padding:0 0 0 12px;gap:8px}.top-actions{padding-right:8px}.window-control{width:38px}.eagle-window .tweaks{right:132px}}
 </style>
 </head>
 <body data-theme="light" data-screen="home">
@@ -329,6 +348,13 @@
       <div class="nav-buttons" id="navButtons" hidden><button class="icon-btn" id="backBtn" type="button" aria-label="返回上一页" hidden>←</button><button class="icon-btn topbar-home" id="homeBtn" type="button" aria-label="返回首页" title="返回首页" hidden><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 10 9-7 9 7"/><path d="M5 9v11h14V9"/><path d="M9 20v-7h6v7"/></svg></button></div>
       <div class="crumb"><strong id="crumbText">任务首页</strong></div>
       <div class="top-actions"><div class="api"><i></i><span>本地预览 · Eagle API 未执行</span></div><button class="icon-btn settings-trigger" id="tweakBtn" type="button" aria-label="设置" aria-controls="tweaks" aria-expanded="false" data-update-available="false">⚙</button><button class="icon-btn" id="themeBtn" type="button" aria-label="切换主题">◐</button></div>
+
+      <div class="window-controls" id="windowControls" role="group" aria-label="窗口控制" hidden>
+        <button class="window-control" type="button" data-window-action="minimize" aria-label="最小化窗口" title="最小化窗口"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1 6.5h10"/></svg></button>
+        <button class="window-control" type="button" data-window-action="maximize" aria-label="最大化窗口" title="最大化窗口" data-maximized="false"><svg class="maximize-icon" viewBox="0 0 12 12" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9"/></svg><svg class="restore-icon" viewBox="0 0 12 12" aria-hidden="true"><path d="M3.5 3.5v-2h7v7h-2"/><rect x="1.5" y="3.5" width="7" height="7"/></svg></button>
+        <button class="window-control window-close" type="button" data-window-action="close" aria-label="关闭窗口" title="关闭窗口"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="m1.5 1.5 9 9m0-9-9 9"/></svg></button>
+        <span class="sr-only" role="status" aria-live="polite"></span>
+      </div>
     </header>
 
     <main class="workspace">
@@ -974,5 +1000,5 @@
     function applyManageCardSize(value, persist=false){const sizes=["small","medium","large"],labels=["小","中","大"],index=Math.min(2,Math.max(0,Number(value)||0)),size=sizes[index],input=$("#manageCardSize"),grid=$("#manageGrid");if(grid)grid.dataset.cardSize=size;if(input){input.value=String(index);input.setAttribute("aria-valuetext",labels[index])}if(persist){try{localStorage.setItem("xbot.manage-card-size.v1",size)}catch{}}}
     const manageCardSizeInput=$("#manageCardSize");let initialManageCardSize="medium";try{initialManageCardSize=localStorage.getItem("xbot.manage-card-size.v1")||"medium"}catch{};const initialManageCardSizeIndex=["small","medium","large"].indexOf(initialManageCardSize);applyManageCardSize(initialManageCardSizeIndex<0?1:initialManageCardSizeIndex,false);manageCardSizeInput?.addEventListener("input",()=>applyManageCardSize(manageCardSizeInput.value,true));
 </script>
-</body>
+<script src='../eagle-plugin/js/window-controls.js'></script></body>
 </html>
