@@ -8,7 +8,7 @@
 | --- | --- |
 | 当前里程碑 | S1 单机稳定性收尾：修复已实施，远端 CI 已通过，真实 Eagle→bot 验收待完成 |
 | 分支 / 基线 | 当前 codex/plugin-copy，文案替换基线 64fedd5；已发布 1.8.9 的发行提交 14b2e5d，标题栏功能提交 41abb3d，S1 修复基线 f94eda3 |
-| 源码 / 已安装 / 发布 | 插件源码及公开发布版本 1.8.9，标签 eagle-plugin-v1.8.9 指向 14b2e5d；本机已安装 1.8.8（16 文件哈希一致），1.8.9 尚未安装，真实窗口待验收；本轮另有文案源码修改，未打包安装 |
+| 源码 / 已安装 / 发布 | 插件源码 1.8.10（文案替换）；本机实时核对已安装 1.8.9，安装 1.8.10 待执行；公开发布仍为 1.8.9，标签指向 14b2e5d；真实窗口待验收 |
 | 核心文档 / 软件 | 文档 `v1.43`；根软件 `0.0.0`，无正式软件标签 |
 | 本机 bot | 11:44 加载修复后在线：唯一监听器、事件服务 running=true、active_consumers=1；DeepSeek 已启用 |
 | 常驻配置 | FeishuBot 隐藏窗口、登录启动、5 分钟保活、失败重试、单实例；无 7 天执行时限。依赖 Windows 用户会话，关机/注销不承诺在线 |
@@ -18,6 +18,10 @@
 | 待核对 | 历史失败交付需维护者核对；10:27 后停止记录为 0xC000013A，Task Scheduler Operational 日志未启用，不能确定终止来源 |
 | 评审安装包 | `dist/stability-review/xbot-eagle-plugin-v1.8.8.eagleplugin`；16 文件含原 Worker，CRC/逐文件哈希验证通过，worktree_review_only=true |
 | 正式发行包 | [1.8.9 GitHub Release](https://github.com/OooT-x/xbot-packaging-search/releases/tag/eagle-plugin-v1.8.9)；17 文件、25,195,933 字节，SHA-256 84ffd7a27603e36b62547c987d9421b2e146139526b74c849d53af03ed34e5d1；Git ref 构建，review_only=false；3 份上传资产大小/digest 全部一致，稳定公开版 |
+
+## 文案版打包安装（2026-10-09）
+
+- COPY-02（P2，进行中）：源码升级 1.8.10，保留插件 ID 和未变更 Worker；从验证后的 Git 提交生成安装包，经 Eagle 官方入口安装并逐文件核对。实时安装 manifest 为 1.8.9，修正文档旧快照；公开发布仍为 1.8.9。
 
 ## 插件文案替换（2026-10-09）
 
