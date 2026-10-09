@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+- 远端验收（2026-10-09）：`f94eda3` 的 GitHub Windows CI 已通过，175 项 JS、34 项 Python 与静态检查全部成功；S1 剩余真实 Eagle→bot 现场验收与历史交付对账。
+
 - 远端 Windows CI 补修（2026-10-09）：预览元数据测试同样使用 samefile 比较文件身份，避免 runneradmin / RUNNER~1 路径别名导致误报；生产逻辑不变。
 
 - 2026-10-09：S1 单机稳定性修复代码已提交并推送至 `codex/single-machine-stability`（`b2205e9`、`f2df7ef`、`59339e9`）；管理文档随当前分支归档，未创建公开 Release；真实业务闭环、历史交付对账及远端 CI 仍分别验收。

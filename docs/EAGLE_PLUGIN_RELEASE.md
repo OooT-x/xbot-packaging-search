@@ -17,7 +17,7 @@
 - 本轮源码 1.8.8，修复入库事件失败反馈与重试；已通过 Eagle 官方入口安装 1.8.8，安装目录 16 文件哈希与包一致；真实页面和现场闭环仍需验收。
 - 评审包：dist/stability-review/xbot-eagle-plugin-v1.8.8.eagleplugin，16 文件，25,194,367 字节，SHA-256 bef114696cf4c88833934f8dc3e2f116c5e677627ea5f6fdc93b68458fb9cc2b。
 - Worker 未变更，SHA-256 9fa0d77087e1c0abfb2b1a6e3a9167e6e740e71dd4f21c994ab0521732d12e1b；包、CRC、逐文件内容均通过。
-- worktree_review_only=true 是明确的本地评审快照，不能作为已提交的公开发布物。修复代码已提交并推送至 `codex/single-machine-stability`（`59339e9`）；未创建 Release；自动公开发布继续暂缓。
+- worktree_review_only=true 是明确的本地评审快照，不能作为已提交的公开发布物。修复代码已提交并推送至 `codex/single-machine-stability`（最新代码 `f94eda3`）；未创建 Release；自动公开发布继续暂缓。
 
 ## 已安装 1.8.7 基线记录（2026-10-09）
 
