@@ -8,6 +8,7 @@ X.bot 包装素材检索：在飞书里按项目名/别名/包装类型/标签�
 机器人先回复静态 PNG 候选，原查询人在候选消息下回复确认后，才把对应 AE 源文件 ZIP 发回原消息。
 
 ## 当前状态（以 docs/STATUS.md 为准）
+- 项目筛选菜单样式已优化并通过浏览器验证，尚未打包安装；详情见 STATUS 的 UI-02。
 - 本轮插件文案已替换，保留“合成”及业务类型名；178 项 JS 与静态检查通过，1.8.10 已打包安装，17 文件与包哈希一致，详见 STATUS 的 COPY-01/COPY-02。
 - 核心文档 v1.43；Eagle 插件源码 1.8.10，公开发布版本 1.8.9，标题栏与导航合并；本机已安装 1.8.10（17 文件与包哈希一致）。178 项 JS、34 项 Python 与静态检查通过，main 发行提交 14b2e5d 的 Windows CI 已通过；[稳定 Release](https://github.com/OooT-x/xbot-packaging-search/releases/tag/eagle-plugin-v1.8.9) 的 3 份资产大小/摘要一致。真实 Eagle 窗口及 Eagle→bot 闭环待验收，S1 修复与本机运行证据见 STATUS。
 - M1 文字检索闭环已完成并实测稳定；M5 本机 AEP Worker→PNG/ZIP/manifest→配对预检→Eagle 正式入库与素材维护已实现。正式入口使用 v5 页面、`js/workbench.js` 与 `js/v5-runtime.js`，不加载旧 `plugin.js` 控制器。

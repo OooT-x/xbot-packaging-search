@@ -335,6 +335,19 @@
     .window-control[data-maximized="true"] .restore-icon{display:block}
     .eagle-window .tweaks{top:54px;right:154px}
     @media(max-width:840px){.topbar{padding:0 0 0 12px;gap:8px}.top-actions{padding-right:8px}.window-control{width:38px}.eagle-window .tweaks{right:132px}}
+    .project-filter-native{display:none!important}
+    .project-filter-trigger{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:36px;padding:8px 11px;border:1px solid var(--line-2);border-radius:9px;background:var(--panel);color:var(--ink);font:inherit;font-size:12px;text-align:left;cursor:pointer}
+    .project-filter-trigger span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .project-filter-trigger::after{content:"";width:6px;height:6px;flex:none;margin-right:2px;border-right:1.5px solid var(--ink-2);border-bottom:1.5px solid var(--ink-2);transform:translateY(-2px) rotate(45deg)}
+    .project-filter-trigger:hover,.project-filter-trigger[aria-expanded="true"]{border-color:var(--blue)}
+    .project-filter-trigger:focus-visible,.project-filter-option:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+    .project-filter-menu{position:fixed;z-index:70;overflow:auto;overscroll-behavior:contain;padding:6px;border:1px solid var(--line-2);border-radius:12px;background:var(--panel);box-shadow:0 12px 32px rgba(0,0,0,.22);scrollbar-width:thin}
+    .project-filter-menu[hidden]{display:none}
+    .project-filter-option{position:relative;display:block;width:100%;min-height:34px;padding:8px 30px 8px 10px;border:0;border-radius:7px;background:transparent;color:var(--ink);font:inherit;font-size:12px;line-height:18px;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+    .project-filter-option:hover,.project-filter-option:focus{background:var(--panel-3)}
+    .project-filter-option[aria-selected="true"]{color:var(--blue);background:color-mix(in srgb,var(--blue) 12%,var(--panel));font-weight:600}
+    .project-filter-option[aria-selected="true"]::after{content:"";position:absolute;right:12px;top:12px;width:5px;height:9px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg)}
+    .project-filter-option:disabled{opacity:.45;cursor:default}
 </style></head><body data-theme="light" data-screen="home">
   <div class="app">
     <header class="topbar">
@@ -409,4 +422,4 @@
   <div class="tweaks" id="tweaks" role="dialog" aria-label="设置"><h3>设置</h3><button class="settings-update" type="button" data-action="open-updates"><span class="settings-update-copy"><strong>插件更新</strong><small>检查版本状态</small></span><span class="settings-update-badge" hidden></span></button><button class="settings-update" type="button" data-action="manage-types"><span class="settings-update-copy"><strong>类型管理</strong><small>修改名称、别名，停用或恢复类型</small></span></button><div class="tweak-row"><span>减少动画</span><button class="toggle" id="motionToggle" type="button" aria-label="减少动画" aria-pressed="false"></button></div></div>
   <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"><strong id="toastTitle"></strong><span id="toastText"></span></div>
 
-<script src='js/window-controls.js'></script><script src='js/workbench.js'></script><script src='js/v5-runtime.js'></script></body></html>
+<script src='js/window-controls.js'></script><script src='js/project-filter.js'></script><script src='js/workbench.js'></script><script src='js/v5-runtime.js'></script></body></html>
