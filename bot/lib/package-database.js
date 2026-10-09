@@ -363,6 +363,51 @@ class PackageDatabase {
     return this.getBatch(batchId);
   }
 
+  // Call only after acquiring the single listener lock, before starting any work.
+  recoverInterruptedWork(now = Date.now()) {
+    return this.transaction(() => {
+      const deliveries = this.db.prepare(`UPDATE deliveries SET status = 'failed',
+        phase = CASE WHEN phase IN ('preparing', 'uploaded') THEN phase ELSE 'uncertain' END,
+        last_error = 'listener interrupted; dispatch outcome may need reconciliation',
+        updated_at = ? WHERE status = 'sending'`).run(now).changes;
+      const queries = this.db.prepare(
+        "UPDATE queries SET status = 'pending' WHERE status = 'sending'"
+      ).run().changes;
+      const preparing = this.db.prepare(`UPDATE queries SET status = 'failed',
+        last_error = 'listener interrupted while preparing candidates'
+        WHERE status = 'preparing'`).run().changes;
+      const events = this.db.prepare(`UPDATE batch_sync_events SET status = 'failed',
+        last_error = 'listener interrupted; retry catalog refresh', updated_at = ?
+        WHERE status = 'processing'`).run(now).changes;
+      return { deliveries, queries, preparing, events };
+    });
+  }
+
+  markDeliveryUploaded(requestId, packageId, resource, now = Date.now()) {
+    this.db.prepare(`UPDATE deliveries SET phase = 'uploaded', resource_json = ?, updated_at = ?
+      WHERE request_id = ? AND package_id = ? AND status = 'sending'`)
+      .run(JSON.stringify(resource), now, requestId, packageId);
+  }
+
+  markDeliveryDispatching(requestId, packageId, now = Date.now()) {
+    this.db.prepare(`UPDATE deliveries SET phase = 'dispatching', updated_at = ?
+      WHERE request_id = ? AND package_id = ? AND status = 'sending'`)
+      .run(now, requestId, packageId);
+  }
+
+  reconcileDelivery(requestId, packageId, sourceMessageId, now = Date.now()) {
+    const row = this.db.prepare(`SELECT * FROM deliveries
+      WHERE request_id = ? AND package_id = ?`).get(requestId, packageId);
+    if (!row || row.phase !== "uncertain" || row.status !== "failed") {
+      throw new Error("only an interrupted uncertain delivery can be reconciled");
+    }
+    if (sourceMessageId) return this.markDeliveryCompleted(requestId, packageId, sourceMessageId, now);
+    this.db.prepare(`UPDATE deliveries SET phase = CASE
+      WHEN resource_json IS NULL THEN 'preparing' ELSE 'uploaded' END,
+      last_error = 'operator verified not sent', updated_at = ?
+      WHERE request_id = ? AND package_id = ?`).run(now, requestId, packageId);
+  }
+
   claimBatchSyncEvent(eventId, batchId, payload = {}, now = Date.now()) {
     const normalizedEventId = String(eventId || "").trim();
     const normalizedBatchId = String(batchId || "").trim();
@@ -581,7 +626,7 @@ class PackageDatabase {
 
       const existing = this.db
         .prepare(`
-          SELECT status, source_message_id
+          SELECT status, phase, resource_json, source_message_id
           FROM deliveries
           WHERE request_id = ? AND package_id = ?
         `)
@@ -590,12 +635,13 @@ class PackageDatabase {
         return { state: "completed", source_message_id: existing.source_message_id };
       }
       if (existing?.status === "sending") return { state: "sending" };
+      if (existing?.phase === "uncertain") return { state: "uncertain" };
 
       this.db
         .prepare(`
           INSERT INTO deliveries(
-            request_id, package_id, idempotency_key, status, created_at, updated_at
-          ) VALUES (?, ?, ?, 'sending', ?, ?)
+            request_id, package_id, idempotency_key, status, phase, created_at, updated_at
+          ) VALUES (?, ?, ?, 'sending', 'preparing', ?, ?)
           ON CONFLICT(request_id, package_id) DO UPDATE SET
             status = CASE
               WHEN deliveries.status = 'completed' THEN 'completed'
@@ -604,7 +650,7 @@ class PackageDatabase {
             updated_at = excluded.updated_at
         `)
         .run(requestId, packageId, idempotencyKey, now, now);
-      return { state: "claimed", query };
+      return { state: "claimed", query, resource: existing?.resource_json ? JSON.parse(existing.resource_json) : null };
     });
   }
 
@@ -613,7 +659,7 @@ class PackageDatabase {
       this.db
         .prepare(`
           UPDATE deliveries
-          SET status = 'completed', source_message_id = ?, updated_at = ?
+          SET status = 'completed', phase = 'delivered', last_error = NULL, source_message_id = ?, updated_at = ?
           WHERE request_id = ? AND package_id = ?
         `)
         .run(sourceMessageId, now, requestId, packageId);
@@ -625,10 +671,11 @@ class PackageDatabase {
       this.db
         .prepare(`
           UPDATE deliveries
-          SET status = 'failed', updated_at = ?
+          SET status = 'failed', phase = CASE WHEN phase = 'dispatching' THEN 'uncertain' ELSE phase END,
+              last_error = ?, updated_at = ?
           WHERE request_id = ? AND package_id = ?
         `)
-        .run(now, requestId, packageId);
+        .run(String(errorMessage || '').slice(0, 1000), now, requestId, packageId);
     });
   }
 }

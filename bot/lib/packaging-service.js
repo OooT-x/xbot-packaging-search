@@ -518,6 +518,14 @@ class PackagingService {
       );
       return true;
     }
+    if (claim.state === "uncertain") {
+      await this.transport.replyText(
+        event.message_id,
+        "上次发送被中断，结果尚未确认。为避免重复发送，请维护者先核对最初查询下的文件或链接并处理交付记录。",
+        `${idempotencyKey}-uncertain`
+      );
+      return true;
+    }
     if (claim.state !== "claimed") {
       await this.transport.replyText(
         event.message_id,
@@ -531,16 +539,20 @@ class PackagingService {
       await this.transport.replyText(
         event.message_id,
         `确认：${selected.package_name} ${selected.version}。源文件会回复到最初的查询消息下面。`,
-        `package-query-${query.request_id}-confirmed`
+        `${idempotencyKey}-confirmed`
       );
       const fileSize = fs.statSync(selected.source_path).size;
       if (fileSize > this.driveUploadThresholdBytes) {
-        const drive = await this.transport.uploadToDrive(selected.source_path);
-        await this.transport.replyText(
-          event.message_id,
+        const drive = claim.resource || await this.transport.uploadToDrive(selected.source_path);
+        if (!drive.url || !drive.token) throw new Error("drive upload did not return url/token");
+        this.database.markDeliveryUploaded(query.request_id, selected.package_id, drive);
+        this.database.markDeliveryDispatching(query.request_id, selected.package_id);
+        const linkReply = await this.transport.replyText(
+          query.root_message_id,
           `这份源文件有 ${formatFileSize(fileSize)}，飞书直接发文件会被限制，我传到云盘了：\n${drive.url}\n下载后直接使用。`,
-          `package-query-${query.request_id}-drive-link`
+          `${idempotencyKey}-drive-link`
         );
+        if (!safeMessageId(linkReply)) throw new Error("drive link reply did not return message_id");
         this.database.markDeliveryCompleted(
           query.request_id,
           selected.package_id,
@@ -550,6 +562,7 @@ class PackagingService {
           `packaging source uploaded request_id=${query.request_id} package_id=${selected.package_id} url=${drive.url}`
         );
       } else {
+        this.database.markDeliveryDispatching(query.request_id, selected.package_id);
         const fileReply = await this.transport.replyFile(
           query.root_message_id,
           selected.source_path,
@@ -571,7 +584,7 @@ class PackagingService {
       this.log(`packaging source send failed request_id=${query.request_id}: ${error.message}`);
       await this.transport.replyText(
         event.message_id,
-        "源文件发送失败了，查询状态已保留。你可以回复同一候选再试一次。",
+        "源文件发送未完成，查询状态已保留。请回复同一候选检查或重试；若发送结果不明，会先要求维护者核对，避免重复交付。",
         `package-query-${query.request_id}-send-failed`
       );
     }

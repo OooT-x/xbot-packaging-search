@@ -854,7 +854,8 @@ test("uploads oversized source files to Drive and replies with a link", async ()
         (call) =>
           call.kind === "text" &&
           call.text.includes("云盘") &&
-          call.text.includes(driveCalls[0].url)
+          call.text.includes(driveCalls[0].url) &&
+          call.messageId === queryEvent.message_id
       )
     );
     const delivery = app.database.db
@@ -914,4 +915,51 @@ test("keeps previous query confirmable after a follow-up", async () => {
   } finally {
     app.close();
   }
+});
+
+test("Drive deliveries use candidate keys, original thread and no duplicate upload", async () => {
+  const app = fixture({driveUploadThresholdBytes: 1});
+  try {
+    await app.service.tryHandleQuery({message_id:"drive-multi", message_type:"text", chat_id:"oc_chat",
+      sender_id:"ou_requester", content:"@X.bot 找变速箱的包装"}, {mentioned:true});
+    const prompt = app.calls.find(c => c.kind === "post").message_id;
+    for (const [id, content] of [["d1","第一个"],["d2","第二个"],["d3","第一个"]]) {
+      app.replyTargets.set(id, prompt);
+      await app.service.tryHandleConfirmation({message_id:id, message_type:"text", chat_id:"oc_chat",
+        sender_id:"ou_requester", content});
+    }
+    const links = app.calls.filter(c => c.kind === "text" && c.text.includes("传到云盘"));
+    assert.equal(app.calls.filter(c => c.kind === "drive").length, 2);
+    assert.equal(links.length, 2);
+    assert.ok(links.every(c => c.messageId === "drive-multi"));
+    assert.equal(new Set(links.map(c => c.key)).size, 2);
+  } finally { app.close(); }
+});
+
+test("restart retries pre-dispatch work and holds uncertain dispatch for reconciliation", async () => {
+  const app = fixture({driveUploadThresholdBytes: 1});
+  try {
+    await app.service.tryHandleQuery({message_id:"restart-root", message_type:"text", chat_id:"oc_chat",
+      sender_id:"ou_requester", content:"@X.bot 找变速箱的包装"}, {mentioned:true});
+    const query = app.database.getQueryWithCandidates(app.database.getQueryByRootMessage("restart-root").request_id);
+    const [first, second] = query.candidates;
+    const key = id => `package-delivery-${query.request_id}-${id}`;
+    app.database.claimDelivery(query.request_id, first.package_id, key(first.package_id));
+    app.database.markDeliveryUploaded(query.request_id, first.package_id, {url:"https://example.test/saved",token:"saved"});
+    app.database.claimDelivery(query.request_id, second.package_id, key(second.package_id));
+    app.database.markDeliveryDispatching(query.request_id, second.package_id);
+    const event = {message_id:"restart-confirm", message_type:"text", chat_id:"oc_chat", sender_id:"ou_requester"};
+    app.replyTargets.set(event.message_id, app.calls.find(c => c.kind === "post").message_id);
+    app.database.close();
+    app.database.db = new PackageDatabase(path.join(app.root, "packaging.sqlite")).db;
+    assert.equal(app.database.recoverInterruptedWork().deliveries, 2);
+    await app.service.tryHandleConfirmation({...event, content:"第一个"});
+    assert.equal(app.calls.filter(c => c.kind === "drive").length, 0, "reuse saved upload");
+    await app.service.tryHandleConfirmation({...event, content:"第二个"});
+    assert.ok(app.calls.some(c => c.text?.includes("结果尚未确认")));
+    assert.equal(app.calls.filter(c => c.text?.includes("传到云盘")).length, 1);
+    app.database.reconcileDelivery(query.request_id, second.package_id, null);
+    await app.service.tryHandleConfirmation({...event, content:"第二个"});
+    assert.equal(app.calls.filter(c => c.kind === "drive").length, 1);
+  } finally { app.close(); }
 });

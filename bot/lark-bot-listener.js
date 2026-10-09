@@ -6,6 +6,7 @@ const { spawn } = require("child_process");
 const { PackageDatabase } = require("./lib/package-database");
 const { PackagingService } = require("./lib/packaging-service");
 const { IngestEventWatcher } = require("./lib/ingest-sync");
+const { acquireListenerLock } = require("./lib/runtime-lock");
 
 const projectRoot = path.resolve(__dirname, "..");
 const workspace = path.resolve(process.env.LARK_BOT_RUNTIME_ROOT || __dirname);
@@ -3046,6 +3047,8 @@ async function consumeOnce() {
 }
 
 async function main() {
+  const releaseLock = acquireListenerLock(path.join(logDir, "bot.lock"));
+  process.once("exit", releaseLock);
   fs.writeFileSync(path.join(logDir, "bot.pid"), String(process.pid), "utf8");
 
   if (!fs.existsSync(larkRun)) {
@@ -3058,6 +3061,8 @@ async function main() {
 
   if (packagingEnabled) {
     const service = getPackagingService();
+    const recovered = service.database.recoverInterruptedWork();
+    log(`packaging interrupted work recovered ${JSON.stringify(recovered)}`);
     try {
       const report = await service.initialize();
       if (report) {

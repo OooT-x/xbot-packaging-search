@@ -37,19 +37,23 @@ $runtimeRootArgument = if ($DefaultRuntimeRoot) {
 } else {
   ""
 }
-$actionArguments = "-NoProfile -ExecutionPolicy Bypass -File `"$Starter`"$runtimeRootArgument"
+$actionArguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Starter`"$runtimeRootArgument"
 
 $action = New-ScheduledTaskAction `
   -Execute "powershell.exe" `
   -Argument $actionArguments `
   -WorkingDirectory $ProjectRoot
 
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+$trigger = @(
+  (New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME),
+  (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(5) -RepetitionInterval (New-TimeSpan -Minutes 5))
+)
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
 $settings = New-ScheduledTaskSettingsSet `
   -AllowStartIfOnBatteries `
   -DontStopIfGoingOnBatteries `
-  -ExecutionTimeLimit (New-TimeSpan -Days 7) `
+  -ExecutionTimeLimit ([TimeSpan]::Zero) `
+  -MultipleInstances IgnoreNew `
   -RestartCount 5 `
   -RestartInterval (New-TimeSpan -Minutes 1) `
   -StartWhenAvailable

@@ -96,3 +96,22 @@ test("records an asset revision after an update event", async () => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("reopened database recovers processing events without changing completed events", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "xbot-restart-ingest-"));
+  let database = new PackageDatabase(path.join(root, "packaging.sqlite"));
+  try {
+    const event = {schema_version:1, event_type:"eagle.batch.filed", event_id:"restart-event",
+      batch:{batch_id:"restart-batch",project_name:"验收"}, details:[{package_id:"p",preview_eagle_id:"png",source_eagle_id:"zip"}]};
+    database.claimBatchSyncEvent(event.event_id, event.batch.batch_id, event);
+    database.claimBatchSyncEvent("completed-event", "completed-batch", {});
+    database.markBatchSyncEventCompleted("completed-event");
+    database.close(); database = new PackageDatabase(path.join(root, "packaging.sqlite"));
+    assert.equal(database.recoverInterruptedWork().events, 1);
+    const watcher = new IngestEventWatcher({database,refreshCatalog:async () => ({package_count:1})});
+    assert.equal((await watcher.processEvent(event)).state, "completed");
+    assert.equal((await watcher.processEvent(event)).state, "completed");
+    assert.equal(database.getBatchSyncEvent(event.event_id).attempts, 2);
+    assert.equal(database.getBatchSyncEvent("completed-event").status, "completed");
+  } finally {database.close(); fs.rmSync(root,{recursive:true,force:true});}
+});

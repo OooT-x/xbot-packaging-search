@@ -51,7 +51,8 @@ function Get-ExistingBotProcess {
     if ($pidText -match "^\d+$") {
       $process = Get-Process -Id ([int]$pidText) -ErrorAction SilentlyContinue
       if ($process -and $process.ProcessName -eq "node") {
-        return $process
+        $details = Get-CimInstance Win32_Process -Filter "ProcessId=$($process.Id)" -ErrorAction SilentlyContinue
+        if ($details.CommandLine -like "*lark-bot-listener.js*") { return $process }
       }
     }
   }
