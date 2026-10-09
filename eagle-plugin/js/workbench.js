@@ -555,7 +555,17 @@ function prodRenderManageFilters() {
 
 function prodApplyManageFilters() {
   const query = prodManageSearch;
-  const visible = prodManagedCards.filter(item => (!prodManageProjectFilter || item.project === prodManageProjectFilter) && (!prodManageTypeFilter || item.type === prodManageTypeFilter) && (!query || `${item.project} ${item.name} ${item.type} ${item.comp} ${item.version}`.toLocaleLowerCase().includes(query)));
+  const matching = prodManagedCards.filter(item => (!prodManageProjectFilter || item.project === prodManageProjectFilter) && (!query || `${item.project} ${item.name} ${item.type} ${item.comp} ${item.version}`.toLocaleLowerCase().includes(query)));
+  const visible = matching.filter(item => !prodManageTypeFilter || item.type === prodManageTypeFilter);
+  // Type counts describe the choices within the current project/search scope.
+  const typeCounts = new Map();
+  matching.forEach(item => typeCounts.set(item.type, (typeCounts.get(item.type) || 0) + 1));
+  document.querySelectorAll(".manage-side [data-prod-manage-type]").forEach(button => {
+    const count = button.querySelector("em");
+    if (count) count.textContent = String(button.dataset.prodManageType ? typeCounts.get(button.dataset.prodManageType) || 0 : matching.length);
+  });
+  const currentChip = [...document.querySelectorAll(".manage-side .status-chip")].find(item => item.textContent.includes("当前版本"));
+  if (currentChip) currentChip.textContent = `当前版本 ${visible.filter(item => item.isCurrent).length}`;
   managed.splice(0, managed.length, ...visible);
   if (!managed.some(item => item.id === managedId)) managedId = managed[0]?.id || "";
   const count = document.querySelector(".manage-toolbar h2 span"); if (count) count.textContent = `${visible.length} 条`;
