@@ -6,12 +6,20 @@
 
 | 环节 | 状态 |
 | --- | --- |
+| 可重复打包脚本 | 已实现 scripts/package-eagle-plugin.py；Git ref 源码、Worker SHA-256、固定 ZIP 元数据、CRC 和文件清单校验 |
 | 本地构建 Worker、制作安装包 | 1.8.7 包由 7272d6f 生成并由 Eagle 安装；16 文件 SHA-256 与包一致，Worker 启动通过 |
 | GitHub Actions | 现有 CI 仅测试与静态检查；自动发布流水线尚未实现 |
 | 客户端版本查询、下载校验与 Eagle 接管 | 1.8.7 已实现并安装失败静默和宿主请求兼容；真实页面交互待复核 |
 | 真实 Release → 另一端下载 → Eagle 安装 | 待验收；不得把本地测试通过写成线上闭环完成 |
 
-## 本次本地安装记录（2026-10-09）
+## 1.8.8 本地评审包（2026-10-09）
+
+- 本轮源码 1.8.8，修复入库事件失败反馈与重试；已通过 Eagle 官方入口安装 1.8.8，安装目录 16 文件哈希与包一致；真实页面和现场闭环仍需验收。
+- 评审包：dist/stability-review/xbot-eagle-plugin-v1.8.8.eagleplugin，16 文件，25,194,367 字节，SHA-256 bef114696cf4c88833934f8dc3e2f116c5e677627ea5f6fdc93b68458fb9cc2b。
+- Worker 未变更，SHA-256 9fa0d77087e1c0abfb2b1a6e3a9167e6e740e71dd4f21c994ab0521732d12e1b；包、CRC、逐文件内容均通过。
+- worktree_review_only=true 是明确的本地评审快照，不能作为已提交的公开发布物。修复代码已提交并推送至 `codex/single-machine-stability`（`59339e9`）；未创建 Release；自动公开发布继续暂缓。
+
+## 已安装 1.8.7 基线记录（2026-10-09）
 
 - 正式源码提交：`7272d6f`；安装包：`dist/xbot-eagle-plugin-v1.8.7.eagleplugin`。
 - 16 文件、25,206,671 字节；SHA-256：`939920776B1857183C792F34F0468940BAE959AE36BE0FEEFB0DC764C8FCF3DC`。
@@ -45,6 +53,15 @@
 7. 在 GitHub Releases 创建该标签的**草稿**，填写本版说明，上传 `xbot-eagle-plugin-v1.8.6.eagleplugin`。
 8. 核对上传附件名称、大小及 Release API 返回的 `digest`（`sha256:...`）与本地摘要一致，确认附件完整后发布为稳定版。客户端不会展示草稿与预发布版本；单纯推送代码或标签不会自动生成 Release 附件。
 9. 在另一端旧版插件执行下文的真实验收，记录版本、下载摘要、安装结果与遗留问题。
+
+## 可重复打包命令
+
+```powershell
+$workerSha = (Get-FileHash -LiteralPath 'eagle-plugin/workers/XbotAepWorker.exe' -Algorithm SHA256).Hash
+python scripts/package-eagle-plugin.py --ref <已验证提交或标签> --worker eagle-plugin/workers/XbotAepWorker.exe --worker-sha256 $workerSha --output dist/release
+```
+
+脚本从该 Git ref 取插件源码，不混入本地修改；Worker 是独立构建输入，必须核对预期摘要。输出包、逐文件记录 JSON 和 sha256。元数据固定，内容相同的输入在同一工具环境中输出相同字节；拒绝覆盖已有包。仅本地评审可显式使用 --worktree，记录 review_only；正式发布始终从已验证提交/标签重新生成。
 
 ## 自动发布流水线设计（待实现）
 
