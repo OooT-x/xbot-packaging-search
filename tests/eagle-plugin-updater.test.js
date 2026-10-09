@@ -146,7 +146,12 @@ test("transport reports progress and rejects interrupted or unsafe redirected re
   const vm = require("node:vm"), { EventEmitter } = require("node:events");
   const source = fs.readFileSync(path.join(__dirname, "../eagle-plugin/lib/updater.js"), "utf8");
   function transport(status, headers, emit) {
-    const fake = { get: (_, __, callback) => {
+    const fake = { get: (options, callback) => {
+      assert.equal(typeof callback, "function", "Eagle's HTTPS bridge accepts options and a callback");
+      assert.equal(options.protocol, "https:");
+      assert.equal(options.hostname, "github.com");
+      assert.match(options.path, /^\/file(?:\?download=1)?$/);
+      assert.equal(options.headers["User-Agent"], "Xbot-Eagle-Plugin-Updater");
       const request = new EventEmitter(); request.setTimeout = () => {};
       const response = new EventEmitter();
       Object.assign(response, { statusCode: status, headers, resume() {}, destroy() {} });
@@ -161,7 +166,7 @@ test("transport reports progress and rejects interrupted or unsafe redirected re
   const complete = transport(200, { "content-length": 6 }, response => {
     response.emit("data", Buffer.from("plugin")); response.emit("end");
   });
-  assert.equal((await complete("https://github.com/file", { onProgress: p => progress.push(p) })).toString(), "plugin");
+  assert.equal((await complete("https://github.com/file?download=1", { onProgress: p => progress.push(p) })).toString(), "plugin");
   assert.equal(progress[0].received, 6);
   const interrupted = transport(200, {}, response => response.emit("aborted"));
   await assert.rejects(interrupted("https://github.com/file"), /中断/);

@@ -53,7 +53,14 @@ function requestBuffer(value, options = {}) {
   };
 
   return new Promise((resolve, reject) => {
-    const request = https.get(url, { headers }, (response) => {
+    // A single options object also works with Eagle's two-argument HTTPS bridge.
+    const request = https.get({
+      protocol: url.protocol,
+      hostname: url.hostname,
+      port: url.port || undefined,
+      path: url.pathname + url.search,
+      headers,
+    }, (response) => {
       const status = Number(response.statusCode || 0);
       const location = response.headers.location;
       if ([301, 302, 303, 307, 308].includes(status) && location) {
