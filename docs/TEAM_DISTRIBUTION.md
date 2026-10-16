@@ -4,6 +4,8 @@
 
 ## 同事使用
 
+逐步图文操作见[插件使用手册（飞书）](https://zqyd2vqyqmy.feishu.cn/docx/QoXpdOr9JoD6Gaxrk93cTa1cnle)，含11张编号操作图；本地源稿与图片见[手册维护入口](plugin-guide/README.md)。截图使用示例数据，不代替现场验收。
+
 1. Windows 上安装 Eagle。需要生成 PNG 预览时安装并授权 After Effects；视频框静态化另需 FFmpeg。插件内含 Worker，不要求同事安装 Python、Node.js 或机器人。
 2. 从维护者处获取同一版本 `.eagleplugin` 和私密的团队连接 JSON。安装包与连接文件分开保管，密钥不发到公开下载页。
 3. 安装插件后重开，核对版本 1.9.0。在 Eagle 中通过完整 UNC 路径打开共享包装库；映射盘路径不能用来通过团队库校验。
