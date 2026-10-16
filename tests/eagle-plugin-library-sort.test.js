@@ -10,7 +10,7 @@ function harness() {
   const context = {
     prodManageSort: "time", prodManageSortDirection: "desc", prodManageSortOptions: ["time", "name", "project", "type"],
     Event: class Event {},
-    prodManagedCards: [], prodManageProjectFilter: "", prodManageTypeFilter: "", prodManageSearch: "",
+    prodManagedCards: [], prodManageProjectFilter: "", prodManageTypeFilter: "", prodManageSearch: "", prodManageSyncFilter: "",
     managed: [], managedId: "", renderManage() {},
     document: { querySelector: selector => selector === "#manageSort" ? select : null, querySelectorAll: () => [] },
     localStorage: { getItem: key => saved[key] || null, setItem: (key, value) => { saved[key] = value; } },

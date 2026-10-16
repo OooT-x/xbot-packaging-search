@@ -362,6 +362,20 @@
     #screen-manage .manage-main::-webkit-scrollbar-thumb{min-height:40px;border:4px solid transparent;border-radius:999px;background:transparent;background-clip:padding-box}
     #screen-manage .manage-main:hover::-webkit-scrollbar-thumb,#screen-manage .manage-main:focus-within::-webkit-scrollbar-thumb,#screen-manage .manage-main.is-scrolling::-webkit-scrollbar-thumb{background-color:color-mix(in srgb,var(--ink-3) 48%,transparent)}
     #screen-manage .manage-main::-webkit-scrollbar-thumb:hover,#screen-manage .manage-main::-webkit-scrollbar-thumb:active{background-color:var(--ink-2);border-width:3px}
+    .manage-card{position:relative}
+    .manage-card .pill-row{padding-right:82px}
+    .manage-sync-button{position:absolute;right:8px;bottom:8px;min-width:58px;height:22px;padding:0 6px;border:1px solid var(--line-2);border-radius:7px;background:var(--panel-3);color:var(--ink-2);font-family:inherit;font-size:10px;font-weight:600;line-height:1;white-space:nowrap;cursor:default}
+    .manage-sync-button[data-sync-state="queued"]{background:var(--amber-soft);color:var(--amber);border-color:color-mix(in srgb,var(--amber) 25%,var(--line))}
+    .manage-sync-button[data-sync-state="failed"],.manage-sync-button[data-sync-state="unavailable"]{background:var(--red-soft);color:var(--red);border-color:color-mix(in srgb,var(--red) 25%,var(--line))}
+    .manage-sync-button[data-sync-state="completed"]{background:var(--green-soft);color:var(--green);border-color:color-mix(in srgb,var(--green) 25%,var(--line))}
+    .manage-sync-button[data-retry-package-sync]{cursor:pointer}
+    .manage-sync-button[data-retry-package-sync]:hover{filter:brightness(.96);box-shadow:var(--shadow-soft)}
+    .manage-sync-button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+    .manage-sync-button:disabled{opacity:.6;cursor:wait}
+    #manageGrid[data-card-size="small"] .manage-sync-button{right:8px;bottom:8px;min-width:58px;height:22px;padding:0 6px}
+    #manageGrid[data-card-size="small"] .manage-card .pill-row{padding-right:74px}
+    .manage-sync-detail{margin:12px 0;padding:12px;background:var(--panel-2);border:1px solid var(--line);border-radius:9px;font-size:12px}
+    .manage-sync-detail p{margin:6px 0;line-height:1.65;overflow-wrap:anywhere}.manage-sync-detail small{color:var(--ink-2);line-height:1.6}
   </style></head><body data-theme="light" data-screen="home">
   <div class="app">
     <header class="topbar">

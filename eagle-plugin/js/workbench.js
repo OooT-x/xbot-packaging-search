@@ -38,6 +38,9 @@ let prodPendingPairTypeId = "";
 let prodManageProjectFilter = "";
 let prodManageTypeFilter = "";
 let prodManageSearch = "";
+let prodManageSyncFilter = "";
+let prodManagedSyncBusy = false;
+const prodManagedSyncRetrying = new Set();
 let prodManageSort = "time";
 let prodManageSortDirection = "desc";
 const prodManageSortOptions = ["time", "name", "project", "type"];
@@ -678,9 +681,79 @@ async function prodRefreshManaged() {
     prodManagedCards.splice(0, prodManagedCards.length, ...prodManagedRecords.map((p, index) => ({ id: `${p.packageId}-${index}`, packageId: p.packageId, batchId: p.batchId || "", basePackageId: p.basePackageId, name: p.packageName, importedAt: prodManagedImportTime(p), project: p.projectName, type: p.packageType, version: p.version, comp: p.aeCompName, preview: p.preview?.name || "", source: p.source?.name || "", previewPath: p.preview?.filePath || p.preview?.filepath || "", sourcePath: p.source?.filePath || p.source?.filepath || "", isCurrent: !/^(已取代|已归档|停用)/u.test(p.meta?.["状态"] || ""), risk: /警告|缺失|风险/u.test(p.meta?.["状态"] || ""), revision: p.meta?.revision_id || "" })));
     prodAssignBatchTimes(prodManagedCards);
     prodRenderManageFilters(); prodApplyManageFilters(); renderManage();
+    await prodRefreshManagedSync();
     prodToast("已刷新", `${managed.length} 组正式包装`, "success");
   }
   catch (error) { prodSetApiStatus("error"); prodToast("读取失败", error.message, "error"); }
+}
+
+async function prodRefreshManagedSync() {
+  if (prodManagedSyncBusy) return;
+  prodManagedSyncBusy = true;
+  const records = prodManagedRecords, cards = prodManagedCards.slice();
+  try {
+    const statuses = await prodIngest.listStatus(records, { libraryPath: window.eagle?.library?.path });
+    if (records !== prodManagedRecords) return;
+    for (const card of cards) card.sync = statuses.find(item => item.packageId === card.packageId) || { state: "unknown" };
+  } catch (error) {
+    if (records === prodManagedRecords) for (const card of cards) card.sync = { state: "unavailable", error: error.message };
+  } finally {
+    prodManagedSyncBusy = false;
+    prodApplyManageFilters(); renderManage();
+    if (records !== prodManagedRecords) await prodRefreshManagedSync();
+  }
+}
+
+function prodManagedSyncView(item) {
+  const state = item.sync?.state || "checking";
+  const labels = { checking: "核对中", queued: "待同步", failed: "同步失败", completed: "已同步", unknown: "未核对", unavailable: "连接失败" };
+  const detail = item.sync?.error || ({ checking: "正在查询同步状态", queued: "文件已在 Eagle，等待机器人核对信息", completed: "当前配对已取得同步完成回执", unknown: "当前配对没有可核对的同步记录，不能判断为已同步", unavailable: "暂时无法获取同步状态，请检查团队连接" })[state] || "";
+  return { state, label: labels[state] || "未核对", detail };
+}
+
+function prodDecorateManagedSync() {
+  document.querySelectorAll("#manageGrid .manage-card").forEach(card => {
+    const item = managed.find(value => value.id === card.dataset.managedCard); if (!item) return;
+    const view = prodManagedSyncView(item), button = document.createElement("button");
+    const retryable = item.isCurrent && ["queued", "failed"].includes(view.state);
+    const retrying = prodManagedSyncRetrying.has(item.packageId);
+    button.type = "button";
+    button.className = "manage-sync-button";
+    button.dataset.syncState = view.state;
+    button.textContent = retrying ? "重试中…" : view.label;
+    button.title = `${view.detail}${retryable ? "；点击重试同步" : ""}`;
+    button.setAttribute("aria-label", `${view.label}${retryable ? "，点击重试同步" : ""}`);
+    if (retryable) button.dataset.retryPackageSync = item.packageId;
+    else button.setAttribute("aria-disabled", "true");
+    if (retrying) button.disabled = true;
+    card.appendChild(button);
+  });
+  const selected = managed.find(item => item.id === managedId), inspector = document.querySelector("#manageInspector");
+  if (selected && inspector) {
+    const view = prodManagedSyncView(selected), info = document.createElement("section");
+    info.className = "manage-sync-detail";
+    info.innerHTML = `<strong>信息同步 · ${prodEsc(view.label)}</strong><p>${prodEsc(view.detail)}</p><small>重试只提交信息，不重新导入文件。同批包装会一起核对。</small>`;
+    inspector.querySelector(".inspector-head")?.after(info);
+  }
+}
+
+async function prodRetryManagedSync(packageId) {
+  if (prodManagedSyncRetrying.has(packageId)) return;
+  const record = prodManagedRecords.find(item => item.packageId === packageId); if (!record) return;
+  prodManagedSyncRetrying.add(packageId); renderManage();
+  try {
+    const latest = (await prodManagedApi.listFormalPackages(prodAdapter())).packages.find(item => item.packageId === packageId);
+    const status = await prodIngest.retryPackage(prodTeam.assertUnchanged(record, latest), { libraryPath: window.eagle?.library?.path });
+    for (const card of prodManagedCards) if (card.packageId === packageId) card.sync = status;
+    prodToast(status.state === "completed" ? "同步完成" : status.state === "failed" ? "同步失败" : "同步待核对", status.error || (status.state === "completed" ? "当前包装信息已核实" : "请稍后刷新同步状态"), status.state === "completed" ? "success" : "normal");
+  } catch (error) {
+    for (const card of prodManagedCards) if (card.packageId === packageId) card.sync = { state: "failed", error: error.message };
+    prodToast("同步失败", error.message, "error");
+  } finally {
+    prodManagedSyncRetrying.delete(packageId);
+    await prodRefreshManagedSync();
+    renderManage();
+  }
 }
 
 function prodRenderManageFilters() {
@@ -703,12 +776,17 @@ function prodRenderManageFilters() {
   const search = document.querySelector(".manage-toolbar .search");
   if (search) { search.value = prodManageSearch; if (!search.dataset.prodBound) { search.dataset.prodBound = "1"; search.addEventListener("input", () => { prodManageSearch = search.value.trim().toLocaleLowerCase(); prodApplyManageFilters(); renderManage(); }); } }
   const count = document.querySelector(".manage-toolbar h2 span"); if (count) count.textContent = `${prodManagedCards.length} 条`;
+  const side = document.querySelector(".manage-side");
+  if (side && !side.querySelector("#manageSyncFilter")) {
+    side.insertAdjacentHTML("beforeend", '<label class="field-label" for="manageSyncFilter">信息同步</label><select id="manageSyncFilter" class="select"><option value="">全部状态</option><option value="queued">待同步</option><option value="failed">同步失败</option><option value="completed">已同步</option><option value="unknown">未核对</option><option value="unavailable">连接失败</option></select>');
+    side.querySelector("#manageSyncFilter").addEventListener("change", event => { prodManageSyncFilter = event.target.value; prodApplyManageFilters(); renderManage(); });
+  }
 }
 
 function prodApplyManageFilters() {
   const query = prodManageSearch;
   const matching = prodManagedCards.filter(item => (!prodManageProjectFilter || item.project === prodManageProjectFilter) && (!query || `${item.project} ${item.name} ${item.type} ${item.comp} ${item.version}`.toLocaleLowerCase().includes(query)));
-  const visible = matching.filter(item => !prodManageTypeFilter || item.type === prodManageTypeFilter);
+  const visible = matching.filter(item => (!prodManageTypeFilter || item.type === prodManageTypeFilter) && (!prodManageSyncFilter || item.sync?.state === prodManageSyncFilter));
   // Type counts describe the choices within the current project/search scope.
   const typeCounts = new Map();
   matching.forEach(item => typeCounts.set(item.type, (typeCounts.get(item.type) || 0) + 1));
@@ -1068,11 +1146,17 @@ async function initializeProductionWorkbench() {
       const image = card.querySelector(".manage-thumb"); if (image && item.previewPath) { image.classList.add("has-actual-preview"); image.innerHTML = `<img class="frame-art actual-preview-image" src="${prodImageUrl(item.previewPath)}" alt="${prodEsc(item.name)}">`; }
       const pills = card.querySelector(".pill-row"); if (pills) pills.innerHTML = `<button type="button" class="tiny-pill asset-chip-button" data-managed-asset="preview" data-managed="${prodEsc(id)}" ${item.isCurrent ? "" : "disabled"}>预览图 ✓</button><button type="button" class="tiny-pill asset-chip-button" data-managed-asset="source" data-managed="${prodEsc(id)}" ${item.isCurrent ? "" : "disabled"}>工程包 ✓</button>`;
     });
+    prodDecorateManagedSync();
   };
   managedArt = item => item?.previewPath ? `<img class="frame-art actual-preview-image" src="${prodImageUrl(item.previewPath)}" alt="${prodEsc(item.name)} 的 PNG 预览">` : '<span class="preview-empty">暂无图片</span>';
   document.addEventListener("click", prodInteraction, true);
   document.addEventListener("change", prodInteraction, true);
   document.addEventListener("click", prodAction, true);
+  document.addEventListener("click", event => {
+    const button = event.target.closest("[data-retry-package-sync]"); if (!button) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+    if (!button.disabled) prodRetryManagedSync(button.dataset.retryPackageSync);
+  }, true);
   document.querySelector("#pairProjectName")?.addEventListener("change", event => { const value = event.target.value.trim(); if (value) { prodProject = value; if (workflowDraft) workflowDraft.project = value; prodSetPairSource(prodPath.basename(prodSourceDir || "交付文件夹")); } else event.target.value = prodProject; });
   document.querySelector("#themeBtn")?.addEventListener("click", () => { localStorage.setItem("xbot.theme", document.body.dataset.theme); });
   const manageCardSizeInput = document.querySelector("#manageCardSize");

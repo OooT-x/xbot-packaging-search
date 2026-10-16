@@ -12,6 +12,62 @@ const team = require("../eagle-plugin/lib/team-client");
 const sync = require("../eagle-plugin/lib/team-sync");
 
 const result = () => ({ batchId: "team-batch", projectName: "团队项目", importMode: "new", filed: [{ packageId: "p", packageName: "背景", packageType: "背景", previewItemId: "png", sourceItemId: "zip", version: "v01" }] });
+const currentPackage = () => ({ packageId: "p", projectName: "团队项目", packageName: "背景", packageType: "背景", version: "v01", preview: { id: "png" }, source: { id: "zip" } });
+
+test("another terminal can see a failed current pair and retry its durable event without writing Eagle", async t => {
+  const f = await fixture(t), options = { config: f.config, outboxDir: path.join(f.root, "terminal-a") };
+  f.setIndexed(false);
+  const published = await sync.publish(result(), options); await f.watcher.runOnce();
+  const other = { config: f.config, outboxDir: path.join(f.root, "terminal-b") };
+  const [failed] = await sync.listStatus([currentPackage()], other);
+  assert.equal(failed.state, "failed"); assert.match(failed.error, /配对尚未核实/u);
+  f.setIndexed(true);
+  assert.equal((await sync.retryPackage(currentPackage(), other)).state, "completed");
+  const [done] = await sync.listStatus([currentPackage()], other); assert.equal(done.state, "completed");
+  const attempts = f.database.getBatchSyncEvent(published.event.event_id).attempts;
+  await sync.retryPackage(currentPackage(), other);
+  assert.equal(f.database.getBatchSyncEvent(published.event.event_id).attempts, attempts);
+  assert.equal(fs.readFileSync(f.watcher.eventFile, "utf8").trim().split("\n").length, 1);
+});
+
+test("old receipts cannot certify a changed pair, type or revision, and wrong-library retry is rejected", async t => {
+  const f = await fixture(t), item = currentPackage();
+  const event = bridge.buildIngestEvent(result());
+  await team.request(f.config, "POST", "/v1/events", event); await f.watcher.runOnce();
+  for (const changed of [{ ...item, preview: { id: "new-png" } }, { ...item, packageType: "信息条" }, { ...item, meta: { revision_id: "new-revision" } }]) {
+    assert.equal((await sync.listStatus([changed], { config: f.config }))[0].state, "unknown");
+    await assert.rejects(team.request(f.config, "POST", "/v1/retry-package-sync", { libraryPath: f.root, package: bridge.packageSyncIdentity(changed), eventId: event.event_id }), /不一致/u);
+  }
+  await assert.rejects(sync.retryPackage(item, { config: f.config, libraryPath: "other.library" }), /不一致/u);
+  await assert.rejects(team.request(f.config, "POST", "/v1/package-sync-status", { libraryPath: "other", packages: [bridge.packageSyncIdentity(item)] }), /不一致/u);
+  const replaced = bridge.buildIngestEvent({ ...result(), filed: [{ ...result().filed[0], previewItemId: "new-png", revisionId: "new-revision" }] });
+  const mixedAnnotations = { ...item, preview: { id: "new-png", annotation: "revision_id: new-revision" }, source: { id: "zip", annotation: "revision_id: old-revision" }, meta: { revision_id: "old-revision" } };
+  assert.equal(bridge.eventMatchesPackage(replaced, bridge.packageSyncIdentity(mixedAnnotations)), true);
+  assert.equal(bridge.eventMatchesPackage(event, bridge.packageSyncIdentity(mixedAnnotations)), false);
+  f.database.replaceCatalog([], []);
+  assert.equal((await sync.listStatus([item], { config: f.config }))[0].state, "unknown", "an old completion cannot hide a now-missing catalog mapping");
+});
+
+test("offline local notices remain retryable; unobserved old packages never get a success badge", async t => {
+  const f = await fixture(t), outboxDir = path.join(f.root, "offline-outbox"), offline = { ...f.config, url: "http://127.0.0.1:1" };
+  await sync.publish(result(), { config: offline, outboxDir });
+  assert.equal((await sync.listStatus([currentPackage()], { config: offline, outboxDir }))[0].state, "failed");
+  assert.equal((await sync.listStatus([{ ...currentPackage(), packageId: "legacy" }], { config: f.config, outboxDir }))[0].state, "unknown");
+  assert.equal((await sync.listStatus([{ ...currentPackage(), packageId: "legacy" }], { config: offline, outboxDir }))[0].state, "unavailable");
+  assert.equal((await sync.listStatus([currentPackage()], { config: f.config, outboxDir }))[0].state, "unknown");
+});
+
+test("local mode retries only the selected matching notice and keeps unknown receipts unverified", async t => {
+  const f = await fixture(t), outboxDir = path.join(f.root, "local-outbox"), filePath = path.join(f.root, "local-events.jsonl");
+  fs.mkdirSync(outboxDir);
+  const event = bridge.buildIngestEvent(result()), unrelated = bridge.buildIngestEvent({ ...result(), batchId: "other", filed: [{ ...result().filed[0], packageId: "other" }] });
+  for (const e of [event, unrelated]) fs.writeFileSync(path.join(outboxDir, `${e.event_id}.json`), JSON.stringify({ event: e, filePath }));
+  const options = { config: { mode: "local" }, outboxDir, filePath };
+  assert.equal((await sync.listStatus([currentPackage()], options))[0].state, "failed");
+  assert.equal((await sync.retryPackage(currentPackage(), options)).state, "queued");
+  assert.equal(fs.existsSync(path.join(outboxDir, `${unrelated.event_id}.json`)), true);
+  assert.equal(fs.readFileSync(filePath, "utf8").trim().split("\n").length, 1);
+});
 test("a crash-truncated queue tail cannot swallow the next retry event", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "xbot-torn-queue-")), file = path.join(root, "events.jsonl");
   try {

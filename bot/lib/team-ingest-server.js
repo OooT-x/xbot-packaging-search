@@ -2,7 +2,8 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const { stableEventId } = require("../../eagle-plugin/lib/ingest-bridge");
+const { stableEventId, eventMatchesPackage } = require("../../eagle-plugin/lib/ingest-bridge");
+const { sameLibrary } = require("../../eagle-plugin/lib/team-client");
 const { readIngestEvents } = require("./ingest-sync");
 const { listPackageTypes } = require("../../eagle-plugin/lib/package-types");
 
@@ -43,14 +44,40 @@ function createTeamIngestServer({ watcher, libraryPath, token, lockFile, log = (
       if (req.method === "GET" && req.url === "/v1/types") return reply(res, 200, { types: listPackageTypes() });
       if (req.method === "GET" && /^\/v1\/events\/ingest-[a-f0-9]{24}$/u.test(req.url)) {
         const record = watcher.database.getBatchSyncEvent(req.url.split("/").pop());
-        return reply(res, 200, { state: record?.status || "unknown" });
+        return reply(res, 200, { state: record?.status || "unknown", error: record?.last_error || "" });
       }
-      const routes = ["POST /v1/events", "POST /v1/write-lock", "DELETE /v1/write-lock"];
+      const routes = ["POST /v1/events", "POST /v1/package-sync-status", "POST /v1/retry-package-sync", "POST /v1/write-lock", "DELETE /v1/write-lock"];
       if (!routes.includes(`${req.method} ${req.url}`)) { req.resume(); return reply(res, 404, { error: "接口不存在" }); }
       let bytes = 0; const chunks = [];
       for await (const chunk of req) { bytes += chunk.length; if (bytes > 1024 * 1024) { reply(res, 413, { error: "请求过大" }); req.destroy(); return; } chunks.push(chunk); }
       let body;
       try { body = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { return reply(res, 400, { error: "JSON 无效" }); }
+      if (["/v1/package-sync-status", "/v1/retry-package-sync"].includes(req.url)) {
+        if (!sameLibrary(body.libraryPath, libraryPath)) return reply(res, 409, { error: "服务端素材库与团队配置不一致" });
+        const events = readIngestEvents(watcher.eventFile).filter(event => event._team === true && !event._invalid);
+        const statusFor = identity => {
+          const event = events.findLast(event => eventMatchesPackage(event, identity));
+          if (!event) return { packageId: identity.package_id, state: "unknown" };
+          const record = watcher.database.getBatchSyncEvent(event.event_id);
+          if (record?.status === "completed") {
+            const indexed = watcher.database.getPackage(identity.package_id);
+            if (!indexed || indexed.status !== "active" || indexed.project_name !== identity.project_name ||
+                ["package_name", "package_type", "version", "preview_eagle_id", "source_eagle_id"].some(key => String(indexed[key] || "") !== String(identity[key] || ""))) {
+              return { packageId: identity.package_id, state: "unknown", error: "当前索引与文件配对不一致，请维护者核对" };
+            }
+          }
+          return { packageId: identity.package_id, eventId: event.event_id, state: record?.status || "queued", error: record?.last_error || "" };
+        };
+        if (req.url === "/v1/package-sync-status") {
+          if (!Array.isArray(body.packages) || body.packages.length > 500 || body.packages.some(item => !item || typeof item.package_id !== "string" || !item.package_id)) return reply(res, 400, { error: "包装列表无效" });
+          return reply(res, 200, { packages: body.packages.map(statusFor) });
+        }
+        if (!body.package || typeof body.eventId !== "string") return reply(res, 400, { error: "重试信息无效" });
+        const status = statusFor(body.package);
+        if (!status.eventId || status.eventId !== body.eventId) return reply(res, 409, { error: "同步记录与当前包装不一致，请刷新后重试" });
+        if (status.state !== "completed") await watcher.runOnce();
+        return reply(res, 200, statusFor(body.package));
+      }
       if (req.url === "/v1/write-lock") {
         fs.mkdirSync(path.dirname(lockFile), { recursive: true });
         if (req.method === "POST") {
