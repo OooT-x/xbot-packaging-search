@@ -152,3 +152,14 @@ python scripts/package-eagle-plugin.py --ref <已验证提交或标签> --worker
 ## 1.9.0 团队候选（2026-10-16）
 
 本轮把中央连接、配对核实回执、写入锁、统一类型、首次配置及诊断纳入1.9.0。完整使用及真实验收见[团队分发](TEAM_DISTRIBUTION.md)。源码、固定提交包、已安装和公开发布分开记录，TEAM-07现场验收前不公开稳定版。必须包含team-client/team-sync/environment-check模块和原Worker；连接密钥独立保管，不进入插件包。实时读取的此前本机安装manifest已为1.8.15，修正旧未复核记录。
+
+
+### 1.9.0 固定提交包与本机安装（2026-10-16 16:06，北京时间）
+
+- 源码提交：`549ade6a07a371934eb0e7d4b3eb3d44daf119b0`，分支`codex/team-distribution`；无关bot互动及原有文档历史修改仍保留在工作区，未混入发行提交，工作区不宣称干净。
+- 包：`dist/team-1.9.0/xbot-eagle-plugin-v1.9.0.eagleplugin`，21文件、25205819字节，Git ref构建、review_only=false；CRC/清单/逐文件摘要通过，两次真实Worker构建字节完全一致。SHA-256：`f80252e096ddee33b61a1772da0625658aaddcac5c1d650afb659b77eccd4e0d`。
+- 安装：经Eagle官方文件关联打开安装；安装目录manifest=1.9.0，全部21文件SHA-256与包一致；本机私密团队配置已保存并从中央同步类型。Eagle当前活动库实时为`E:\Eagle资源库\参考.library`，未对该库写素材；试用前需在Eagle打开配置中的UNC包装库，错误库会被团队闸门阻止。
+- 最终运行：16:05:40启动唯一监听器PID8340；16:05:41同步10项目/49包装/errors=0并启动中央接口；16:05:43事件ready。事件服务running=true/active_consumers=1；中央鉴权health=ready/writeLocked=false。23完成/1uncertain交付、19已完成入库事件保持；最终维护前无进行中交付，backup为`data/pre-team-final-deploy-1792137938448.sqlite`。
+- 主机连接地址`http://192.168.31.69:41596`；私密连接文件为忽略的`data/team-connection.local.json`，未随包分发或替用户发送。防火墙管理员脚本返回configured（仅Private/指定网卡地址/LocalSubnet/Node）；远端连通仍待同事电脑核对。
+- 使用材料：`docs/TEAM_DISTRIBUTION.md`及`dist/team-1.9.0/同事安装说明.md`；核心文档v1.51与飞书外部工作副本哈希核对后另记。
+- 未推送/公开发布1.9.0；两台真实电脑安装/更新/回退、NAS并发/断线、飞书原查询人确认交付和AE实际渲染仍待现场验收；自动发布流水线未实施。
