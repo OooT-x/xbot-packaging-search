@@ -176,7 +176,7 @@ test("review drawer offers preview generation and viewing without changing colle
 
 test("production import keeps Eagle success separate from a failed queue and retries only the event", async () => {
   const source = fs.readFileSync(workbenchPath, "utf8");
-  const start = source.indexOf("function prodSubmitIngest(result) {");
+  const start = source.indexOf("async function prodSubmitIngest(result) {");
   const end = source.indexOf("\nasync function prodRefreshManaged(", start);
   const nodes = new Map(); let queueFails = true, imports = 0;
   const element = () => ({
@@ -194,10 +194,11 @@ test("production import keeps Eagle success separate from a failed queue and ret
     prodProject:"验收",prodScanResult:{},prodOutputNames:{},workflowDraft:{},
     prodRefreshPairState:() => {},prodAdapter:() => ({}),prodEsc:String,
     closeModal:() => {},prodSetScreen:() => {},prodToast:() => {},
+    window: { eagle: {} }, prodTeam: { withTeamWrite: async (_eagle, action) => action() },
     prodEagle:{async importFormalBatch() {
       imports++; return {filed:[{packageId:"p",packageName:"包装",version:"v01",previewName:"p.png",sourceName:"p.zip"}]};
     }},
-    prodIngest:{publishIngestEvent() {
+    prodIngest:{publish() {
       if (queueFails) throw new Error("queue denied");
       return {state:"queued"};
     }},
@@ -210,11 +211,11 @@ test("production import keeps Eagle success separate from a failed queue and ret
   assert.match(boundary.textContent,/同步失败/);
   assert.doesNotMatch(boundary.textContent,/已提交|已入队/);
   assert.match(boundary.children[1].textContent,/同步记录未保存/);
-  queueFails = false; boundary.children[0].click();
+  queueFails = false; await boundary.children[0].click();
   assert.equal(imports,1,"event retry must not write Eagle again");
   assert.match(boundary.textContent,/已提交同步/);
   assert.match(boundary.textContent,/机器人能否查到待核对/);
-  assert.equal(boundary.children.length,0);
+  assert.equal(boundary.children[0].textContent,"检查同步");
   context.prodRenderIngestBoundary({state:"queued"},{archiveError:"archive denied"});
   assert.match(boundary.textContent,/已提交同步/);
   assert.match(boundary.textContent,/旧版待处理/);

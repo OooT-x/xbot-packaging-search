@@ -21,7 +21,7 @@ test("library counts follow project/search scope and the current visible version
     { id: "a3", project: "埃安", type: "背景", name: "背景", isCurrent: true },
     { id: "b1", project: "阿宝", type: "视频框", name: "竖屏框", isCurrent: true },
   ];
-  const context = { prodManagedCards: cards, prodManageProjectFilter: "埃安", prodManageTypeFilter: "", prodManageSearch: "", managed: [], managedId: "b1",
+  const context = { prodManagedCards: cards, prodManageProjectFilter: "埃安", prodManageTypeFilter: "", prodManageSearch: "", prodManageSort: "project", prodManageSortDirection: "asc", managed: [], managedId: "b1",
     document: {
       querySelector: () => total,
       querySelectorAll: selector => selector.includes("data-prod-manage-type") ? buttons : [chip],
@@ -35,7 +35,7 @@ test("library counts follow project/search scope and the current visible version
   assert.deepEqual(counts(), ["3", "2", "1", "0"]);
   assert.equal(total.textContent, "3 条");
   assert.equal(chip.textContent, "当前版本 2");
-  assert.equal(context.managedId, "a1");
+  assert.equal(context.managedId, "a3");
   context.prodManageTypeFilter = "信息条"; apply();
   assert.deepEqual(counts(), ["3", "2", "1", "0"], "other type choices stay visible within the project");
   assert.equal(total.textContent, "2 条");

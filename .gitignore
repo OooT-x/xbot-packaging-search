@@ -1,4 +1,6 @@
 # Local configuration and secrets
+config/eagle-library.local.json
+config/team-server.local.json
 .env
 .env.*
 !.env.example

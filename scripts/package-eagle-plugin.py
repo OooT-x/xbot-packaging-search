@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED = {"manifest.json", "index.html", "logo.png", "README.md",
             "js/window-controls.js", "js/workbench.js", "js/v5-runtime.js", "lib/ingest-bridge.js", "lib/eagle-api.js"}
+TEAM_REQUIRED = {"lib/team-client.js", "lib/team-sync.js", "lib/environment-check.js"}
 
 def git(*args):
     return subprocess.check_output(["git", "-C", str(ROOT), *args])
@@ -22,6 +23,8 @@ def build(worker, expected_worker_hash, output, ref="HEAD", worktree=False):
         raise ValueError("Worker hash mismatch or invalid Windows executable")
     commit = git("rev-parse", "--verify", ref + "^{commit}").decode().strip()
     names = git("ls-tree", "-r", "--name-only", commit, "--", "eagle-plugin").decode("utf-8").splitlines()
+    if worktree:
+        names = git("-c", "core.quotepath=false", "ls-files", "--cached", "--others", "--exclude-standard", "--", "eagle-plugin").decode("utf-8").splitlines()
     files = {}
     for name in names:
         relative = name.removeprefix("eagle-plugin/")
@@ -33,6 +36,8 @@ def build(worker, expected_worker_hash, output, ref="HEAD", worktree=False):
         raise ValueError("Bundle missing required production files")
     manifest = json.loads(files["manifest.json"].decode("utf-8-sig"))
     version = manifest["version"]
+    if tuple(map(int, version.split("."))) >= (1, 9, 0) and not TEAM_REQUIRED.issubset(files):
+        raise ValueError("Team bundle missing production client modules")
     if manifest["id"] != "LB5UL2P0Q9FFF" or not re.fullmatch(r"\d+\.\d+\.\d+", version):
         raise ValueError("Invalid plugin id or stable version")
     files["workers/XbotAepWorker.exe"] = binary

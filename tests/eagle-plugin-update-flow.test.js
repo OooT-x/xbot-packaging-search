@@ -42,7 +42,7 @@ test("production update page preserves offline cache and recovers from query fai
 test("production cache rebases after installation and invalid storage falls back to network", async () => {
   const info = { ...available(), version: "1.8.4" };
   const { context: c, node } = harness({ checkForUpdate: async () => { throw new Error("should not query"); } },
-    { getItem: () => JSON.stringify({ info, checkedAt: Date.now() }) });
+    { getItem: () => JSON.stringify({ info, checkedAt: Date.now() - 1000 }) });
   await c.prodCheckUpdates();
   assert.equal(node("#updateStatusTitle").textContent, "已是最新");
   assert.equal(node('[data-action="download-plugin-update"]').disabled, true);

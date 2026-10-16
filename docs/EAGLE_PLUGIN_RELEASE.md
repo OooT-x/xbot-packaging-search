@@ -148,3 +148,7 @@ python scripts/package-eagle-plugin.py --ref <已验证提交或标签> --worker
 - [GitHub Release 创建命令](https://cli.github.com/manual/gh_release_create)
 - [Release 资产字段与 SHA-256](https://docs.github.com/en/rest/releases/assets)
 - [GitHub Actions 内置令牌与权限](https://docs.github.com/en/actions/tutorials/authenticate-with-github_token)
+
+## 1.9.0 团队候选（2026-10-16）
+
+本轮把中央连接、配对核实回执、写入锁、统一类型、首次配置及诊断纳入1.9.0。完整使用及真实验收见[团队分发](TEAM_DISTRIBUTION.md)。源码、固定提交包、已安装和公开发布分开记录，TEAM-07现场验收前不公开稳定版。必须包含team-client/team-sync/environment-check模块和原Worker；连接密钥独立保管，不进入插件包。实时读取的此前本机安装manifest已为1.8.15，修正旧未复核记录。

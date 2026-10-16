@@ -51,6 +51,7 @@ function refreshPackageTypes() {
   PACKAGE_TYPE_ALIASES.clear(); next.forEach(record => PACKAGE_TYPE_ALIASES.set(record.name, [...record.aliases]));
 }
 function saveEntries(entries) {
+  if (process.env.XBOT_TEAM_READONLY_TYPES === "1") throw new Error("团队类型由维护者统一管理，请联系维护者修改");
   buildRecords(entries);
   const file = registryPath(), temporary = file + "." + process.pid + "." + Date.now() + ".tmp";
   fs.mkdirSync(path.dirname(file), { recursive: true });

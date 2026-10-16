@@ -62,3 +62,7 @@ npm run deliveries:review -- --request-id <查询ID> --package-id <包装ID> --v
 - 本轮分支 codex/single-machine-stability，基线 01b4ad1；变更未提交。回滚前先保存变更，恢复对应基线源码并重启既有任务，不执行破坏性 reset。
 - 006 是追加列迁移，旧代码可读取；不手工删除生产数据。对账信息与备份保留在忽略的运行目录。
 - 插件可从原 1.8.7 安装包通过 Eagle 官方确认恢复；不直接覆盖运行中的插件目录，不改 Eagle 内部 metadata.json。
+
+## 团队中央接口（2026-10-16）
+
+本机部署已启用同进程中央接口与专用局域网防火墙。使用、配置/密钥、事件回执、写锁对账和两终端验收统一见[团队分发](TEAM_DISTRIBUTION.md)。`node scripts/team-host.js status`检查鉴权接口；同时仍需唯一监听器、active_consumers=1和fresh ready日志。新增服务不改变D-060的交付确认和不明结果对账规则。旧“中央服务暂缓”段落是此前单机快照，当前以STATUS为准。

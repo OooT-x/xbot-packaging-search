@@ -1,4 +1,4 @@
-﻿const fs = require("fs");
+const fs = require("fs");
 const path = require("path");
 const readline = require("readline");
 const crypto = require("crypto");
@@ -6,6 +6,9 @@ const { spawn } = require("child_process");
 const { PackageDatabase } = require("./lib/package-database");
 const { PackagingService } = require("./lib/packaging-service");
 const { IngestEventWatcher } = require("./lib/ingest-sync");
+const { createTeamIngestServer } = require("./lib/team-ingest-server");
+const { teamServerConfig } = require("./lib/team-server-config");
+const { configuredLibraryPath } = require("./lib/library-config");
 const { acquireListenerLock } = require("./lib/runtime-lock");
 
 const projectRoot = path.resolve(__dirname, "..");
@@ -32,6 +35,7 @@ const packagingEnabled = process.env.LARK_BOT_PACKAGING_SEARCH !== "off";
 const packagingAiJudgeEnabled = process.env.LARK_BOT_PACKAGING_AI_JUDGE !== "off";
 let packagingService = null;
 let ingestWatcher = null;
+let teamIngestServer = null;
 
 const configuredAiProvider = inferAiProvider();
 
@@ -2615,7 +2619,7 @@ function getPackagingService() {
     aliasesPath,
     eagleBaseUrl: process.env.EAGLE_API_BASE_URL,
     libraryPath:
-      process.env.LARK_BOT_EAGLE_LIBRARY_PATH || "E:\\Eagle资源库\\包装.library",
+      configuredLibraryPath("E:\\Eagle资源库\\包装.library"),
     expiresMinutes: positiveNumber(process.env.LARK_BOT_PACKAGE_QUERY_TTL_MINUTES, 20),
     syncIntervalMs: positiveNumber(process.env.LARK_BOT_PACKAGE_SYNC_INTERVAL_MS, 60_000),
     log,
@@ -2636,6 +2640,21 @@ function startIngestEventWatcher(service) {
   });
   ingestWatcher.start();
   log(`packaging ingest watcher started file=${ingestWatcher.eventFile}`);
+  try {
+    const teamConfig = teamServerConfig();
+    if (teamConfig) {
+      teamIngestServer = createTeamIngestServer({
+        watcher: ingestWatcher, libraryPath: service.libraryPath,
+        token: teamConfig.token,
+        lockFile: path.join(workspace, "team-write-lock.json"), log,
+      });
+      teamIngestServer.on("error", error => log(`team ingest server unavailable: ${error.code || error.message}`));
+      teamIngestServer.listen(teamConfig.port, teamConfig.host, () => log(`team ingest server ready host=${teamConfig.host} port=${teamConfig.port}`));
+    }
+  } catch (error) {
+    log(`team ingest server configuration unavailable: ${error.code || "invalid-config"}`);
+  }
+
   return ingestWatcher;
 }
 

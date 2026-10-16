@@ -7,18 +7,10 @@
 X.bot 包装素材检索：在飞书里按项目名/别名/包装类型/标签检索 Eagle 素材。
 机器人先回复静态 PNG 候选，原查询人在候选消息下回复确认后，才把对应 AE 源文件 ZIP 发回原消息。
 
-## 当前状态（以 docs/STATUS.md 为准）
-- 筛选计数已修复并随 1.8.12 安装，18 文件与包一致，179 项 JS、34 项 Python 和静态检查通过；详情见 STATUS 的 UI-04。
-- 项目筛选菜单样式已优化并通过浏览器验证，1.8.11 已安装且 18 文件与包一致；详情见 STATUS 的 UI-02/UI-03。
-- 本轮插件文案已替换，保留“合成”及业务类型名；178 项 JS 与静态检查通过，1.8.10 已打包安装，17 文件与包哈希一致，详见 STATUS 的 COPY-01/COPY-02。
-- 核心文档 v1.43；Eagle 插件源码 1.8.12，公开发布版本 1.8.9，标题栏与导航合并；本机已安装 1.8.12（18 文件与包哈希一致）。178 项 JS、34 项 Python 与静态检查通过，main 发行提交 14b2e5d 的 Windows CI 已通过；[稳定 Release](https://github.com/OooT-x/xbot-packaging-search/releases/tag/eagle-plugin-v1.8.9) 的 3 份资产大小/摘要一致。真实 Eagle 窗口及 Eagle→bot 闭环待验收，S1 修复与本机运行证据见 STATUS。
-- M1 文字检索闭环已完成并实测稳定；M5 本机 AEP Worker→PNG/ZIP/manifest→配对预检→Eagle 正式入库与素材维护已实现。正式入口使用 v5 页面、`js/workbench.js` 与 `js/v5-runtime.js`，不加载旧 `plugin.js` 控制器。
-- 最新优化涵盖 AEP 筛选与预览回填、复核原因、PNG/ZIP 候选布局、类型持久化与生命周期管理、更新缓存与下载校验；查询失败只在版本页显示原因，不弹提示。HTTPS 请求使用 options 对象加回调，覆盖宿主双参数接口兼容风险。启动/按钮按 D-059 主动检查，版本页不额外查询。
-- 旧 UI 草稿完整提交于 `codex/archive-legacy-v5-draft` / `3587e0f`，正式包排除其未接入实现。见 `docs/deferred/legacy-v5-ui-draft.md`。
-- Worker 本轮没有代码变更，复用当前已安装且 SHA-256 一致的 `XbotAepWorker.exe`；安装包必须携带 Worker。
-- Eagle 库 `E:\Eagle资源库\包装.library`；2026-10-09 11:44 bot 只读同步为 8 个项目、39 组包装、0 个配对错误。FeishuBot 已配置隐藏登录启动、5 分钟保活、单实例和无执行时限；运行依赖 Windows 用户会话。恢复/验收见 RUNBOOK。
-- 仍待真实窗口复核 AEP/配对/已入库/更新入口，以及 Eagle UI→常驻 bot 最终现场联调。另一端旧版插件自动下载/安装链路待验收，自动发布流水线尚未实现；中央服务和共享 NAS 并发现场验收继续暂缓。
-- 历史交付与各版本安装记录保留在 STATUS，概览只展示当前事实；软件版本 `0.0.0` 与插件、核心文档版本分开管理。
+## 当前状态（以 STATUS 为准）
+
+- 2026-10-16 团队分发已进入实施：源码1.9.0试用候选，实时安装manifest为1.8.15，未公开发布新版。中央鉴权接口与现有FeishuBot同进程，当前Windows主机已监听局域网；入库事件持久化/配对核实回执、写入锁、团队配置与只读类型、诊断导出已实现。214 JS/34 Python通过；两台真实电脑的安装/NAS/飞书闭环待验收。见[STATUS](STATUS.md)和[团队使用说明](TEAM_DISTRIBUTION.md)。
+- 本轮保留此前NAS、排序、拖放与bot互动修改；历史版本和验证证据统一保留在STATUS，不从旧摘要推断当前状态。
 
 ## 里程碑速览
 | 里程碑 | 状态 |

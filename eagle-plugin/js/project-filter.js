@@ -1,6 +1,6 @@
 /* Keep the existing select as the filtering source of truth. */
 (() => {
-  const select = document.querySelector(".manage-side select");
+ function enhanceSelect(select, searchable = true) {
   if (!select) return;
   const trigger = document.createElement("button");
   trigger.type = "button"; trigger.className = "project-filter-trigger";
@@ -8,12 +8,13 @@
   const label = document.createElement("span");
   trigger.append(label);
   const menu = document.createElement("div");
-  menu.id = "projectFilterMenu"; menu.className = "project-filter-menu"; menu.hidden = true;
+  menu.id = searchable ? "projectFilterMenu" : "manageSortMenu"; menu.className = "project-filter-menu"; menu.hidden = true;
   const search = document.createElement("input");
+  search.hidden = !searchable;
   search.type = "search"; search.className = "project-filter-search";
   search.placeholder = "查找项目"; search.setAttribute("aria-label", "查找项目");
   const list = document.createElement("div");
-  list.className = "project-filter-list"; list.setAttribute("role", "listbox"); list.setAttribute("aria-label", "项目");
+  list.className = "project-filter-list"; list.setAttribute("role", "listbox"); list.setAttribute("aria-label", searchable ? "项目" : "排序依据");
   const empty = document.createElement("div");
   empty.className = "project-filter-empty"; empty.textContent = "没有匹配项目"; empty.hidden = true;
   empty.setAttribute("role", "status");
@@ -28,7 +29,7 @@
   }
   function sync() {
     label.textContent = select.selectedOptions[0]?.textContent || "全部项目";
-    trigger.setAttribute("aria-label", "项目：" + label.textContent);
+    trigger.setAttribute("aria-label", (searchable ? "项目：" : "排序依据：") + label.textContent);
     trigger.disabled = select.disabled;
     list.replaceChildren();
     options = [...select.options].map(option => {
@@ -68,7 +69,8 @@
     const selected = enabled.find(option => option.getAttribute("aria-selected") === "true");
     const target = selected || (direction < 0 ? enabled.at(-1) : enabled[0]);
     if (direction) { target?.focus({ preventScroll: true }); target?.scrollIntoView({ block: "nearest" }); }
-    else search.focus({ preventScroll: true });
+    else if (searchable) search.focus({ preventScroll: true });
+    else target?.focus({ preventScroll: true });
   }
   trigger.addEventListener("click", () => menu.hidden ? open() : close());
   trigger.addEventListener("keydown", event => {
@@ -98,6 +100,18 @@
   window.addEventListener("resize", () => close());
   document.addEventListener("scroll", event => { if (!menu.hidden && !menu.contains(event.target)) close(); }, true);
   select.addEventListener("change", sync);
+  select.addEventListener("xbot-select-sync", sync);
   new MutationObserver(() => { close(); sync(); }).observe(select, { childList: true, subtree: true, attributes: true });
   sync();
+ }
+ enhanceSelect(document.querySelector(".manage-side select"));
+ enhanceSelect(document.querySelector("#manageSort"), false);
+ const panel = document.querySelector("#screen-manage .manage-main");
+ if (panel) {
+   let idle;
+   panel.addEventListener("scroll", () => {
+     panel.classList.add("is-scrolling"); clearTimeout(idle);
+     idle = setTimeout(() => panel.classList.remove("is-scrolling"), 800);
+   }, { passive: true });
+ }
 })();

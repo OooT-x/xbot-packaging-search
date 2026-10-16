@@ -1,12 +1,15 @@
 /* Production controller for the v5 preview-native Eagle workbench. */
 const prodFs = require("fs");
 const prodPath = require("path");
+const { pathToFileURL: prodPathToFileURL } = require("url");
 const prodManifest = require("../manifest.json");
 const prodWorker = require("../lib/aep-worker.js");
 const prodScan = require("../lib/scan.js");
 const prodTypes = require("../lib/package-types.js");
 const prodUpdater = require("../lib/updater.js");
-const prodIngest = require("../lib/ingest-bridge.js");
+const prodIngest = require("../lib/team-sync.js");
+const prodTeam = require("../lib/team-client.js");
+const prodEnvironment = require("../lib/environment-check.js");
 const prodManagedApi = require("../lib/managed-assets.js");
 const prodEagle = require("../lib/eagle-api.js");
 
@@ -35,6 +38,9 @@ let prodPendingPairTypeId = "";
 let prodManageProjectFilter = "";
 let prodManageTypeFilter = "";
 let prodManageSearch = "";
+let prodManageSort = "time";
+let prodManageSortDirection = "desc";
+const prodManageSortOptions = ["time", "name", "project", "type"];
 const prodEsc = value => String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const prodToast = (title, message, kind = "normal") => toast(title, message, kind);
 const prodAdapter = () => {
@@ -45,7 +51,7 @@ const prodAllComps = () => prodAepProject?.compositions || [];
 const prodComp = id => prodAllComps().find(item => String(item.id) === String(id));
 const prodPair = id => pairs.find(item => String(item.id) === String(id));
 const prodName = pkg => pkg.packageName || pkg.compName || pkg.name || "未命名包装";
-const prodImageUrl = value => value ? `file:///${String(value).replace(/\\/g, "/").replace(/^\/+/, "")}` : "";
+const prodImageUrl = value => value ? prodPathToFileURL(String(value)).href : "";
 function prodSetApiStatus(state) {
   const indicator = document.querySelector(".api"), label = indicator?.querySelector("span");
   if (!indicator || !label) return;
@@ -168,6 +174,41 @@ function prodOpenStatus(id) {
 async function prodSelectPaths(title, properties = ["openFile", "openDirectory", "multiSelections"], filters = []) {
   const result = await window.eagle.dialog.showOpenDialog({ title, properties, filters });
   return result?.canceled ? [] : (result?.filePaths || []);
+}
+
+function prodDroppedPaths(dataTransfer) {
+  let files = [...(dataTransfer?.files || [])];
+  if (!files.length) files = [...(dataTransfer?.items || [])].filter(item => item.kind === "file").map(item => item.getAsFile()).filter(Boolean);
+  if (!files.length) throw new Error("请拖入本地工程文件、PNG / ZIP 或文件夹。");
+  const paths = files.map(file => {
+    let value = typeof file.path === "string" ? file.path : "";
+    if (!value) {
+      try { value = require("electron").webUtils?.getPathForFile(file) || ""; } catch {}
+    }
+    if (!value || !prodPath.isAbsolute(value)) throw new Error("无法读取拖入文件的位置，请使用选择工程或选文件夹。");
+    return prodPath.normalize(value);
+  });
+  return [...new Set(paths)];
+}
+
+function prodBindHomeDropZone() {
+  const zone = document.querySelector("#homeDropZone");
+  if (!zone || zone.dataset.prodDropBound) return;
+  zone.dataset.prodDropBound = "1";
+  ["dragenter", "dragover"].forEach(type => zone.addEventListener(type, event => {
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    zone.classList.add("is-dragover");
+  }));
+  zone.addEventListener("dragleave", event => {
+    if (!zone.contains(event.relatedTarget)) zone.classList.remove("is-dragover");
+  });
+  zone.addEventListener("drop", async event => {
+    event.preventDefault(); event.stopImmediatePropagation();
+    zone.classList.remove("is-dragover");
+    try { await prodRouteSelection(prodDroppedPaths(event.dataTransfer)); }
+    catch (error) { prodToast("读取失败", error.message, "error"); }
+  }, true);
 }
 
 async function prodRouteSelection(paths, options = {}) {
@@ -442,15 +483,15 @@ function prodOpenRename() {
   });
 }
 
-function prodSubmitIngest(result) {
-  try { return prodIngest.publishIngestEvent(result); }
+async function prodSubmitIngest(result) {
+  try { return await prodIngest.publish(result); }
   catch (error) { return { state: "pending", error: error.message, result }; }
 }
 
-function prodRetryIngest(sync) {
+async function prodRetryIngest(sync) {
   if (sync.result) return prodSubmitIngest(sync.result);
   try {
-    const results = prodIngest.retryPendingIngestEvents();
+    const results = await prodIngest.retry();
     return results.find(item => (sync.recoveryPath && item.recoveryPath === sync.recoveryPath) || (sync.event?.event_id && item.event?.event_id === sync.event.event_id))
       || { ...sync, error: "未找到待同步记录，请维护者核对事件队列。" };
   } catch (error) { return { ...sync, state: "pending", error: error.message }; }
@@ -459,14 +500,14 @@ function prodRetryIngest(sync) {
 function prodRenderIngestBoundary(sync, options = {}, selector = "#successBoundary") {
   const boundary = document.querySelector(selector); if (!boundary) return;
   const queued = sync.state === "queued";
-  const text = queued ? "已提交同步，机器人能否查到待核对"
+  const text = sync.state === "completed" ? "机器人已完成索引同步" : queued ? "已提交同步，机器人能否查到待核对"
     : sync.skipped ? "使用已有记录，无需再次同步"
     : "同步失败，请重试，不要重复保存";
   boundary.textContent = `包装已保存到 Eagle。${options.archivedBase ? "旧版已保留。" : ""}${text}${options.archiveError ? "旧版待处理：" + options.archiveError : ""}`;
-  if (!queued && !sync.skipped) {
+  if (sync.state !== "completed" && !sync.skipped) {
     const button = document.createElement("button");
-    button.type = "button"; button.className = "ghost-btn"; button.textContent = "重试同步";
-    button.addEventListener("click", () => prodRenderIngestBoundary(prodRetryIngest(sync), options, selector));
+    button.type = "button"; button.className = "ghost-btn"; button.textContent = queued ? "检查同步" : "重试同步";
+    button.addEventListener("click", async () => { button.disabled = true; prodRenderIngestBoundary(await prodRetryIngest(sync), options, selector); });
     boundary.appendChild(button);
     const detail = document.createElement("small");
     detail.textContent = sync.recoveryPath ? `待同步记录：${sync.recoveryPath}。${sync.error || ""}`
@@ -478,6 +519,65 @@ function prodRenderIngestBoundary(sync, options = {}, selector = "#successBounda
 function prodShowIngestRetry(sync) {
   openModal('<div class="modal-head"><h2>同步失败</h2><button class="icon-btn" data-close>×</button></div><div class="modal-body"><p id="prodIngestBoundary"></p></div>');
   bindClose(); prodRenderIngestBoundary(sync, {}, "#prodIngestBoundary");
+}
+
+function prodInstallTeamSettings() {
+  if (document.querySelector('[data-action="team-settings"]')) return;
+  const button = document.createElement("button"); button.className = "settings-update";
+  button.type = "button"; button.dataset.action = "team-settings";
+  button.textContent = "团队连接 · 配置与检查";
+  document.querySelector("#tweaks")?.appendChild(button);
+  const diagnostics = document.createElement("button"); diagnostics.className = "settings-update"; diagnostics.type = "button"; diagnostics.textContent = "诊断信息 · 检查与导出";
+  diagnostics.addEventListener("click", prodOpenDiagnostics); document.querySelector("#tweaks")?.appendChild(diagnostics);
+  const status = document.querySelector(".top-actions .api span");
+  if (status) { try { const config = prodTeam.readConfig(); status.textContent = config.unconfigured ? "请配置使用模式" : config.mode === "team" ? "团队模式" : "单机模式"; } catch { status.textContent = "连接配置有误"; } }
+}
+
+function prodOpenDiagnostics() {
+  let config; try { const saved = prodTeam.readConfig(); config = { mode: saved.mode, configured: !saved.unconfigured, service: saved.url || "" }; } catch { config = { error: "连接配置有误" }; }
+  const report = { version: prodManifest.version, platform: process.platform, createdAt: new Date().toISOString(), connection: config, dependencies: prodEnvironment.dependencies() };
+  const text = JSON.stringify(report, null, 2);
+  openModal(`<div class="modal-head"><h2>诊断信息</h2><button class="icon-btn" data-close>×</button></div><div class="modal-body"><p>不包含密钥、素材和聊天内容</p><pre style="white-space:pre-wrap">${prodEsc(text)}</pre><div class="drawer-footer"><button class="primary-btn" data-save-diagnostics>保存报告</button></div></div>`); bindClose();
+  document.querySelector("[data-save-diagnostics]").onclick = async () => {
+    const directories = await prodSelectPaths("选择报告保存目录", ["openDirectory"]);
+    if (!directories.length) return;
+    try { const file = prodPath.join(directories[0], `xbot-diagnostics-${Date.now()}.json`); prodFs.writeFileSync(file, text, { flag: "wx" }); prodToast("报告已保存", file, "success"); }
+    catch (error) { prodToast("保存失败", error.message, "error"); }
+  };
+}
+
+function prodOpenTeamSettings() {
+  let config; try { config = prodTeam.readConfig(); } catch { config = { mode: "team" }; }
+  openModal(`<div class="modal-head"><h2>团队连接</h2><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="form-group"><label for="teamMode">使用模式</label><select id="teamMode" class="select"><option value="team" ${config.mode === "team" || config.unconfigured ? "selected" : ""}>团队入库</option><option value="local" ${config.mode === "local" && !config.unconfigured ? "selected" : ""}>单机使用</option></select></div><div class="form-group"><label for="teamUrl">服务地址</label><input id="teamUrl" class="input" placeholder="http://主机:41596" value="${prodEsc(config.url || "")}"></div><div class="form-group"><label for="teamToken">连接密钥</label><input id="teamToken" class="input" type="password" autocomplete="off" placeholder="留空保留已保存密钥"></div><div class="form-group"><label for="teamLibrary">团队库路径</label><input id="teamLibrary" class="input" placeholder="\\\\主机\\共享\\包装.library" value="${prodEsc(config.libraryPath || "")}"></div><button class="ghost-btn" data-team-import>导入配置</button><p id="teamCheckResult" role="status" aria-live="polite">团队库使用 UNC 路径打开</p><div class="drawer-footer"><button class="ghost-btn" data-team-check>检查连接</button><button class="primary-btn" data-team-save>保存配置</button></div></div>`);
+  bindClose();
+  const draft = () => prodTeam.validateConfig({ mode: document.querySelector("#teamMode").value, url: document.querySelector("#teamUrl").value.trim(), token: document.querySelector("#teamToken").value || config.token, libraryPath: document.querySelector("#teamLibrary").value.trim() });
+  document.querySelector("[data-team-import]").onclick = async () => {
+    const files = await prodSelectPaths("选择团队连接文件", ["openFile"], [{ name: "团队连接", extensions: ["json"] }]);
+    if (!files.length) return;
+    try {
+      const imported = prodTeam.validateConfig(JSON.parse(prodFs.readFileSync(files[0], "utf8").replace(/^\uFEFF/u, "")));
+      document.querySelector("#teamMode").value = imported.mode;
+      document.querySelector("#teamUrl").value = imported.url || "";
+      document.querySelector("#teamToken").value = imported.token || "";
+      document.querySelector("#teamLibrary").value = imported.libraryPath || "";
+      document.querySelector("#teamCheckResult").textContent = "配置已读入，检查连接后保存";
+    } catch (error) { document.querySelector("#teamCheckResult").textContent = error.message; }
+  };
+  const check = document.querySelector("[data-team-check]");
+  check.onclick = async () => {
+    check.disabled = true; const text = document.querySelector("#teamCheckResult");
+    try {
+      const candidate = draft(), dependencies = prodEnvironment.dependencies();
+      const health = await prodTeam.preflight(candidate, window.eagle);
+      text.textContent = `${candidate.mode === "team" ? "团队库与服务连接正常" : "单机模式"}。Worker：${dependencies.worker ? "已找到" : "缺失，请重装完整包"}；AE 渲染器：${dependencies.aerender ? "已找到，授权待实测" : "未找到"}；FFmpeg：${dependencies.ffmpeg ? "已找到" : "未找到"}${health?.writeLocked ? "。写入锁被占用，请维护者核对" : ""}`;
+    } catch (error) { text.textContent = error.message; }
+    finally { check.disabled = false; }
+  };
+  document.querySelector("[data-team-save]").onclick = async () => {
+    const button = document.querySelector("[data-team-save]"); button.disabled = true;
+    try { const saved = prodTeam.saveConfig(draft()); await prodTeam.refreshTypes(saved); prodRefreshTypes(); closeModal(); prodToast("配置已保存", "请重开插件加载配置", "success"); }
+    catch (error) { document.querySelector("#teamCheckResult").textContent = error.message; button.disabled = false; }
+  };
 }
 
 async function prodRunImport(mode = "prompt") {
@@ -492,7 +592,17 @@ async function prodRunImport(mode = "prompt") {
     const adapter = prodAdapter();
     const versionPair = selected.find(p => p.basePackageId || workflowDraft?.basePackageId);
     if (versionPair && (pairs.length !== 1 || selected.length !== 1)) throw new Error("新版本只支持一组图片和工程包");
-    const result = await prodEagle.importFormalBatch(adapter, prodScanResult, { mode, nameOverrides: names, basePackageId: workflowDraft?.basePackageId || "" });
+    let archiveError = ""; let archivedBase = null;
+    const result = await prodTeam.withTeamWrite(window.eagle, async () => {
+      const imported = await prodEagle.importFormalBatch(adapter, prodScanResult, { mode, nameOverrides: names, basePackageId: workflowDraft?.basePackageId || "" });
+      if (imported.state !== "duplicate" && versionPair && workflowDraft?.basePackageId) {
+        const base = prodManagedRecords.find(item => item.packageId === workflowDraft.basePackageId);
+        const completed = [...(imported.filed || []), ...(imported.reused || [])].find(item => item.basePackageId === workflowDraft.basePackageId || item.packageId === versionPair.packageId);
+        if (!base || !completed) archiveError = "新版本已写入，旧版待维护者核对";
+        else try { archivedBase = await prodManagedApi.archiveFormalPackageVersion(adapter, base, completed.packageId); } catch (error) { archiveError = error.message; }
+      }
+      return imported;
+    });
     if (result.state === "duplicate") {
       const matches = result.matches.map(match => `<div class="detail-grid"><div><span>包装编号</span><strong>${prodEsc(match.packageId || "—")}</strong></div><div><span>已有版本</span><strong>${prodEsc(match.version || "—")}</strong></div><div><span>判断依据</span><strong>${prodEsc((match.matchedBy || []).join("、") || "稳定身份")}</strong></div></div>`).join("");
       openModal(`<div class="modal-head"><div><h2>已有包装</h2><p>选择如何处理重复内容</p></div><button class="icon-btn" data-close>×</button></div><div class="modal-body">${matches}<div class="warning-box">使用已有、替换已有，或另存包装</div><div class="drawer-footer"><button class="ghost-btn" data-close>返回检查</button><button class="quiet" data-prod-duplicate="reuse">使用已有</button><button class="quiet" data-prod-duplicate="update">替换已有</button><button class="primary-btn" data-prod-duplicate="new">另存包装</button></div></div>`);
@@ -500,23 +610,64 @@ async function prodRunImport(mode = "prompt") {
       document.querySelectorAll("[data-prod-duplicate]").forEach(button => button.addEventListener("click", () => { const nextMode = button.dataset.prodDuplicate; closeModal(); prodRunImport(nextMode); }));
       return;
     }
-    let archiveError = ""; let archivedBase = null;
-    if (versionPair && workflowDraft?.basePackageId) {
-      const base = prodManagedRecords.find(item => item.packageId === workflowDraft.basePackageId);
-      const completed = [...(result.filed || []), ...(result.reused || [])].find(item => item.basePackageId === workflowDraft.basePackageId || item.packageId === versionPair.packageId);
-      if (!base || !completed) archiveError = "新版本已写入，但未找到旧版或新版本记录以完成归档。";
-      else try { archivedBase = await prodManagedApi.archiveFormalPackageVersion(adapter, base, completed.packageId); } catch (error) { archiveError = error.message; }
-    }
-    const sync = prodSubmitIngest(result);
+    const sync = await prodSubmitIngest(result);
     const completed = [...(result.filed || []), ...(result.reused || [])];
     const count = completed.length;
     lastPreviewImport = { kind: workflowDraft?.kind, project: prodProject, filedCount: count, packages: completed.map(item => ({ name: item.packageName, version: item.version, packageId: item.packageId, preview: item.previewName, source: item.sourceName })) };
     closeModal(); prodSetScreen("success");
     document.querySelector("#successTitle").textContent = `已保存 · ${count} 组`;
     document.querySelector("#successSummary").textContent = `所选包装已保存到 Eagle`;
-    prodRenderIngestBoundary(sync, { archiveError, archivedBase });
+    prodRenderIngestBoundary(sync, { archiveError: [archiveError, result.teamLockWarning].filter(Boolean).join("。"), archivedBase });
     document.querySelector("#successRecords").innerHTML = completed.map(item => `<div class="success-record"><div><strong>${prodEsc(item.packageName)} · ${prodEsc(item.version)}</strong><code>包装编号: ${prodEsc(item.packageId)}<br>预览图: ${prodEsc(item.previewName)}<br>工程包: ${prodEsc(item.sourceName || "—")}</code></div><span class="status-chip ok">已保存</span></div>`).join(""); document.querySelector("#successRecords").hidden = false;
   } catch (error) { prodToast("保存失败", error.message, "error"); if (button) { button.disabled = false; button.textContent = "确认保存"; } }
+}
+
+// Use Eagle's import timestamp, never the source file's modified time.
+function prodManagedImportTime(record) {
+  const times = [record.preview?.importedAt, record.source?.importedAt]
+    .map(Number).filter(value => Number.isFinite(value) && value > 0);
+  return times.length ? Math.min(...times) : 0;
+}
+
+function prodSetManageSort(value, persist = false, direction) {
+  const next = prodManageSortOptions.includes(value) ? value : "time";
+  prodManageSortDirection = ["asc", "desc"].includes(direction) ? direction : next !== prodManageSort ? (next === "time" ? "desc" : "asc") : prodManageSortDirection;
+  prodManageSort = next;
+  const select = document.querySelector("#manageSort");
+  if (select) { select.value = prodManageSort; select.dispatchEvent(new Event("xbot-select-sync")); }
+  const button = document.querySelector("#manageSortDirection");
+  if (button) {
+    button.textContent = prodManageSortDirection === "asc" ? "↑" : "↓";
+    const label = prodManageSort === "time" ? (prodManageSortDirection === "asc" ? "最早入库优先" : "最近入库优先") : (prodManageSortDirection === "asc" ? "正序" : "倒序");
+    button.title = `${label}，点击切换`;
+    button.setAttribute("aria-label", button.title);
+  }
+  if (persist) { try { localStorage.setItem("xbot.manage-sort.v2", JSON.stringify({ by: prodManageSort, direction: prodManageSortDirection })); } catch {} }
+  prodApplyManageFilters(); renderManage();
+}
+
+function prodRestoreManageSort() {
+  let by = "time", direction = "desc";
+  try {
+    const saved = JSON.parse(localStorage.getItem("xbot.manage-sort.v2") || "null");
+    if (saved && prodManageSortOptions.includes(saved.by) && ["asc", "desc"].includes(saved.direction)) { by = saved.by; direction = saved.direction; }
+    else {
+      const legacy = localStorage.getItem("xbot.manage-sort.v1");
+      if (legacy === "oldest") direction = "asc";
+      if (["name", "project"].includes(legacy)) { by = legacy; direction = "asc"; }
+    }
+  } catch {}
+  prodSetManageSort(by, false, direction);
+}
+
+function prodAssignBatchTimes(cards) {
+  const times = new Map();
+  cards.forEach(item => {
+    if (!item.batchId || !item.importedAt) return;
+    const key = `${item.project}\u0000${item.batchId}`;
+    times.set(key, Math.min(times.get(key) || Infinity, item.importedAt));
+  });
+  cards.forEach(item => { item.batchImportedAt = item.batchId ? times.get(`${item.project}\u0000${item.batchId}`) || 0 : item.importedAt; });
 }
 
 async function prodRefreshManaged() {
@@ -524,7 +675,8 @@ async function prodRefreshManaged() {
     const result = await prodManagedApi.listFormalPackages(prodAdapter());
     prodSetApiStatus("ready");
     prodManagedRecords = result.packages || [];
-    prodManagedCards.splice(0, prodManagedCards.length, ...prodManagedRecords.map((p, index) => ({ id: `${p.packageId}-${index}`, packageId: p.packageId, basePackageId: p.basePackageId, name: p.packageName, project: p.projectName, type: p.packageType, version: p.version, comp: p.aeCompName, preview: p.preview?.name || "", source: p.source?.name || "", previewPath: p.preview?.filePath || p.preview?.filepath || "", sourcePath: p.source?.filePath || p.source?.filepath || "", isCurrent: !/^(已取代|已归档|停用)/u.test(p.meta?.["状态"] || ""), risk: /警告|缺失|风险/u.test(p.meta?.["状态"] || ""), revision: p.meta?.revision_id || "" })));
+    prodManagedCards.splice(0, prodManagedCards.length, ...prodManagedRecords.map((p, index) => ({ id: `${p.packageId}-${index}`, packageId: p.packageId, batchId: p.batchId || "", basePackageId: p.basePackageId, name: p.packageName, importedAt: prodManagedImportTime(p), project: p.projectName, type: p.packageType, version: p.version, comp: p.aeCompName, preview: p.preview?.name || "", source: p.source?.name || "", previewPath: p.preview?.filePath || p.preview?.filepath || "", sourcePath: p.source?.filePath || p.source?.filepath || "", isCurrent: !/^(已取代|已归档|停用)/u.test(p.meta?.["状态"] || ""), risk: /警告|缺失|风险/u.test(p.meta?.["状态"] || ""), revision: p.meta?.revision_id || "" })));
+    prodAssignBatchTimes(prodManagedCards);
     prodRenderManageFilters(); prodApplyManageFilters(); renderManage();
     prodToast("已刷新", `${managed.length} 组正式包装`, "success");
   }
@@ -566,9 +718,22 @@ function prodApplyManageFilters() {
   });
   const currentChip = [...document.querySelectorAll(".manage-side .status-chip")].find(item => item.textContent.includes("当前版本"));
   if (currentChip) currentChip.textContent = `当前版本 ${visible.filter(item => item.isCurrent).length}`;
+  visible.sort(prodCompareManagedCards);
   managed.splice(0, managed.length, ...visible);
   if (!managed.some(item => item.id === managedId)) managedId = managed[0]?.id || "";
   const count = document.querySelector(".manage-toolbar h2 span"); if (count) count.textContent = `${visible.length} 条`;
+}
+
+function prodCompareManagedCards(left, right) {
+  const compare = (a, b) => String(a || "").localeCompare(String(b || ""), "zh-CN", { numeric: true });
+  const sign = prodManageSortDirection === "asc" ? 1 : -1;
+  const byName = () => compare(left.name, right.name) || compare(left.project, right.project) || compare(left.type, right.type) || compare(left.version, right.version) || compare(left.packageId || left.id, right.packageId || right.id);
+  if (prodManageSort === "name") return sign * compare(left.name, right.name) || byName();
+  if (prodManageSort === "project") return sign * compare(left.project, right.project) || compare(left.type, right.type) || byName();
+  if (prodManageSort === "type") return sign * compare(left.type, right.type) || compare(left.project, right.project) || byName();
+  const a = left.batchImportedAt ?? left.importedAt ?? 0, b = right.batchImportedAt ?? right.importedAt ?? 0;
+  if (!a || !b) return a ? -1 : b ? 1 : byName();
+  return sign * (a - b) || compare(left.batchId, right.batchId) || byName();
 }
 
 async function prodReplaceManaged(packageId, kind) {
@@ -578,11 +743,14 @@ async function prodReplaceManaged(packageId, kind) {
     if (!paths.length) return;
     const accepted = await new Promise(resolve => { openModal(`<div class="modal-head"><div><h2>确认替换</h2><p>${prodEsc(record.packageName)} · ${prodEsc(record.packageId)}</p></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><p>新文件替换旧文件，旧文件保留</p><div class="warning-box">${prodEsc(paths[0])}</div><div class="drawer-footer"><button class="ghost-btn" data-prod-cancel>取消</button><button class="primary-btn" data-prod-accept>确认替换</button></div></div>`); document.querySelector("[data-prod-cancel]").onclick = () => { closeModal(); resolve(false); }; document.querySelector("[data-prod-accept]").onclick = () => { closeModal(); resolve(true); }; });
     if (!accepted) return;
-    const result = await prodManagedApi.replaceFormalAsset(prodAdapter(), record, kind, paths[0]);
-    const sync = prodSubmitIngest({ batchId: result.batchId, projectName: result.projectName, sourcePath: result.sourcePath, importMode: "update", filed: [result] });
+    const result = await prodTeam.withTeamWrite(window.eagle, async () => {
+      const latest = (await prodManagedApi.listFormalPackages(prodAdapter())).packages.find(item => item.packageId === record.packageId);
+      return prodManagedApi.replaceFormalAsset(prodAdapter(), prodTeam.assertUnchanged(record, latest), kind, paths[0]);
+    });
+    const sync = await prodSubmitIngest({ batchId: result.batchId, projectName: result.projectName, sourcePath: result.sourcePath, importMode: "update", filed: [result] });
     await prodRefreshManaged();
     if (sync.state === "pending") prodShowIngestRetry(sync);
-    else prodToast("替换完成", `${record.packageName} · ${kind === "preview" ? "PNG" : "ZIP"}。已提交同步，查询结果待核对`, "success");
+    else prodToast("替换完成", `${record.packageName} · ${kind === "preview" ? "PNG" : "ZIP"}。已提交同步，查询结果待核对${result.teamLockWarning ? "。" + result.teamLockWarning : ""}`, "success");
   } catch (error) { prodToast("替换失败", error.message, "error"); }
 }
 
@@ -648,6 +816,9 @@ function prodAddTypeFromMenu(menu, input) {
 function prodOpenTypeManager() {
   prodRefreshTypes();
   const types = prodTypes.listPackageTypes();
+  if (process.env.XBOT_TEAM_READONLY_TYPES === "1") {
+    openModal('<div class="modal-head"><h2>团队类型</h2><button class="icon-btn" data-close>×</button></div><div class="modal-body"><p>由维护者统一管理</p>' + types.map(type => `<p><strong>${prodEsc(type.name)}</strong> · ${type.enabled ? "已启用" : "已停用"}<br><small>${prodEsc(type.aliases.join("、"))}</small></p>`).join("") + '<div class="drawer-footer"><button class="ghost-btn" data-close>关闭</button></div></div>'); bindClose(); return;
+  }
   openModal('<div class="modal-head"><div><h2>类型管理</h2><p>修改名称、别名，停用或恢复</p></div><button class="icon-btn" data-close aria-label="关闭类型管理">×</button></div><div class="modal-body"><p class="form-help">改名后，旧名称仍可用来查找</p><p class="form-help">停用后不可新增，已有素材仍可查</p><p class="form-help">默认类型不能改名</p><div class="type-management-list">' + types.map(type => '<section class="type-management-row" data-type-record="' + prodEsc(type.name) + '"><div class="type-management-heading"><strong>' + prodEsc(type.name) + '</strong><span class="status-chip ' + (type.enabled ? 'ok' : 'warn') + '">' + (type.enabled ? '已启用' : '已停用') + '</span></div><div class="form-grid"><label>类型名称<input class="input" data-type-name value="' + prodEsc(type.name) + '" ' + (type.builtin ? 'readonly aria-readonly="true"' : '') + ' aria-label="' + prodEsc(type.name) + ' 类型名称"></label><label>其他叫法<input class="input" data-type-aliases value="' + prodEsc(type.aliases.filter(alias => alias !== type.name).join('，')) + '" aria-label="' + prodEsc(type.name) + ' 别名"></label></div><div class="type-management-actions"><button class="ghost-btn" data-type-save>保存修改</button><button class="quiet" data-type-enabled="' + String(!type.enabled) + '">' + (type.enabled ? '停用类型' : '恢复类型') + '</button></div></section>').join('') + '</div><p class="form-help">更改类型设置不影响已有文件</p><p data-type-manager-error role="alert"></p><div class="drawer-footer"><button class="ghost-btn" data-close aria-label="关闭类型管理">关闭</button><button class="primary-btn" data-type-add>添加类型</button></div></div>');
   document.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', closeModal));
   document.querySelector('[data-type-add]')?.addEventListener('click', () => { closeModal(); prodOpenAddType(); });
@@ -687,11 +858,14 @@ async function prodChangeManagedType(managedIdValue, value) {
   const record = prodManagedRecords.find(item => item.packageId === card?.packageId);
   if (!record) return prodToast("更改失败", "找不到包装，请刷新后重试", "error");
   try {
-    const result = await prodManagedApi.changeFormalPackageType(prodAdapter(), record, value);
-    const sync = prodSubmitIngest({ batchId: result.batchId, projectName: result.projectName, sourcePath: result.sourcePath, importMode: "update", filed: [result] });
+    const result = await prodTeam.withTeamWrite(window.eagle, async () => {
+      const latest = (await prodManagedApi.listFormalPackages(prodAdapter())).packages.find(item => item.packageId === record.packageId);
+      return prodManagedApi.changeFormalPackageType(prodAdapter(), prodTeam.assertUnchanged(record, latest), value);
+    });
+    const sync = await prodSubmitIngest({ batchId: result.batchId, projectName: result.projectName, sourcePath: result.sourcePath, importMode: "update", filed: [result] });
     await prodRefreshManaged();
     if (sync.state === "pending") prodShowIngestRetry(sync);
-    else prodToast("类型更新", `${record.packageName} → ${value}。已提交同步，查询结果待核对`, "success");
+    else prodToast("类型更新", `${record.packageName} → ${value}。已提交同步，查询结果待核对${result.teamLockWarning ? "。" + result.teamLockWarning : ""}`, "success");
   }
   catch (error) { prodToast("更改失败", error.message, "error"); }
 }
@@ -763,6 +937,7 @@ async function prodDownloadUpdate() {
 async function prodAction(event) {
   const action = event.target.closest("[data-action]"); if (!action) return;
   const key = action.dataset.action;
+  if (key === "team-settings") { event.preventDefault(); event.stopImmediatePropagation(); prodOpenTeamSettings(); return; }
   const handled = new Set(["open-manage", "refresh", "choose-aep", "start-from-aep", "open-folder", "replace-folder", "choose-output-path", "collect", "stop-collect", "open-rename", "import", "go-home", "new-version", "new-package", "repair-current", "managed-preview", "change-managed-type", "check-plugin-updates", "download-plugin-update", "resume", "clear-selection", "select-visible", "expand", "open-updates", "manage-types", "add-type"]);
   if (!handled.has(key)) return;
   event.preventDefault(); event.stopImmediatePropagation();
@@ -870,10 +1045,12 @@ function prodInstallBottomSheetGrabbers() {
 
 async function initializeProductionWorkbench() {
   window.prodWorkbenchReady = true;
+  try { await prodTeam.refreshTypes(); } catch (error) { prodToast("团队连接", error.message, "normal"); }
   try {
-    const retry = prodIngest.retryPendingIngestEvents().find(item => item.state === "pending");
+    const retry = (await prodIngest.retry()).find(item => item.state === "pending");
     if (retry) prodShowIngestRetry(retry);
   } catch (error) { prodToast("同步失败", error.message, "normal"); }
+  prodInstallTeamSettings();
   prodInstallBottomSheetGrabbers();
   compositions.splice(0, compositions.length); pairs.splice(0, pairs.length); managed.splice(0, managed.length);
   prodPairRenderer = renderPairs; prodManageRenderer = renderManage;
@@ -903,6 +1080,10 @@ async function initializeProductionWorkbench() {
   try { savedManageCardSize = localStorage.getItem("xbot.manage-card-size.v1") || "medium"; } catch {}
   prodSetManageCardSize(savedManageCardSize);
   manageCardSizeInput?.addEventListener("input", () => prodSetManageCardSize(prodManageCardSizeOptions[Number(manageCardSizeInput.value)] || "medium", true));
+  prodRestoreManageSort();
+  document.querySelector("#manageSort")?.addEventListener("change", event => prodSetManageSort(event.target.value, true));
+  document.querySelector("#manageSortDirection")?.addEventListener("click", () => prodSetManageSort(prodManageSort, true, prodManageSortDirection === "asc" ? "desc" : "asc"));
+  prodBindHomeDropZone();
   document.querySelector("#homeDropZone")?.addEventListener("click", async event => { if (event.target.closest("button")) return; try { const paths = await prodSelectPaths("选择文件", ["openFile", "openDirectory", "multiSelections"], [{ name: "包装文件", extensions: ["aep", "png", "zip", "json"] }]); if (paths.length) await prodRouteSelection(paths); } catch (error) { prodToast("读取失败", error.message, "error"); } });
   document.querySelectorAll("[data-home-pick]").forEach(button => button.addEventListener("click", async event => { event.preventDefault(); event.stopImmediatePropagation(); try { const isAep = button.dataset.homePick === "aep"; const paths = await prodSelectPaths(isAep ? "选择工程" : "选文件夹", isAep ? ["openFile"] : ["openDirectory"], isAep ? [{ name: "After Effects", extensions: ["aep"] }] : []); if (paths.length) await prodRouteSelection(paths); } catch (error) { prodToast("选择失败", error.message, "error"); } }));
   document.querySelector("#pairTabs")?.addEventListener("click", event => { const tab = event.target.closest("[data-pair-filter]"); if (!tab) return; pairFilter = tab.dataset.pairFilter; document.querySelectorAll("#pairTabs [data-pair-filter]").forEach(item => item.classList.toggle("active", item === tab)); prodRenderPairs(); }, true);
@@ -932,4 +1113,5 @@ async function initializeProductionWorkbench() {
   document.querySelector(".update-notes").textContent = "检查后显示更新内容";
   // Each plugin window queries once on initialization; the update page only renders this result.
   prodCheckUpdates(true);
+  try { if (prodTeam.readConfig().unconfigured) prodOpenTeamSettings(); } catch { prodOpenTeamSettings(); }
 }
