@@ -97,14 +97,15 @@ function findProject(packages, content) {
   return best;
 }
 
-function searchPackages(packages, content, limit = 3) {
+function searchPackages(packages, content, limit = 3, options = {}) {
   const project = findProject(packages, content);
-  const packageType = extractPackageType(content);
+  const packageType = options.packageType || extractPackageType(content);
   if (!project) return { project: null, package_type: packageType, candidates: [] };
 
   const text = normalizeText(content);
   const candidates = preferCurrentVersions(packages, content)
     .filter((item) => item.project_id === project.project_id)
+    .filter((item) => !(options.excludePackageIds || []).includes(item.package_id))
     .filter((item) => !packageType || normalizePackageType(item.package_type) === packageType)
     .map((item) => {
       let score = project.exact ? 100 : 80;
@@ -120,36 +121,40 @@ function searchPackages(packages, content, limit = 3) {
   return { project, package_type: packageType, candidates };
 }
 
+function isBrowseMore(content) {
+  const text = String(content || "").trim();
+  return /(?:看|换|找|来|给|发).{0,8}(?:其他|其它|别的|别款|一批|更多|下一)|(?:其他|其它|别的|更多|下一批|下一页).{0,8}(?:包装|素材|模板)|^(?:还有吗|还有没有|更多|下一批|下一页|换一批|换一个)[？?！!。]*$/.test(text);
+}
+
 function isPotentialConfirmation(content) {
-  return /(确认|就是这|就这|这个|发源文件|发一下|第?[一二三123]个|第?[一二三123]张|^[一二三123]$|都不|不对|不是|换一个)/.test(
-    String(content || "").trim()
-  );
+  return confirmationIntent(content, 3).kind !== "unknown";
 }
 
 function confirmationIntent(content, candidateCount, repliedPosition = null) {
-  const text = String(content || "").trim();
-  if (/(都不对|都不是|不对|不是|换一个|换一批)/.test(text)) {
+  const text = String(content || "").trim().replace(/[。！!，,\s]/g, "");
+  if (/^(?:都不对|都不是|不对|不是|换一个|换一批|取消|算了|不要了|先不发|不用发了)$/.test(text)) {
     return { kind: "reject" };
   }
-
-  const numberWords = [
-    { regex: /(?:第)?一(?:个|张)?|^1$/, position: 1 },
-    { regex: /(?:第)?二(?:个|张)?|^2$/, position: 2 },
-    { regex: /(?:第)?三(?:个|张)?|^3$/, position: 3 },
-  ];
-  for (const entry of numberWords) {
-    if (entry.regex.test(text) && entry.position <= candidateCount) {
-      return { kind: "select", position: entry.position };
-    }
+  // Negation, questions, alternatives and descriptive mentions cannot authorize delivery.
+  if (/(?:不|别|先别|暂|等等|考虑|可能|还是|或者|[?？]|吗|么)/.test(text)) {
+    return /(?:确认|发|[一二三123]|这个)/.test(text) ? { kind: "ambiguous" } : { kind: "unknown" };
   }
-
-  const positive = /(确认|就是这个|就这个|这个|发源文件|发一下|要这个)/.test(text);
-  if (positive && repliedPosition && repliedPosition <= candidateCount) {
-    return { kind: "select", position: repliedPosition };
+  const selected = text.match(/^(?:就要|我要|要|选|选择|确认|发|给我)?(?:第)?([一二三四五六七八九1-9])(?:个|张|号)?(?:吧|就行|谢谢|的源文件|源文件)?$/);
+  if (selected) {
+    const position = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 }[selected[1]] || Number(selected[1]);
+    return position <= candidateCount ? { kind: "select", position } : { kind: "ambiguous" };
   }
-  if (positive && candidateCount === 1) return { kind: "select", position: 1 };
-  if (positive) return { kind: "ambiguous" };
+  if (/^(?:确认|就是这个|就这个|这个|发源文件|发一下|要这个|就用这个)(?:吧|谢谢)?$/.test(text)) {
+    if (repliedPosition && repliedPosition <= candidateCount) return { kind: "select", position: repliedPosition };
+    return candidateCount === 1 ? { kind: "select", position: 1 } : { kind: "ambiguous" };
+  }
+  if (/(?:第[一二三四五六七八九1-9](?:个|张|号)|确认|发源文件)/.test(text)) return { kind: "ambiguous" };
   return { kind: "unknown" };
+}
+
+function isPackagingNonQuery(content) {
+  return /(?:怎么修|修理|维修|坏了|设计原理|背景资料|背景知识|项目进度|写.{0,8}文案|素材网站|找.{0,8}音乐)/.test(String(content || "")) ||
+    /(?:不要|不需要|不用|别).{0,12}(?:包装|模板|素材|背景|信息条|视频框)/.test(String(content || ""));
 }
 
 module.exports = {
@@ -164,5 +169,7 @@ module.exports = {
   isVersionSpecificQuery,
   preferCurrentVersions,
   isPotentialConfirmation,
+  isBrowseMore,
+  isPackagingNonQuery,
   searchPackages,
 };

@@ -77,3 +77,13 @@ test("parses candidate confirmation from prompt or a replied preview", () => {
   assert.deepEqual(confirmationIntent("确认", 3), { kind: "ambiguous" });
   assert.deepEqual(confirmationIntent("都不对", 3), { kind: "reject" });
 });
+
+
+test("confirmation only accepts a single explicit affirmative selection", () => {
+  for (const text of ["不要第一个", "第一个可以吗", "第一个和第二个", "第二个还是第三个", "第一个的颜色好看", "第四个"]) {
+    assert.deepEqual(confirmationIntent(text, 3), { kind: "ambiguous" }, text);
+  }
+  assert.deepEqual(confirmationIntent("就要2号", 3), { kind: "select", position: 2 });
+  assert.deepEqual(confirmationIntent("确认", 1), { kind: "select", position: 1 });
+  assert.deepEqual(confirmationIntent("取消", 3), { kind: "reject" });
+});

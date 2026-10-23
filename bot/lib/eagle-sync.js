@@ -1,3 +1,4 @@
+const { isBackgroundType } = require("../../eagle-plugin/lib/package-types");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
@@ -169,7 +170,7 @@ function buildCatalog(items, libraryPath, aliasConfig = {}) {
     const imageOnlyBackground =
       previews.length === 1 &&
       sources.length === 0 &&
-      packageTypeHint === "背景";
+      isBackgroundType(packageTypeHint);
     if (
       previews.length !== 1 ||
       sources.length > 1 ||
@@ -181,6 +182,20 @@ function buildCatalog(items, libraryPath, aliasConfig = {}) {
 
     const preview = previews[0];
     const source = sources[0] || null;
+    const conflicts = [];
+    if (source) {
+      for (const key of ["项目", "包装名称", "包装类型", "版本", "base_package_id", "AE 合成"]) {
+        if (preview.fields[key] && source.fields[key] && preview.fields[key] !== source.fields[key]) conflicts.push(key);
+      }
+    }
+    for (const { fields: side } of records) {
+      if (side["配对 PNG"] && side["配对 PNG"] !== preview.item.id) conflicts.push("配对 PNG");
+      if (side["配对 ZIP"] && side["配对 ZIP"] !== source?.item.id) conflicts.push("配对 ZIP");
+    }
+    if (conflicts.length) {
+      errors.push(`${packageId}: conflicting pair metadata: ${[...new Set(conflicts)].join(", ")}`);
+      continue;
+    }
     const fields = { ...(source?.fields || {}), ...preview.fields };
     const projectName = fields["项目"];
     const packageName = fields["包装名称"];
@@ -222,6 +237,7 @@ function buildCatalog(items, libraryPath, aliasConfig = {}) {
         source_eagle_id: source?.item.id || null,
         preview_path: resolveEagleItemFile(libraryPath, preview.item),
         source_path: source ? resolveEagleItemFile(libraryPath, source.item) : null,
+        catalog_revision: JSON.stringify([preview.fields.revision_id || "", source?.fields.revision_id || ""]),
         ae_comp_name: fields["AE 合成"] || "",
         dependency_status: dependencyStatus(fields, tags),
         status: "active",

@@ -1,4 +1,6 @@
-const fs = require("fs");
+const { buildPackagingNotice } = require("./lib/packaging-card");
+const { judgePackagingFollowUp } = require("./lib/packaging-followup");
+﻿const fs = require("fs");
 const path = require("path");
 const readline = require("readline");
 const crypto = require("crypto");
@@ -8,8 +10,9 @@ const { PackagingService } = require("./lib/packaging-service");
 const { IngestEventWatcher } = require("./lib/ingest-sync");
 const { createTeamIngestServer } = require("./lib/team-ingest-server");
 const { teamServerConfig } = require("./lib/team-server-config");
-const { configuredLibraryPath } = require("./lib/library-config");
 const { acquireListenerLock } = require("./lib/runtime-lock");
+const { parseMessageIntent, messageIntentPrompt, intentReplyInstruction, assistanceInstruction } = require("./lib/message-intent");
+const { configuredLibraryPath } = require("./lib/library-config");
 
 const projectRoot = path.resolve(__dirname, "..");
 const workspace = path.resolve(process.env.LARK_BOT_RUNTIME_ROOT || __dirname);
@@ -811,7 +814,7 @@ function truncateText(text, maxChars) {
 }
 
 function conversationKeyFor(event) {
-  return event.chat_id || event.sender_id || "default";
+  return JSON.stringify([event.chat_id || "direct", event.sender_id || "unknown"]);
 }
 
 function chatTypeFor(event) {
@@ -956,14 +959,19 @@ function shouldReplyToEvent(event, selfOpenId = botSelfOpenId, aliases = botMent
 
 function rememberTurn(event, role, content, maxChars = 1200) {
   const key = conversationKeyFor(event);
-  const turns = conversationMemory.get(key) || [];
-  turns.push({ role, content: truncateText(content, maxChars) });
+  const turns = recentConversation(event);
+  turns.push({ role, content: truncateText(content, maxChars), at: Date.now() });
   const maxTurns = Number.isFinite(aiConfig.historyTurns) && aiConfig.historyTurns > 0 ? aiConfig.historyTurns : 8;
+  conversationMemory.delete(key);
   conversationMemory.set(key, turns.slice(-maxTurns));
+  while (conversationMemory.size > 500) conversationMemory.delete(conversationMemory.keys().next().value);
 }
 
 function recentConversation(event) {
-  return conversationMemory.get(conversationKeyFor(event)) || [];
+  const key = conversationKeyFor(event);
+  const turns = (conversationMemory.get(key) || []).filter(turn => Date.now() - turn.at < 30 * 60_000);
+  if (!turns.length) conversationMemory.delete(key);
+  return turns;
 }
 
 function messageTimeLabel(value) {
@@ -1150,6 +1158,7 @@ function isStyleRewriteRequest(content) {
 }
 
 function rememberDocumentContext(event, title, url, content, options = {}) {
+  documentContextMemory.delete(conversationKeyFor(event));
   documentContextMemory.set(conversationKeyFor(event), {
     title: String(title || "飞书文档"),
     url: String(url || ""),
@@ -1157,11 +1166,16 @@ function rememberDocumentContext(event, title, url, content, options = {}) {
     styleProfile: String(options.styleProfile || ""),
     readAt: Date.now(),
   });
+  while (documentContextMemory.size > 500) documentContextMemory.delete(documentContextMemory.keys().next().value);
 }
 
 function documentContextForPrompt(event, userContent) {
   const context = documentContextMemory.get(conversationKeyFor(event));
   if (!context) return "";
+  if (Date.now() - context.readAt > 30 * 60_000) {
+    documentContextMemory.delete(conversationKeyFor(event));
+    return "";
+  }
 
   if (isStyleRewriteRequest(userContent) && context.styleProfile) {
     return [
@@ -1308,18 +1322,11 @@ function analyzeRecentStyle(event) {
     if (/^[好的收到明白了解知道行可以]/.test(text)) return "acknowledge";
     return "other";
   });
-  const lengths = recent.map((t) => t.content.length);
-  const avgLen = lengths.reduce((a, b) => a + b, 0) / lengths.length;
   const hints = [];
   const ackCount = openings.filter((o) => o === "acknowledge").length;
   if (ackCount >= 2) hints.push("你最近连续用了确认式开头（好的/收到/明白），这次换一种方式直接回应。");
   const interjCount = openings.filter((o) => o === "interjection").length;
   if (interjCount >= 2) hints.push("你最近连续用了语气词开头（哦/嗯/哈），这次直接说内容。");
-  if (avgLen > 0) {
-    const lastLen = lengths[lengths.length - 1];
-    if (lastLen > avgLen * 1.5) hints.push("你上一条回复比较长，这次试试更简短。");
-    if (lastLen < avgLen * 0.5 && lastLen < 60) hints.push("你上一条回复很短，这次可以稍微展开一点。");
-  }
   return hints.length ? "\n\n风格提醒：" + hints.join("") : "";
 }
 
@@ -1331,7 +1338,7 @@ function aiSystemPrompt(content, event) {
     "这是语言风格，不是身份伪装——不假装真人、同事、客户或外部系统。",
     "你用中文回复。像一个靠谱但不端着的人在飞书里即时聊天：短句、自然接话、少模板。",
     "先接住用户当前这句话，再给真正有用的结论或下一步。默认简洁，简单问题2—5句，复杂任务再展开。",
-    "日常聊天要有变化：每次回复的开头、长度和收尾方式都要跟前几次不同，避免重复模式。",
+    "自然回应当前需求，不为追求变化刻意改变长度、添加口头禅或玩笑。",
     '可以有轻量即兴反应，比如“哦？”“嗯”“哈”“这个有意思”这类，但不要每次都加，保持随机性。',
     "能自然引用之前聊过的内容，像人一样接话，而不是每次都从零开始。",
     "不涉及工作的日常聊天里可以有自己的判断和犀利观点；只针对观点逻辑，不攻击人。",
@@ -1349,6 +1356,8 @@ function aiSystemPrompt(content, event) {
         ].join("\n")
       : "",
     styleModeInstruction(content),
+    assistanceInstruction(),
+    intentReplyInstruction(event?.messageIntent),
     `当前时间：${nowInShanghai()}。`,
   ];
 
@@ -1357,73 +1366,36 @@ function aiSystemPrompt(content, event) {
   return sections.filter(Boolean).join("\n\n");
 }
 
-function classifySystemPrompt() {
-  return [
-    "你是一个消息意图分类器。判断用户消息的类型。",
-    "只输出一个 JSON 对象，不要输出任何其他文字。",
-    "JSON 格式：{\"type\":\"query\"|\"emotion\"|\"work\"|\"chat\"}",
-    "",
-    "type 说明：",
-    "- query：用户在问具体问题（找东西、查资料、问事实、要操作指导）",
-    "- emotion：用户在表达情绪（开心、难过、焦虑、生气、吐槽、抱怨、分享心情）",
-    "- work：用户在布置工作（写周报、改文案、整理文档、排期、做方案）",
-    "- chat：以上都不是的闲聊",
-  ].join("\n");
-}
-
-function classifyMessageIntent(content) {
-  if (!aiConfig.enabled) return null;
-  const system = classifySystemPrompt();
-  const user = `用户消息：\n${content}`;
-  const timeoutMs = Math.min(aiConfig.timeoutMs, 10000);
+// One bounded semantic pass serves routing and conversational tone.
+async function classifyMessageIntent(content, catalog = [], config = aiConfig, fetchImpl = fetch) {
+  if (process.env.LARK_BOT_INTENT_PROVIDER === "off") return null;
+  if (!config.enabled) return null;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
-  return (async () => {
-    try {
-      let reply = "";
-      if (aiConfig.provider === "ollama") {
-        const response = await fetch(`${aiConfig.baseUrl}/api/chat`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: aiConfig.model,
-            messages: [{ role: "system", content: system }, { role: "user", content: user }],
-            stream: false,
-            think: false,
-            format: "json",
-            options: { num_predict: 50, temperature: 0 },
-          }),
-          signal: controller.signal,
-        });
-        const data = JSON.parse(await response.text());
-        reply = String(data?.message?.content || "").trim();
-      } else if (aiConfig.provider === "deepseek") {
-        const response = await fetch(`${aiConfig.baseUrl}/chat/completions`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${aiConfig.apiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: aiConfig.model,
-            messages: [{ role: "system", content: system }, { role: "user", content: user }],
-            max_tokens: 50,
-            temperature: 0,
-          }),
-          signal: controller.signal,
-        });
-        const data = JSON.parse(await response.text());
-        reply = extractChatCompletionText(data);
-      } else {
-        return null;
-      }
-      const match = reply.match(/\{[\s\S]*\}/);
-      if (!match) return null;
-      return JSON.parse(match[0]);
-    } catch {
-      return null;
-    } finally {
-      clearTimeout(timeout);
-    }
-  })();
+  const timeout = setTimeout(() => controller.abort(), Math.min(config.timeoutMs, 8000));
+  const messages = [
+    { role: "system", content: messageIntentPrompt(catalog) },
+    { role: "user", content: String(content).slice(0, 6000) },
+  ];
+  try {
+    const local = config.provider === "ollama";
+    const response = await fetchImpl(`${config.baseUrl}${local ? "/api/chat" : "/chat/completions"}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(local ? {} : { Authorization: `Bearer ${config.apiKey}` }) },
+      body: JSON.stringify(local ? {
+        model: config.model, messages, stream: false, think: false, format: "json",
+        options: { num_predict: 250, temperature: 0 },
+      } : { model: config.model, messages, max_tokens: 250, temperature: 0, ...(config.provider === "deepseek" ? { thinking: { type: "disabled" } } : {}) }),
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`intent HTTP ${response.status}`);
+    const data = await response.json();
+    return parseMessageIntent(local ? data?.message?.content : extractChatCompletionText(data), catalog);
+  } catch (error) {
+    log(`intent unavailable: ${error.name || "Error"}`);
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function responseInputFor(event, content) {
@@ -1651,16 +1623,15 @@ async function smartReply(event, content) {
   if (quickReply) return quickReply;
 
   if (!aiConfig.enabled) {
-    return `收到：${content}\n\n本地大模型现在响应太慢，我先用快速模式回复。`;
+    return "智能回复暂未启用。你可以先用“帮助”查看可用功能，或 @X.bot 加项目名查包装。";
   }
 
-  const intentPromise = classifyMessageIntent(content).catch(() => null);
+  if (!Object.hasOwn(event, "messageIntent")) {
+    event.messageIntent = await classifyMessageIntent(content);
+  }
 
   try {
     const reply = await callAiResponse(event, content);
-    intentPromise.then((intent) => {
-      if (intent?.type) log("msg intent type=" + intent.type + " content=" + truncateText(content, 80));
-    });
     return reply;
   } catch (error) {
     log(`ai reply failed: ${error.message}`);
@@ -1688,86 +1659,18 @@ function parseAiPackagingHint(reply) {
   }
 }
 
-function packagingProjectCatalog(service) {
-  try {
-    const names = new Set();
-    for (const item of service.database.listActivePackages()) {
-      if (item.project_name) names.add(item.project_name);
-      (item.aliases || []).forEach((alias) => names.add(alias));
-    }
-    return [...names].join("、");
-  } catch {
-    return "";
-  }
+function isDocumentSearchRequest(content) {
+  const text = String(content || "").trim();
+  if (/(不要|别|不用|无需|不必|不想).{0,10}(搜索|搜|查找|找)/.test(text) ||
+      /(怎么|如何|怎样).{0,12}(搜索|搜|查找|找)/.test(text) ||
+      /[“"「『].*(搜索|搜|查找|找).*[”"」』]/.test(text)) return false;
+  return /(搜索|搜|查找|找).*(文档|周报|OKR|okr|资料|文件)|^(搜索|搜|查找|找)\s+/.test(text);
 }
 
-async function judgePackagingIntent(content, catalogText) {
-  if (!aiConfig.enabled || !packagingAiJudgeEnabled) return null;
-  const system = [
-    "你是包装素材检索机器人的意图分类器。",
-    "判断用户消息是否在请求查找某个项目的包装素材（信息条/人名条/标注条、视频框/画面框、背景、分镜排版等）。",
-    "只有用户明确想找包装素材时才返回 true；闲聊、提问、找音乐、找素材网站等都不是包装查询。",
-    `可选项目（只能从这里选）：${catalogText || "无"}`,
-    "包装类型只能是：信息条、视频框、背景、分镜排版、分Part板、报道、时间轴；没有则为空字符串。",
-    '只输出 JSON，不要输出任何其他文字：{"is_packaging_query":true|false,"project_name":"项目名或空","package_type":"类型或空"}',
-  ].join("\n");
-  const user = `用户消息：\n${content}`;
-  const timeoutMs = Math.min(aiConfig.timeoutMs, 15000);
-
-  try {
-    let reply = "";
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      if (aiConfig.provider === "ollama") {
-        const response = await fetch(`${aiConfig.baseUrl}/api/chat`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: aiConfig.model,
-            messages: [
-              { role: "system", content: system },
-              { role: "user", content: user },
-            ],
-            stream: false,
-            think: false,
-            format: "json",
-            options: { num_predict: 200, temperature: 0 },
-          }),
-          signal: controller.signal,
-        });
-        const data = await response.json().catch(() => ({}));
-        reply = String(data.message?.content || "");
-      } else {
-        const response = await fetch(`${aiConfig.baseUrl}/chat/completions`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${aiConfig.apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: aiConfig.model,
-            messages: [
-              { role: "system", content: system },
-              { role: "user", content: user },
-            ],
-            stream: false,
-            max_tokens: 200,
-            temperature: 0,
-          }),
-          signal: controller.signal,
-        });
-        const data = await response.json().catch(() => ({}));
-        reply = extractChatCompletionText(data);
-      }
-    } finally {
-      clearTimeout(timeout);
-    }
-    return parseAiPackagingHint(reply);
-  } catch (error) {
-    log(`packaging ai judge failed: ${error.message}`);
-    return null;
-  }
+function isLocalToolRequest(content) {
+  return Boolean(localQuickReply(content)) || /^(你能干嘛|功能|你是谁|你是誰|你是什么|你是什麼|介绍一下自己|自我介绍)$/.test(content.trim()) ||
+    Boolean(extractFirstLarkDocUrl(content)) || Boolean(classifyWeeklyReportIntent({}, content)) ||
+    isDocumentSearchRequest(content);
 }
 
 function localQuickReply(content) {
@@ -1775,7 +1678,7 @@ function localQuickReply(content) {
   if (!text) return "";
 
   if (/^(ping|帮助|help)$/i.test(text)) {
-    return "收到。我这边监听正常。后面会继续按原来的 X.bot 语气走：先给结论，再给下一步。";
+    return "收到，我在线。找包装请 @X.bot 加项目名和类型；看到预览后，回复那条消息选编号。聊天和写文案直接说就行。";
   }
 
   const characterName = text.match(/章鱼哥|派大星|海绵宝宝/)?.[0];
@@ -2154,15 +2057,14 @@ async function fetchDocSummary(event, url, options = {}) {
     .join("\n");
 }
 
-async function searchDocuments(content) {
-  const query = extractSearchQuery(content) || "周报";
-  const searchResult = await runCli([
+async function searchDocuments(content, options = {}) {
+  const query = options.query || extractSearchQuery(content);
+  if (!query) return "你想找哪份文档？给我标题或主题关键词就行。";
+  const searchResult = await (options.runCli || runCli)([
     "drive",
     "+search",
     "--query",
     query,
-    "--edited-since",
-    "30d",
     "--sort",
     "edit_time",
     "--page-size",
@@ -2176,7 +2078,7 @@ async function searchDocuments(content) {
   const searchJson = parseJsonOutput(searchResult.stdout);
   const results = searchJson.data?.results || [];
   if (!results.length) {
-    return `没有搜到最近 30 天里和“${query}”相关的文档。`;
+    return `没有搜到和“${query}”相关的可访问文档。可以换一个标题关键词，或直接发文档链接。`;
   }
 
   return [
@@ -2357,7 +2259,7 @@ async function routedReply(event, content) {
     );
   }
 
-  if (/(搜索|搜|查找|找).*(文档|周报|OKR|okr|资料|文件)|^(搜索|搜|查找|找)\s+/.test(content)) {
+  if (isDocumentSearchRequest(content)) {
     return await safeToolReply("搜索飞书文档", () => searchDocuments(content));
   }
 
@@ -2367,7 +2269,8 @@ async function routedReply(event, content) {
     );
   }
 
-  const currentDocumentContext = documentContextMemory.get(conversationKeyFor(event));
+  const storedDocumentContext = documentContextMemory.get(conversationKeyFor(event));
+  const currentDocumentContext = storedDocumentContext && Date.now() - storedDocumentContext.readAt < 30 * 60_000 ? storedDocumentContext : null;
   const rewriteFacts = extractRewriteFacts(content);
   if (
     currentDocumentContext?.styleProfile &&
@@ -2452,21 +2355,7 @@ class LarkPackagingTransport {
   }
 
   async replyText(messageId, text, key) {
-    const result = await runCli([
-      "im",
-      "+messages-reply",
-      "--message-id",
-      messageId,
-      "--text",
-      text,
-      "--idempotency-key",
-      safeIdempotencyKey(key),
-      "--as",
-      "bot",
-      "--format",
-      "json",
-    ]);
-    return cliData(result);
+    return this.replyCard(messageId, buildPackagingNotice(text), key);
   }
 
   async replyMedia(messageId, flag, filePath, key) {
@@ -2547,14 +2436,23 @@ class LarkPackagingTransport {
     return { url, token };
   }
 
-  async replyPost(messageId, content, key) {
+  async updateCard(messageId, content) {
+    const result = await runCli(["api", "PATCH", `/open-apis/im/v1/messages/${encodeURIComponent(messageId)}`, "--as", "bot", "--data", JSON.stringify({ content: JSON.stringify(content) })]);
+    return cliData(result);
+  }
+
+  async replyCard(messageId, content, key) {
+    return this.replyPost(messageId, content, key, "interactive");
+  }
+
+  async replyPost(messageId, content, key, messageType = "post") {
     const result = await runCli([
       "im",
       "+messages-reply",
       "--message-id",
       messageId,
       "--msg-type",
-      "post",
+      messageType,
       "--content",
       JSON.stringify(content),
       "--idempotency-key",
@@ -2616,6 +2514,8 @@ function getPackagingService() {
   packagingService = new PackagingService({
     database,
     transport: new LarkPackagingTransport(),
+    judgeFollowUp: aiConfig.enabled && packagingAiJudgeEnabled && process.env.LARK_BOT_INTENT_PROVIDER !== "off"
+      ? (content, query, packages) => judgePackagingFollowUp(content, query, packages, aiConfig) : null,
     aliasesPath,
     eagleBaseUrl: process.env.EAGLE_API_BASE_URL,
     libraryPath:
@@ -2654,7 +2554,6 @@ function startIngestEventWatcher(service) {
   } catch (error) {
     log(`team ingest server configuration unavailable: ${error.code || "invalid-config"}`);
   }
-
   return ingestWatcher;
 }
 
@@ -2930,6 +2829,13 @@ async function handleLine(line) {
     return;
   }
 
+  if (event.type === "card.action.trigger") {
+    if (!event.event_id || seenEvents.has(event.event_id)) return;
+    seenEvents.add(event.event_id);
+    const service = getPackagingService();
+    if (service) await enqueueConversation({ ...event, sender_id: event.operator_id }, () => service.tryHandleCardAction(event));
+    return;
+  }
   if (event.type !== "im.message.receive_v1") return;
   if (seenEvents.has(event.event_id)) return;
   seenEvents.add(event.event_id);
@@ -2973,39 +2879,39 @@ async function handleLine(line) {
     return;
   }
 
-  await enqueueConversation(conversationEvent, async () => {
-    if (
-      packageSearch &&
-      (await packageSearch.tryHandleQuery(conversationEvent, {
-        mentioned,
-      }))
-    ) {
-      return;
-    }
+  await enqueueConversation(conversationEvent, () => handleConversationReply(conversationEvent, packageSearch, mentioned));
+}
 
-    if (packageSearch && mentioned && !voiceRequestFor(conversationEvent.content)) {
-      const aiHint = await judgePackagingIntent(
-        conversationEvent.content,
-        packagingProjectCatalog(packageSearch)
-      );
-      if (aiHint) {
-        log(
-          `packaging ai judge matched message_id=${event.message_id} project=${aiHint.project_name || ""} type=${aiHint.package_type || ""}`
-        );
-        if (await packageSearch.tryHandleQuery(conversationEvent, { mentioned, aiHint })) {
-          return;
-        }
-      }
+async function handleConversationReply(event, packageSearch, mentioned, dependencies = {}) {
+  const classify = dependencies.classify || classifyMessageIntent;
+  const reply = dependencies.reply || (async current => sendReply(current, await replyFor(current)));
+  const voice = voiceRequestFor(event.content);
+  if (!voice && packageSearch && await packageSearch.tryHandleQuery(event, { mentioned })) return "packaging-rule";
+  if (!voice && !isLocalToolRequest(event.content)) {
+    const catalog = packageSearch && mentioned && packagingAiJudgeEnabled
+      ? packageSearch.database.listActivePackages() : [];
+    const intent = await classify(event.content, catalog);
+    event.messageIntent = intent;
+    if (intent) log(`intent message_id=${event.message_id} type=${intent.type} confidence=${intent.confidence}`);
+    if (packageSearch && mentioned && packagingAiJudgeEnabled && intent?.type === "packaging" && intent.confidence >= 0.8) {
+      if (await packageSearch.tryHandleQuery(event, { mentioned, aiHint: intent })) return "packaging-ai";
     }
-
-    const voiceRequest = voiceRequestFor(conversationEvent.content);
-    if (voiceRequest) {
-      await handleVoiceRequest(conversationEvent, voiceRequest);
-      return;
+    if (intent?.type === "document_search" && intent.confidence >= 0.85 &&
+        typeof intent.search_query === "string" && intent.search_query.trim() && intent.search_query.length <= 80) {
+      const result = await safeToolReply("搜索飞书文档", () =>
+        (dependencies.searchDocuments || searchDocuments)(event.content, { query: intent.search_query }));
+      await (dependencies.sendToolReply || sendReply)(event, result);
+      rememberTurn(event, "user", event.content);
+      rememberTurn(event, "assistant", result);
+      return "document-search-ai";
     }
-
-    await sendReply(event, await replyFor(conversationEvent));
-  });
+  }
+  if (voice) {
+    await (dependencies.handleVoice || handleVoiceRequest)(event, voice);
+    return "voice";
+  }
+  await reply(event);
+  return "conversation";
 }
 
 function enqueueConversation(event, task) {
@@ -3021,9 +2927,9 @@ function enqueueConversation(event, task) {
   });
 }
 
-async function consumeOnce() {
+async function consumeOnce(eventKey = "im.message.receive_v1") {
   const duration = `${Math.round(options.listenMinutes)}m`;
-  log(`starting event consumer window=${duration}`);
+  log(`starting event consumer key=${eventKey} window=${duration}`);
 
   return new Promise((resolve, reject) => {
     const child = spawn(
@@ -3032,7 +2938,7 @@ async function consumeOnce() {
         larkRun,
         "event",
         "consume",
-        "im.message.receive_v1",
+        eventKey,
         "--timeout",
         duration,
         "--as",
@@ -3075,11 +2981,12 @@ async function main() {
   }
 
   log(
-    `ai enabled=${aiConfig.enabled} provider=${aiConfig.provider} model=${aiConfig.model}`
+    `ai enabled=${aiConfig.enabled} provider=${aiConfig.provider} model=${aiConfig.model} intent=existing-model`
   );
 
   if (packagingEnabled) {
     const service = getPackagingService();
+    log(`packaging semantic follow-up enabled=${Boolean(service.judgeFollowUp)}`);
     const recovered = service.database.recoverInterruptedWork();
     log(`packaging interrupted work recovered ${JSON.stringify(recovered)}`);
     try {
@@ -3093,16 +3000,28 @@ async function main() {
       log(`packaging search starts without a live catalog: ${error.message}`);
     }
     startIngestEventWatcher(service);
+    if (service.cardFlow) {
+      await service.cardFlow.recover();
+      const expirationTimer = setInterval(() => service.cardFlow.expire().catch(error => log(`card expiration update failed: ${error.message}`)), 30000);
+      expirationTimer.unref();
+    }
   } else {
     log("packaging search disabled");
   }
 
+  await Promise.all([
+    runConsumerLoop("im.message.receive_v1"),
+    runConsumerLoop("card.action.trigger"),
+  ]);
+}
+
+async function runConsumerLoop(eventKey) {
   let retryDelayMs = positiveNumber(process.env.LARK_BOT_EVENT_RETRY_DELAY_MS, 5000);
   const maxRetryDelayMs = positiveNumber(process.env.LARK_BOT_EVENT_MAX_RETRY_DELAY_MS, 60000);
 
   do {
     try {
-      await consumeOnce();
+      await consumeOnce(eventKey);
       retryDelayMs = positiveNumber(process.env.LARK_BOT_EVENT_RETRY_DELAY_MS, 5000);
     } catch (error) {
       log(`event consumer failed: ${error.stack || error.message}`);
@@ -3143,6 +3062,14 @@ module.exports = {
     normalizeAiReplyText,
     normalizeRichTextContent,
     parseAiPackagingHint,
+    classifyMessageIntent,
+    handleConversationReply,
+    conversationKeyFor,
+    rememberTurn,
+    recentConversation,
+    isLocalToolRequest,
+    isDocumentSearchRequest,
+    searchDocuments,
     reportDateRank,
     selectBestTitleMatch,
     shouldReplyToEvent,

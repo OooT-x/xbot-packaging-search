@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const { DatabaseSync } = require("node:sqlite");
+const { captureSnapshot, matchesSnapshot, snapshotKey } = require("./candidate-snapshot");
 
 function jsonArray(value) {
   try {
@@ -115,8 +116,8 @@ class PackageDatabase {
       INSERT INTO packages(
         package_id, project_id, package_name, package_type, tags_json, version,
         base_package_id, preview_eagle_id, source_eagle_id, preview_path, source_path,
-        ae_comp_name, dependency_status, status, eagle_modified_at, synced_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ae_comp_name, dependency_status, status, eagle_modified_at, synced_at, catalog_revision
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(package_id) DO UPDATE SET
         project_id = excluded.project_id,
         package_name = excluded.package_name,
@@ -132,7 +133,8 @@ class PackageDatabase {
         dependency_status = excluded.dependency_status,
         status = excluded.status,
         eagle_modified_at = excluded.eagle_modified_at,
-        synced_at = excluded.synced_at
+        synced_at = excluded.synced_at,
+        catalog_revision = excluded.catalog_revision
     `);
 
     this.transaction(() => {
@@ -167,7 +169,8 @@ class PackageDatabase {
           item.dependency_status || "complete",
           item.status || "active",
           item.eagle_modified_at || 0,
-          now
+          now,
+          item.catalog_revision || ""
         );
       }
     });
@@ -489,14 +492,15 @@ class PackageDatabase {
   }
 
   createPreparingQuery(query, candidates) {
+    const snapshots = candidates.map(candidate => JSON.stringify(captureSnapshot(candidate)));
     const insertQuery = this.db.prepare(`
       INSERT INTO queries(
-        request_id, requester_id, chat_id, root_message_id, status, created_at, expires_at
-      ) VALUES (?, ?, ?, ?, 'preparing', ?, ?)
+        request_id, requester_id, chat_id, root_message_id, status, created_at, expires_at, search_type, seen_package_ids_json, followup_filters_json
+      ) VALUES (?, ?, ?, ?, 'preparing', ?, ?, ?, ?, ?)
     `);
     const insertCandidate = this.db.prepare(`
-      INSERT INTO query_candidates(request_id, position, package_id)
-      VALUES (?, ?, ?)
+      INSERT INTO query_candidates(request_id, position, package_id, snapshot_json)
+      VALUES (?, ?, ?, ?)
     `);
 
     this.transaction(() => {
@@ -506,10 +510,13 @@ class PackageDatabase {
         query.chat_id,
         query.root_message_id,
         query.created_at,
-        query.expires_at
+        query.expires_at,
+        query.search_type || "",
+        JSON.stringify(query.seen_package_ids || []),
+        JSON.stringify(query.followup_filters || {})
       );
       candidates.forEach((candidate, index) => {
-        insertCandidate.run(query.request_id, index + 1, candidate.package_id);
+        insertCandidate.run(query.request_id, index + 1, candidate.package_id, snapshots[index]);
       });
     });
   }
@@ -583,7 +590,7 @@ class PackageDatabase {
     if (!query) return null;
     const candidates = this.db
       .prepare(`
-        SELECT qc.position, qc.preview_message_id, p.*, pr.project_name,
+        SELECT qc.position, qc.preview_message_id, qc.snapshot_json, p.*, pr.project_name,
           pr.normalized_name, pr.aliases_json
         FROM query_candidates qc
         JOIN packages p ON p.package_id = qc.package_id
@@ -608,6 +615,18 @@ class PackageDatabase {
       .run(requestId);
   }
 
+  candidateEligibility(requestId, packageId) {
+    const row = this.db.prepare(`SELECT qc.snapshot_json, p.*, pr.status AS project_status
+      FROM query_candidates qc JOIN packages p ON p.package_id = qc.package_id
+      JOIN projects pr ON pr.project_id = p.project_id
+      WHERE qc.request_id = ? AND qc.package_id = ?`).get(requestId, packageId);
+    if (!row || row.status !== "active" || row.project_status !== "active") return { state: "unavailable" };
+    let snapshot;
+    try { snapshot = JSON.parse(row.snapshot_json); } catch { /* Historical candidates must be queried again. */ }
+    if (!matchesSnapshot(row, snapshot)) return { state: "changed" };
+    return { state: "valid", snapshot, snapshotKey: snapshotKey(row.snapshot_json), candidate: row };
+  }
+
   claimDelivery(requestId, packageId, idempotencyKey, now = Date.now()) {
     return this.transaction(() => {
       const query = this.db.prepare("SELECT * FROM queries WHERE request_id = ?").get(requestId);
@@ -626,7 +645,7 @@ class PackageDatabase {
 
       const existing = this.db
         .prepare(`
-          SELECT status, phase, resource_json, source_message_id
+          SELECT status, phase, resource_json, source_message_id, snapshot_key
           FROM deliveries
           WHERE request_id = ? AND package_id = ?
         `)
@@ -636,21 +655,25 @@ class PackageDatabase {
       }
       if (existing?.status === "sending") return { state: "sending" };
       if (existing?.phase === "uncertain") return { state: "uncertain" };
+      const eligibility = this.candidateEligibility(requestId, packageId);
+      if (eligibility.state !== "valid") return eligibility;
+      if (existing?.resource_json && existing.snapshot_key !== eligibility.snapshotKey) return { state: "changed" };
 
       this.db
         .prepare(`
           INSERT INTO deliveries(
-            request_id, package_id, idempotency_key, status, phase, created_at, updated_at
-          ) VALUES (?, ?, ?, 'sending', 'preparing', ?, ?)
+            request_id, package_id, idempotency_key, status, phase, created_at, updated_at, snapshot_key
+          ) VALUES (?, ?, ?, 'sending', 'preparing', ?, ?, ?)
           ON CONFLICT(request_id, package_id) DO UPDATE SET
             status = CASE
               WHEN deliveries.status = 'completed' THEN 'completed'
               ELSE 'sending'
             END,
-            updated_at = excluded.updated_at
+            updated_at = excluded.updated_at,
+            snapshot_key = excluded.snapshot_key
         `)
-        .run(requestId, packageId, idempotencyKey, now, now);
-      return { state: "claimed", query, resource: existing?.resource_json ? JSON.parse(existing.resource_json) : null };
+        .run(requestId, packageId, idempotencyKey, now, now, eligibility.snapshotKey);
+      return { ...eligibility, state: "claimed", query, resource: existing?.resource_json ? JSON.parse(existing.resource_json) : null };
     });
   }
 

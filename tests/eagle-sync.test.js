@@ -37,6 +37,25 @@ test("parses Eagle annotations with Chinese and ASCII colons", () => {
   assert.equal(parsed["包装类型"], "信息条");
 });
 
+test("rejects contradictory pair metadata and references while retaining missing legacy optional fields", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "xbot-pair-conflicts-"));
+  try {
+    const common = "package_id: pair\n项目: 项目A\n包装名称: 条\n包装类型: 信息条\n版本: v01\n状态: 启用";
+    for (const [before, after] of [["项目A", "项目B"], ["包装名称: 条", "包装名称: 其他"],
+      ["信息条", "背景"], ["v01", "v02"], ["", "\n配对 PNG: wrong"], ["", "\n配对 ZIP: wrong"]]) {
+      const annotation = before ? common.replace(before, after) : common + after;
+      const items = [makeItem(root, "png", "png", common), makeItem(root, "zip", "zip", annotation)];
+      const catalog = buildCatalog(items, root);
+      assert.equal(catalog.packages.length, 0, after);
+      assert.match(catalog.errors[0], /conflicting pair metadata/u);
+    }
+    const catalog = buildCatalog([makeItem(root, "png", "png", common + "\n配对 PNG: png\n配对 ZIP: zip\nrevision_id: r1"),
+      makeItem(root, "zip", "zip", common)], root);
+    assert.equal(catalog.packages.length, 1);
+    assert.equal(catalog.packages[0].catalog_revision, '["r1",""]');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test("resolves the original item file without selecting metadata or thumbnails", () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "xbot-eagle-"));
   try {

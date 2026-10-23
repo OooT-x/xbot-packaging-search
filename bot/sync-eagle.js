@@ -1,6 +1,7 @@
 const path = require("path");
 const { PackageDatabase } = require("./lib/package-database");
 const { syncEagleCatalog } = require("./lib/eagle-sync");
+const { configuredLibraryPath } = require("./lib/library-config");
 
 const projectRoot = path.resolve(__dirname, "..");
 const databasePath = path.resolve(
@@ -16,7 +17,7 @@ async function main() {
     const report = await syncEagleCatalog(database, {
       baseUrl: process.env.EAGLE_API_BASE_URL,
       aliasesPath,
-      libraryPath: process.env.LARK_BOT_EAGLE_LIBRARY_PATH,
+      libraryPath: configuredLibraryPath(),
     });
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
     if (report.errors.length > 0) process.exitCode = 2;

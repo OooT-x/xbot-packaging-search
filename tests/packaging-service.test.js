@@ -109,6 +109,8 @@ function fixture(serviceOptions = {}) {
     ...serviceOptions,
   });
   service.lastSyncAt = Date.now();
+  // This fixture owns its temporary catalog; production confirms against Eagle on every send.
+  service.refreshCatalog = async () => ({ package_count: database.activePackageCount() });
 
   return {
     root,
@@ -173,6 +175,95 @@ test("sends a preview, accepts only the requester, and delivers the ZIP once", a
   } finally {
     app.close();
   }
+});
+
+test("candidate snapshots reject replaced, revised, withdrawn, legacy and overwritten source files", async () => {
+  for (const change of ["id", "revision", "archive", "legacy", "source-content", "preview-content", "resource-key", "offline"]) {
+    const app = fixture();
+    try {
+      await app.service.tryHandleQuery({ message_id: `snapshot-${change}`, message_type: "text", chat_id: "chat",
+        sender_id: "owner", content: "@X.bot 找变速箱的信息条" }, { mentioned: true });
+      const query = app.database.getQueryByRootMessage(`snapshot-${change}`);
+      const selected = app.database.getQueryWithCandidates(query.request_id).candidates[0];
+      if (change === "id") app.database.db.prepare("UPDATE packages SET source_eagle_id = 'replacement' WHERE package_id = ?").run(selected.package_id);
+      if (change === "revision") app.database.db.prepare("UPDATE packages SET catalog_revision = 'new' WHERE package_id = ?").run(selected.package_id);
+      if (change === "archive") app.database.replaceCatalog([], []);
+      if (change === "legacy") app.database.db.prepare("UPDATE query_candidates SET snapshot_json = NULL WHERE request_id = ?").run(query.request_id);
+      if (change === "source-content") fs.writeFileSync(selected.source_path, "changed source");
+      if (change === "preview-content") fs.writeFileSync(selected.preview_path, "changed preview");
+      if (change === "resource-key") {
+        app.database.claimDelivery(query.request_id, selected.package_id, `cached-${change}`);
+        app.database.markDeliveryUploaded(query.request_id, selected.package_id, { url: "https://example.test/old", token: "old" });
+        app.database.markDeliveryFailed(query.request_id, selected.package_id, "interrupted before dispatch");
+        app.database.db.prepare("UPDATE deliveries SET snapshot_key = NULL").run();
+      }
+      if (change === "offline") app.service.refreshCatalog = async () => null;
+      app.replyTargets.set("confirm-snapshot", query.prompt_message_id);
+      await app.service.handleConfirmation({ message_id: "confirm-snapshot", message_type: "text", chat_id: "chat", sender_id: "owner", content: "确认" });
+      assert.equal(app.calls.filter(call => call.kind === "file" || call.kind === "drive").length, 0, change);
+      assert.equal(app.calls.some(call => call.text?.includes("传到云盘")), false, change);
+    } finally { app.close(); }
+  }
+});
+
+test("uploads a verified private ZIP copy, cleans it, and checks withdrawal after Drive upload", async () => {
+  for (const drive of [false, true]) {
+    const app = fixture(drive ? { driveUploadThresholdBytes: 1 } : {});
+    let stagedPath;
+    try {
+      await app.service.tryHandleQuery({ message_id: "copy-root", message_type: "text", chat_id: "chat",
+        sender_id: "owner", content: "@X.bot 找变速箱的信息条" }, { mentioned: true });
+      const query = app.database.getQueryByRootMessage("copy-root");
+      if (drive) app.service.transport.uploadToDrive = async file => {
+        stagedPath = file;
+        app.database.replaceCatalog([], []);
+        return { token: "uploaded", url: "https://example.test/uploaded" };
+      };
+      else app.service.transport.replyFile = async (_id, file) => {
+        stagedPath = file;
+        fs.writeFileSync(path.join(app.root, "source.zip"), "overwritten during upload");
+        assert.equal(fs.readFileSync(file, "utf8"), "source");
+        return { message_id: "copy-sent" };
+      };
+      app.replyTargets.set("copy-confirm", query.prompt_message_id);
+      await app.service.handleConfirmation({ message_id: "copy-confirm", message_type: "text", chat_id: "chat", sender_id: "owner", content: "确认" });
+      assert.ok(stagedPath);
+      assert.notEqual(path.dirname(stagedPath), app.root);
+      assert.equal(fs.existsSync(path.dirname(stagedPath)), false);
+      assert.equal(app.calls.some(call => call.text?.includes("传到云盘")), false);
+      const delivery = app.database.db.prepare("SELECT status, phase FROM deliveries").get();
+      assert.equal(delivery.status, drive ? "failed" : "completed");
+      assert.equal(delivery.phase, drive ? "uploaded" : "delivered");
+    } finally { app.close(); }
+  }
+});
+
+test("confirmation rereads the Eagle directory and refuses a withdrawn item despite its cached active index", async () => {
+  const app = fixture();
+  try {
+    app.database.db.exec("DELETE FROM packages; DELETE FROM projects;");
+    fs.writeFileSync(path.join(app.root, "metadata.json"), JSON.stringify({ name: "test-library" }));
+    const common = "package_id: live-pair\n项目: 变速箱\n包装名称: 信息条\n包装类型: 信息条\n版本: v01\n状态: 启用";
+    for (const ext of ["png", "zip"]) {
+      const dir = path.join(app.root, "images", ext + ".info");
+      fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, "asset." + ext), ext);
+      fs.writeFileSync(path.join(dir, "metadata.json"), JSON.stringify({ id: ext, ext, annotation: common }));
+    }
+    app.service.libraryPath = app.root;
+    app.service.lastSyncAt = 0;
+    app.service.refreshCatalog = PackagingService.prototype.refreshCatalog.bind(app.service);
+    await app.service.tryHandleQuery({ message_id: "live-root", message_type: "text", chat_id: "chat",
+      sender_id: "owner", content: "@X.bot 找变速箱的信息条" }, { mentioned: true });
+    const query = app.database.getQueryByRootMessage("live-root");
+    assert.equal(app.database.getPackage("live-pair").status, "active");
+    const metadata = path.join(app.root, "images", "zip.info", "metadata.json");
+    fs.writeFileSync(metadata, JSON.stringify({ id: "zip", ext: "zip", annotation: common.replace("状态: 启用", "状态: 已取代") }));
+    app.replyTargets.set("live-confirm", query.prompt_message_id);
+    await app.service.handleConfirmation({ message_id: "live-confirm", message_type: "text", chat_id: "chat", sender_id: "owner", content: "确认" });
+    assert.equal(app.database.getPackage("live-pair").status, "archived");
+    assert.equal(app.calls.filter(call => call.kind === "file").length, 0);
+    assert.ok(app.calls.some(call => call.text?.includes("已撤下")));
+  } finally { app.close(); }
 });
 
 test("returns image-only backgrounds without creating a confirmation query", async () => {
@@ -962,4 +1053,386 @@ test("restart retries pre-dispatch work and holds uncertain dispatch for reconci
     await app.service.tryHandleConfirmation({...event, content:"第二个"});
     assert.equal(app.calls.filter(c => c.kind === "drive").length, 1);
   } finally { app.close(); }
+});
+
+
+test("repair/negated requests do not start packaging queries and missing AI projects ask first", async () => {
+  const app = fixture();
+  try {
+    for (const content of ["帮我修理变速箱", "不要找变速箱的包装"]) {
+      assert.equal(await app.service.tryHandleQuery({ content, message_id: content }, { mentioned: true }), false);
+    }
+    for (const project_name of ["", "虚构项目"]) {
+      assert.equal(await app.service.tryHandleQuery({ content: "给我那种氛围感的东西", message_id: `missing-${project_name}` },
+        { mentioned: true, aiHint: { project_name, package_type: "背景" } }), true);
+    }
+    assert.equal(app.calls.filter(call => call.kind === "post").length, 0);
+    assert.equal(app.calls.filter(call => call.kind === "file").length, 0);
+    assert.equal(app.calls.filter(call => call.kind === "text").length, 2);
+  } finally { app.close(); }
+});
+
+test("negated candidate selection never sends source or cancels the pending query", async () => {
+  const app = fixture();
+  try {
+    const event = { message_id: "neg-root", content: "找变速箱信息条", chat_id: "oc_chat", sender_id: "requester", message_type: "text" };
+    await app.service.tryHandleQuery(event, { mentioned: true });
+    const post = app.calls.find(call => call.kind === "post");
+    app.replyTargets.set("neg-reply", post.message_id);
+    assert.equal(await app.service.tryHandleConfirmation({ ...event, message_id: "neg-reply", content: "不要第一个" }), true);
+    assert.equal(app.calls.filter(call => call.kind === "file").length, 0);
+    assert.equal(app.database.getQueryByRootMessage("neg-root").status, "pending");
+  } finally { app.close(); }
+});
+
+
+test("validated semantic type wins over a negated type mentioned in the request", async () => {
+  const app = fixture();
+  try {
+    const event = { message_id: "semantic-type", content: "不要变速箱的信息条，我要背景", chat_id: "oc_chat", sender_id: "requester", message_type: "text" };
+    assert.equal(await app.service.tryHandleQuery(event, { mentioned: true }), false);
+    assert.equal(await app.service.tryHandleQuery(event, { mentioned: true, aiHint: { project_name: "变速箱", package_type: "背景" } }), true);
+    assert.equal(app.database.findQueryByReplyMessage(event.chat_id, app.calls.find(call => call.kind === "post").message_id).candidates[0].package_type, "背景");
+  } finally { app.close(); }
+});
+
+
+test("replying 看看其他的 pages unseen packages durably, keeps old choices and ends without repeating", async () => {
+  const app = fixture();
+  try {
+    const base = app.database.listActivePackages();
+    app.database.replaceCatalog([{ project_id: "project-1", project_name: "变速箱", normalized_name: "变速箱", aliases: [] }],
+      Array.from({ length: 7 }, (_, i) => ({ ...base[0], package_id: `page-${i}`, package_name: `包装${i}`,
+        preview_eagle_id: `page-preview-${i}`, source_eagle_id: `page-source-${i}`, eagle_modified_at: i })));
+    const root = { message_id: "browse-root", content: "找变速箱包装", sender_id: "owner", chat_id: "chat", message_type: "text" };
+    await app.service.tryHandleQuery(root, { mentioned: true });
+    let post = app.calls.find(call => call.kind === "post");
+    const seen = new Set();
+    for (let page = 0; page < 3; page++) {
+      const query = app.database.findQueryByReplyMessage("chat", post.message_id);
+      for (const item of query.candidates) { assert.equal(seen.has(item.package_id), false); seen.add(item.package_id); }
+      const replyId = `browse-next-${page}`;
+      app.replyTargets.set(replyId, post.message_id);
+      assert.equal(await app.service.tryHandleConfirmation({ ...root, message_id: replyId, content: "看看其他的" }), true);
+      post = app.calls.filter(call => call.kind === "post").at(-1);
+    }
+    assert.equal(seen.size, 7);
+    assert.equal(app.calls.filter(call => call.kind === "post").length, 3);
+    assert.match(app.calls.filter(call => call.kind === "text").at(-1).text, /没有更多未展示/);
+    assert.equal(app.database.getQueryByRootMessage(root.message_id).status, "pending");
+    assert.equal(app.calls.filter(call => call.kind === "file").length, 0);
+  } finally { app.close(); }
+});
+
+test("browsing follows an explicit clarification reply chain but source confirmation never does", async () => {
+  const app = fixture();
+  try {
+    const root = { message_id: "chain-root", content: "找变速箱包装", sender_id: "owner", chat_id: "chat", message_type: "text" };
+    await app.service.tryHandleQuery(root, { mentioned: true });
+    const post = app.calls.find(call => call.kind === "post");
+    app.replyTargets.set("first-more", post.message_id);
+    app.replyTargets.set("bot-clarification", "first-more");
+    app.replyTargets.set("second-more", "bot-clarification");
+    assert.equal(await app.service.tryHandleConfirmation({ ...root, message_id: "second-more", content: "变速箱其他的包装" }), true);
+    assert.match(app.calls.filter(call => call.kind === "text").at(-1).text, /没有更多未展示/);
+    app.replyTargets.set("indirect-confirm", "bot-clarification");
+    assert.equal(await app.service.tryHandleConfirmation({ ...root, message_id: "indirect-confirm", content: "确认" }), false);
+    assert.equal(app.calls.filter(call => call.kind === "file").length, 0);
+    assert.equal(await app.service.tryHandleConfirmation({ ...root, message_id: "no-reference", content: "看看其他的" }), false);
+  } finally { app.close(); }
+});
+
+test("more-results replies preserve requester and expiry gates", async () => {
+  const app = fixture();
+  try {
+    const root = { message_id: "guard-root", content: "找变速箱包装", sender_id: "owner", chat_id: "chat", message_type: "text" };
+    await app.service.tryHandleQuery(root, { mentioned: true });
+    const post = app.calls.find(call => call.kind === "post");
+    app.replyTargets.set("other-more", post.message_id);
+    assert.equal(await app.service.tryHandleConfirmation({ ...root, sender_id: "other", message_id: "other-more", content: "看看其他的" }), true);
+    assert.match(app.calls.filter(call => call.kind === "text").at(-1).text, /原查询人/);
+    app.database.db.prepare('UPDATE queries SET expires_at=0 WHERE root_message_id=?').run(root.message_id);
+    app.replyTargets.set("expired-more", post.message_id);
+    assert.equal(await app.service.tryHandleConfirmation({ ...root, message_id: "expired-more", content: "看看其他的" }), true);
+    assert.match(app.calls.filter(call => call.kind === "text").at(-1).text, /超过/);
+    assert.equal(app.calls.filter(call => call.kind === "post").length, 1);
+  } finally { app.close(); }
+});
+
+
+test("semantic follow-up receives scoped metadata, routes indirect natural type requests, and bypasses confirmations", async () => {
+  let requests = 0;
+  const app = fixture({ judgeFollowUp: async (text, query, packages) => {
+    requests++;
+    assert.equal(text, "我想要放人物名字的");
+    assert.equal(query.candidates[0].project_name, "变速箱");
+    assert.ok(packages.every(item => item.project_id === "project-1"));
+    return { action: "refine", confidence: 0.95, package_type: "信息条", package_ids: [] };
+  }});
+  try {
+    const root = { message_id: "semantic-root", content: "找变速箱背景", sender_id: "owner", chat_id: "chat", message_type: "text" };
+    await app.service.tryHandleQuery(root, { mentioned: true });
+    const first = app.calls.find(call => call.kind === "post");
+    app.replyTargets.set("bridge", first.message_id);
+    app.replyTargets.set("natural-reply", "bridge");
+    assert.equal(await app.service.tryHandleConfirmation({ ...root, message_id: "natural-reply", content: "我想要放人物名字的" }), true);
+    const latest = app.calls.filter(call => call.kind === "post").at(-1);
+    assert.equal(app.database.findQueryByReplyMessage("chat", latest.message_id).search_type, "信息条");
+    app.replyTargets.set("explicit-confirm", latest.message_id);
+    await app.service.tryHandleConfirmation({ ...root, message_id: "explicit-confirm", content: "第一个" });
+    assert.equal(requests, 1);
+    assert.equal(app.calls.filter(call => call.kind === "file").length, 1);
+    await app.service.tryHandleConfirmation({ ...root, message_id: "unquoted", content: "我想要放人物名字的" });
+    assert.equal(requests, 1);
+  } finally { app.close(); }
+});
+
+test("semantic version/explanation/failure keep delivery safe and do not fall into generic chat", async () => {
+  let decision = null;
+  const app = fixture({ judgeFollowUp: async () => decision });
+  try {
+    const root = { message_id: "question-root", content: "找变速箱背景", sender_id: "owner", chat_id: "chat", message_type: "text" };
+    await app.service.tryHandleQuery(root, { mentioned: true });
+    const post = app.calls.find(call => call.kind === "post");
+    for (const [id, content, result] of [
+      ["use", "这个怎么用", { action: "explain", reply: "解压ZIP后打开AEP，再检查依赖。" }],
+      ["version", "第一个有没有新版", { action: "version", candidate_position: 1 }],
+      ["failed", "有轻盈一点的吗", null],
+      ["invalid", "简洁一点", { action: "refine", package_ids: ["invented"] }],
+    ]) {
+      decision = result; app.replyTargets.set(id, post.message_id);
+      assert.equal(await app.service.tryHandleConfirmation({ ...root, message_id: id, content }), true);
+    }
+    assert.equal(app.calls.filter(call => call.kind === "file").length, 0);
+    assert.equal(app.calls.filter(call => call.kind === "post").length, 1);
+    assert.equal(app.calls.filter(call => call.kind === "text").length, 4);
+    assert.equal(app.database.getQueryByRootMessage(root.message_id).status, "pending");
+  } finally { app.close(); }
+});
+
+test("semantic style candidate pool is persisted and reused when browsing more", async () => {
+  const app = fixture({ judgeFollowUp: async () => ({ action: "refine", package_ids: ["pkg-1"], package_type: "信息条" }) });
+  try {
+    const root = { message_id: "style-root", content: "找变速箱背景", sender_id: "owner", chat_id: "chat", message_type: "text" };
+    await app.service.tryHandleQuery(root, { mentioned: true });
+    app.replyTargets.set("style-refine", app.calls.find(call => call.kind === "post").message_id);
+    await app.service.tryHandleConfirmation({ ...root, message_id: "style-refine", content: "简洁一点" });
+    const stylePost = app.calls.filter(call => call.kind === "post").at(-1);
+    const query = app.database.findQueryByReplyMessage("chat", stylePost.message_id);
+    assert.deepEqual(JSON.parse(query.followup_filters_json).allowedIds, ["pkg-1"]);
+    app.replyTargets.set("style-more", stylePost.message_id);
+    await app.service.tryHandleConfirmation({ ...root, message_id: "style-more", content: "看看其他的" });
+    assert.equal(app.calls.filter(call => call.kind === "post").length, 2);
+    assert.match(app.calls.filter(call => call.kind === "text").at(-1).text, /没有更多/);
+  } finally { app.close(); }
+});
+
+
+test("interactive card binds callbacks to the card, requester and snapshot; preserves text replies", async () => {
+  const app = fixture();
+  app.service.transport.replyCard = app.service.transport.replyPost;
+  try {
+    const root = { message_id: "om_card_root", chat_id: "oc_chat", sender_id: "ou_requester", content: "@X.bot 找变速箱的信息条" };
+    await app.service.tryHandleQuery(root, { mentioned: true });
+    const card = app.calls.find(c => c.kind === "post");
+    assert.equal(card.content.schema, "2.0");
+    const value = card.content.body.elements[0].columns[0].elements.find(e => e.tag === "button").behaviors[0].value;
+    const click = { type: "card.action.trigger", event_id: "click-1", action_tag: "button", action_value: JSON.stringify(value), message_id: card.message_id, chat_id: root.chat_id, operator_id: "ou_other" };
+    await app.service.tryHandleCardAction(click);
+    assert.equal(app.calls.filter(c => c.kind === "file").length, 0);
+    assert.equal(await app.service.tryHandleCardAction({ ...click, operator_id: root.sender_id, action_value: JSON.stringify({ ...value, request_id: "forged" }) }), false);
+    assert.equal(await app.service.tryHandleCardAction({ ...click, operator_id: root.sender_id, chat_id: "oc_other" }), false);
+    assert.equal(await app.service.tryHandleCardAction({ ...click, operator_id: root.sender_id, action_value: JSON.stringify({ ...value, position: 99 }) }), false);
+    assert.equal(await app.service.tryHandleCardAction({ ...click, action_value: "invalid-json" }), false);
+    await app.service.tryHandleCardAction({ ...click, operator_id: root.sender_id });
+    await app.service.tryHandleCardAction({ ...click, event_id: "click-2", operator_id: root.sender_id });
+    const files = app.calls.filter(c => c.kind === "file");
+    assert.equal(files.length, 1);
+    assert.equal(files[0].messageId, root.message_id);
+    // A new card still accepts a direct text reply.
+    await app.service.tryHandleQuery({ ...root, message_id: "om_card_text_root" }, { mentioned: true });
+    const next = app.calls.filter(c => c.kind === "post").at(-1);
+    app.replyTargets.set("om_text", next.message_id);
+    await app.service.tryHandleConfirmation({ ...root, message_id: "om_text", message_type: "text", content: "这个" });
+    assert.equal(app.calls.filter(c => c.kind === "file").length, 2);
+  } finally { app.close(); }
+});
+
+test("card more, cancel and expired callbacks retain query gates", async () => {
+  const app = fixture();
+  app.service.transport.replyCard = app.service.transport.replyPost;
+  try {
+    const root = { message_id: "om_card_root", chat_id: "oc_chat", sender_id: "ou_requester", content: "@X.bot 找变速箱的信息条" };
+    await app.service.tryHandleQuery(root, { mentioned: true });
+    const card = app.calls.find(c => c.kind === "post");
+    const actions = card.content.body.elements.at(-1).columns[0].elements.find(e => e.tag === "column_set").columns.map(c => c.elements[0]);
+    const click = value => ({ type: "card.action.trigger", event_id: `click-${value.action}`, action_tag: "button", action_value: JSON.stringify(value), message_id: card.message_id, chat_id: root.chat_id, operator_id: root.sender_id });
+    const more = actions[0].behaviors[0].value;
+    await app.service.tryHandleCardAction(click(more));
+    assert.equal(app.calls.filter(c => c.kind === "file").length, 0);
+    const cancel = actions[1].behaviors[0].value;
+    await app.service.tryHandleCardAction(click(cancel));
+    assert.equal(app.database.getQueryWithCandidates(cancel.request_id).status, "cancelled");
+    await app.service.tryHandleCardAction(click({ ...cancel, action: "select", position: 1 }));
+    assert.equal(app.calls.filter(c => c.kind === "file").length, 0);
+    await app.service.tryHandleQuery({ ...root, message_id: "om_expire" }, { mentioned: true });
+    const last = app.calls.filter(c => c.kind === "post").at(-1);
+    const value = last.content.body.elements[0].columns[0].elements.find(e => e.tag === "button").behaviors[0].value;
+    app.database.db.prepare("UPDATE queries SET expires_at = 0 WHERE request_id = ?").run(value.request_id);
+    await app.service.tryHandleCardAction({ ...click(value), message_id: last.message_id });
+    assert.equal(app.calls.filter(c => c.kind === "file").length, 0);
+  } finally { app.close(); }
+});
+
+
+function cardFlowFixture() {
+  const app = fixture();
+  app.service.transport.replyCard = app.service.transport.replyPost;
+  app.service.transport.updateCard = async (messageId, content) => { app.calls.push({ kind: "update", messageId, content }); return {}; };
+  app.service.cardFlow = new (require("../bot/lib/packaging-card-flow").PackagingCardFlow)(app.service);
+  app.rootEvent = { message_id: "om_session_root", chat_id: "oc_session", sender_id: "ou_owner", content: "@X.bot 找包装", message_type: "text" };
+  app.current = () => app.service.cardFlow.read("root_message_id", app.rootEvent.message_id);
+  app.click = async (action, extra = {}, overrides = {}) => {
+    const session = app.current();
+    return app.service.tryHandleCardAction({ type: "card.action.trigger", event_id: `click-${Math.random()}`,
+      action_tag: ["project", "type"].includes(action) ? "select_static" : "button", operator_id: "ou_owner", chat_id: "oc_session",
+      message_id: session.card_message_id, action_value: JSON.stringify({ scope: "packaging-session", session_id: session.session_id, revision: session.revision, action, ...extra }), ...overrides });
+  };
+  return app;
+}
+
+test("card session selects project/type, pages in place, restores history and delivers once to the real root", async () => {
+  const app = cardFlowFixture();
+  try {
+    const packages = app.database.listActivePackages();
+    const base = packages.find(p => p.package_type === "信息条");
+    const clones = [2,3,4,5].map(i => ({ ...base, package_id: `extra-${i}`, package_name: `小标${i}`, preview_eagle_id: `preview-${i}`, source_eagle_id: `source-${i}` }));
+    app.database.replaceCatalog([{ project_id: "project-1", project_name: "变速箱", normalized_name: "变速箱", aliases: [] }], [...packages, ...clones]);
+    await app.service.tryHandleQuery(app.rootEvent, { mentioned: true });
+    assert.equal(app.current().stage, "results");
+    await app.click("project", {}, { option: "project-1", operator_id: "ou_intruder" });
+    assert.equal(app.current().stage, "results");
+    await app.click("project", {}, { option: "invalid" });
+    assert.equal(app.current().stage, "results");
+    await app.click("project", {}, { option: "project-1" });
+    assert.equal(app.current().stage, "type");
+    await app.click("type", {}, { option: "信息条" });
+    const first = app.current().pages[0];
+    assert.equal(first.items.length, 3);
+    const oldRevision = app.current().revision;
+    await app.click("next");
+    assert.equal(app.current().page, 1);
+    assert.equal(app.current().pages[1].items.length, 2);
+    assert.equal(app.calls.filter(c => c.kind === "post").length, 1);
+    // An old rendered-page callback must not deliver the currently visible item.
+    await app.click("select", { revision: oldRevision, request_id: first.request_id, position: 1 });
+    assert.equal(app.calls.filter(c => c.kind === "file").length, 0);
+    app.service.cardFlow = new (require("../bot/lib/packaging-card-flow").PackagingCardFlow)(app.service);
+    await app.click("previous");
+    assert.equal(app.current().pages[0].request_id, first.request_id);
+    await Promise.all([app.click("select", { request_id: first.request_id, position: 1 }), app.click("select", { request_id: first.request_id, position: 1 })]);
+    assert.equal(app.calls.filter(c => c.kind === "file").length, 1);
+    assert.equal(app.calls.find(c => c.kind === "file").messageId, "om_session_root");
+    assert.ok(JSON.stringify(app.calls.filter(c => c.kind === "update").at(-1)).includes("已发送"));
+    await app.click("select", { request_id: first.request_id, position: 1 });
+    assert.equal(app.calls.filter(c => c.kind === "file").length, 1);
+    await app.click("types");
+    await app.click("type", {}, { option: "信息条" });
+    await app.click("select", { request_id: app.current().pages[0].request_id, position: 1 });
+    assert.equal(app.calls.filter(c => c.kind === "file").length, 1);
+    await app.click("cancel");
+    assert.equal(app.current().status, "cancelled");
+    assert.equal(app.database.db.prepare("SELECT COUNT(*) n FROM queries WHERE source_root_message_id=? AND status='pending'").get("om_session_root").n, 0);
+  } finally { app.close(); }
+});
+
+test("card sessions support text selection, image-only pages, expiry and uncertain delivery without retry", async () => {
+  const app = cardFlowFixture();
+  try {
+    await app.service.tryHandleQuery({ ...app.rootEvent, content: "@X.bot 找变速箱的信息条" }, { mentioned: true });
+    const first = app.current().pages[0];
+    const item = first.items[0];
+    app.database.claimDelivery(first.request_id, item.package_id, "uncertain-card");
+    app.database.markDeliveryDispatching(first.request_id, item.package_id);
+    app.database.markDeliveryFailed(first.request_id, item.package_id, "lost connection");
+    await app.click("select", { request_id: first.request_id, position: 1 });
+    assert.equal(app.calls.filter(c => c.kind === "file").length, 0);
+    assert.ok(JSON.stringify(app.calls.filter(c => c.kind === "update").at(-1)).includes("结果待核对"));
+    app.database.db.prepare("UPDATE card_sessions SET expires_at=0 WHERE session_id=?").run(app.current().session_id);
+    await app.service.cardFlow.expire();
+    assert.equal(app.current().status, "expired");
+    assert.ok(JSON.stringify(app.calls.filter(c => c.kind === "update").at(-1)).includes("查询已过期"));
+  } finally { app.close(); }
+  const text = cardFlowFixture();
+  try {
+    await text.service.tryHandleQuery({ ...text.rootEvent, content: "@X.bot 找变速箱的信息条" }, { mentioned: true });
+    text.replyTargets.set("om_text_session", text.current().card_message_id);
+    await text.service.tryHandleConfirmation({ ...text.rootEvent, message_id: "om_text_session", content: "这个" });
+    assert.equal(text.calls.filter(c => c.kind === "file").length, 1);
+    assert.equal(text.calls.filter(c => c.kind === "post").length, 1);
+  } finally { text.close(); }
+});
+
+
+test("image-only card sessions show previews without source controls or deliveries", async () => {
+  const app = cardFlowFixture();
+  try {
+    app.database.db.prepare("UPDATE packages SET source_path=NULL, source_eagle_id=NULL WHERE package_type='背景'").run();
+    await app.service.tryHandleQuery({ ...app.rootEvent, content: "@X.bot 找变速箱背景" }, { mentioned: true });
+    const card = app.calls.filter(c => c.kind === "post").at(-1).content;
+    assert.equal(app.database.db.prepare("SELECT COUNT(*) n FROM queries").get().n, 0);
+    assert.ok(JSON.stringify(card).includes("无工程 ZIP"));
+    assert.ok(!JSON.stringify(card).includes('"action":"select"'));
+    const page = app.current().pages[0];
+    await app.click("select", { request_id: page.request_id, position: 1 });
+    assert.equal(app.calls.filter(c => c.kind === "file").length, 0);
+  } finally { app.close(); }
+});
+
+
+test("card update failure and replaced sources never dispatch, Drive still uses the original root", async () => {
+  const app = cardFlowFixture();
+  try {
+    await app.service.tryHandleQuery({ ...app.rootEvent, content: "@X.bot 找变速箱的信息条" }, { mentioned: true });
+    const page = app.current().pages[0];
+    const originalUpdate = app.service.transport.updateCard;
+    app.service.transport.updateCard = async () => { throw new Error("card update offline"); };
+    const oldRevision = app.current().revision;
+    await assert.rejects(app.click("select", { request_id: page.request_id, position: 1 }), /offline/);
+    assert.equal(app.calls.filter(c => c.kind === "file").length, 0);
+    app.service.transport.updateCard = originalUpdate;
+    await app.click("select", { revision: oldRevision, request_id: page.request_id, position: 1 });
+    assert.equal(app.calls.filter(c => c.kind === "file").length, 0);
+    assert.equal(app.current().syncPending, undefined);
+    assert.equal(app.current().sending, undefined);
+    fs.writeFileSync(page.items[0].source_path, "changed-zip");
+    await app.click("select", { request_id: page.request_id, position: 1 });
+    assert.equal(app.calls.filter(c => c.kind === "file").length, 0);
+    assert.match(app.current().notice, /变化|撤下|未完成/);
+  } finally { app.close(); }
+  const drive = cardFlowFixture();
+  try {
+    drive.service.driveUploadThresholdBytes = 1;
+    await drive.service.tryHandleQuery({ ...drive.rootEvent, content: "@X.bot 找变速箱的信息条" }, { mentioned: true });
+    const page = drive.current().pages[0];
+    await drive.click("select", { request_id: page.request_id, position: 1 });
+    const link = drive.calls.find(c => c.kind === "text" && c.text.includes("https://example.feishu.cn/file/"));
+    assert.equal(link.messageId, "om_session_root");
+    assert.equal(drive.calls.filter(c => c.kind === "drive").length, 1);
+  } finally { drive.close(); }
+});
+
+
+test("the first reply already includes previews with or without a named project/type", async () => {
+  for (const content of ["@X.bot 找包装", "@X.bot 找变速箱包装", "@X.bot 找变速箱信息条"]) {
+    const app = cardFlowFixture();
+    try {
+      await app.service.tryHandleQuery({ ...app.rootEvent, content }, { mentioned: true });
+      const first = app.calls.find(c => c.kind === "post");
+      assert.equal(app.current().stage, "results");
+      assert.ok(JSON.stringify(first.content).includes('"tag":"img"'));
+      assert.equal(app.calls.filter(c => c.kind === "update").length, 0);
+      assert.ok(app.current().pages[0].items.length <= 3);
+    } finally { app.close(); }
+  }
 });

@@ -14,7 +14,7 @@ function run(args = process.argv.slice(2)) {
     const requestId = values.get("--request-id"), packageId = values.get("--package-id");
     if (!requestId && !packageId) {
       console.log(JSON.stringify(database.db.prepare(`SELECT d.request_id, d.package_id,
-        d.phase, d.status, d.source_message_id, d.last_error, q.root_message_id, q.expires_at
+        d.phase, d.status, d.source_message_id, d.last_error, COALESCE(q.source_root_message_id, q.root_message_id) AS root_message_id, q.expires_at
         FROM deliveries d JOIN queries q USING(request_id)
         WHERE d.phase = 'uncertain' AND d.status = 'failed'`).all(), null, 2));
       return;
