@@ -4,7 +4,17 @@ X.bot 包装素材检索项目用于在飞书中按项目、包装类型、标�
 
 ## 当前状态（以 STATUS 为准）
 
-- 2026-10-16 团队分发已进入实施：源码1.9.0试用候选，本机已安装1.9.0且21文件与549ade6固定提交包一致，未公开发布新版。中央鉴权接口与现有FeishuBot同进程，当前Windows主机已监听局域网；入库事件持久化/配对核实回执、写入锁、团队配置与只读类型、诊断导出已实现。214 JS/34 Python通过；两台真实电脑的安装/NAS/飞书闭环待验收。见[STATUS](docs/STATUS.md)和[团队使用说明](docs/TEAM_DISTRIBUTION.md)。
+- 2026-10-23：统一智能办事原则及受限语义文档搜索已实现并本机加载，250 JS/34 Python及静态检查通过；支持自然表达调用实际只读搜索，取消隐含30天限制并拦截否定搜索。真实飞书体验待验收，详见STATUS SMART-01、D-078。以下为阶段快照。
+
+- 2026-10-23：持久卡片交互主线已加载：项目/类型选择、原地前后翻页、领取状态更新、结束/过期与文字兼容；010迁移、245 JS/34 Python及本机双消费者/49包装核验通过。真实客户端渲染/点击/交付待验收，详见STATUS CARD-03、D-076和RUNBOOK。以下为阶段快照。
+
+- 2026-10-23：插件1.9.6已本机安装，22文件与评审包一致；更新改为静态清单优先、Release页面兜底，131项插件测试及静态检查通过。远端页面真实可用，清单本地生成核验完成但因GitHub CLI认证失效尚未上传；待重开加载，未提交/推送/公开发布，详见STATUS UPDATE-13。以下为阶段快照。
+
+- 2026-10-23：下拉菜单统一及更新限流/历史版本反馈优化已纳入插件1.9.5，本机22文件摘要与本地评审包一致；126项插件测试与静态/浏览器模拟验证通过。当前打开页面需重开加载；未提交/推送/公开发布，详见STATUS的UPDATE-12，以下为阶段快照。
+
+- 2026-10-23：1.9.4修复已部署到本机服务，SQLite备份及009迁移完成；唯一消费者、49包装零索引错误及49组同步状态已核验。Eagle官方入口安装1.9.4，22文件摘要一致；插件页面重新加载和真实双终端/取件仍待验收。此前229 JS/34 Python及静态检查通过，未公开发布。详见[当前状态](docs/STATUS.md)与[RUNBOOK](docs/RUNBOOK.md)；以下为历史快照。
+
+- 2026-10-21：源码/本机安装1.9.3，21文件与本地评审包一致。中央服务已加载历史素材即时核验，49组真实素材全部返回已同步，原交付及事件不变；222 JS/34 Python及静态检查通过。同步菜单已统一，无法核验的内部unknown不展示；未公开发布新版，两台真实电脑/NAS/飞书闭环仍待验收。当前分支及未提交修改见[STATUS](docs/STATUS.md)，团队用法见[使用说明](docs/TEAM_DISTRIBUTION.md)。
 - 本轮保留此前NAS、排序、拖放与bot互动修改；历史版本和验证证据统一保留在STATUS，不从旧摘要推断当前状态。
 
 ## 项目管理入口
@@ -73,7 +83,9 @@ Git 不管理以下内容：
 
 ## 本机运行资源
 
-当前 Eagle 库位于 `E:\Eagle资源库\包装.library`。bot 默认以只读方式直接解析该库目录（不依赖 Eagle 当前活动库，也不修改库内数据），Eagle 界面可以停留在其他库；可用 `LARK_BOT_EAGLE_LIBRARY_PATH` 改写该路径。路径属于本机运行配置，只记录位置，不把库内容提交进 Git。
+当前 Eagle 库位于 `Z:\MOSS\后期知识库\包装库\包装.library`；本机 bot 配置使用对应 UNC 路径 `\\192.168.31.100\共享盘\MOSS\后期知识库\包装库\包装.library`，避免自动启动依赖映射盘。bot 只读解析库目录，不依赖 Eagle 当前活动库；插件通过 Eagle API 读写当前打开的库，已切换至 NAS 包装库。
+
+监听器与 `sync:eagle` 共用本机配置 `config/eagle-library.local.json`（不提交 Git），格式参考 `config/eagle-library.example.json`。`LARK_BOT_EAGLE_LIBRARY_PATH` 优先于该文件；未配置时监听器仍使用原本机库，手动同步仍使用 Eagle 当前库 API。SQLite、入库事件和运行目录留在本机。旧库 `E:\Eagle资源库\包装.library` 保留为迁移回退副本；详细验证与回退见 [运行手册](docs/RUNBOOK.md)。
 
 ## 当前可运行闭环
 
@@ -95,7 +107,7 @@ Git 不管理以下内容：
 先同步并验证当前素材：
 
 ```powershell
-$env:LARK_BOT_EAGLE_LIBRARY_PATH = "E:\Eagle资源库\包装.library"
+# 使用 config/eagle-library.local.json 中的库路径；临时覆盖可设置 LARK_BOT_EAGLE_LIBRARY_PATH。
 & "C:\Program Files\nodejs\npm.cmd" run sync:eagle
 & "C:\Program Files\nodejs\npm.cmd" test
 ```
