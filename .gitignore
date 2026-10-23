@@ -18,6 +18,7 @@ build/
 eagle-plugin/workers/
 coverage/
 .cache/
+output/
 
 # Runtime data
 data/
