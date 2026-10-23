@@ -3,6 +3,38 @@ const path = require("path");
 const os = require("os");
 const http = require("http");
 const https = require("https");
+const { execFile } = require("child_process");
+
+function inspectWindowsDrive(drive) {
+  return new Promise((resolve, reject) => {
+    const executable = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+    const command = "$ErrorActionPreference='Stop'; [int]([System.IO.DriveInfo]::new($env:XBOT_CHECK_DRIVE).DriveType)";
+    execFile(executable, ["-NoProfile", "-NonInteractive", "-Command", command], {
+      windowsHide: true, timeout: 10000, maxBuffer: 4096,
+      env: { ...process.env, XBOT_CHECK_DRIVE: drive },
+    }, (error, stdout) => error ? reject(error) : resolve(Number(stdout.trim())));
+  });
+}
+
+async function assertLocalLibrary(libraryPath, options = {}) {
+  const value = String(libraryPath || "").replace(/\//gu, "\\");
+  if (!value) throw new Error("无法核验当前素材库路径，未开始写入");
+  // Resolve junctions/SUBST where possible; never rely on the visible drive letter alone.
+  let resolved = value;
+  try { resolved = fs.realpathSync.native(value); } catch { /* Drive inspection below fails closed. */ }
+  const plain = resolved.replace(/^\\\\\?\\/u, "");
+  if (value.startsWith("\\\\") || plain.startsWith("\\\\") || /^UNC\\/iu.test(plain)) {
+    throw new Error("共享库请选择团队入库模式，并使用 UNC 路径打开");
+  }
+  if ((options.platform || process.platform) !== "win32") return;
+  const drive = plain.match(/^([a-z]:)\\/iu)?.[1];
+  if (!drive) throw new Error("无法核验素材库所在磁盘，请使用 UNC 团队模式");
+  let type;
+  try { type = await (options.inspectDrive || inspectWindowsDrive)(drive.toUpperCase()); }
+  catch { throw new Error("无法核验磁盘是否为共享映射盘，请使用 UNC 团队模式或检查本地磁盘"); }
+  if (type === 4) throw new Error("映射共享盘不能使用单机模式，请以 UNC 路径打开并选择团队入库模式");
+  if (![2, 3, 5, 6].includes(type)) throw new Error("无法确认本地磁盘类型，未开始写入");
+}
 
 function configPath() {
   return process.env.XBOT_TEAM_CONFIG || path.join(process.env.APPDATA || os.homedir(), "XbotPackaging", "team.json");
@@ -74,6 +106,17 @@ async function refreshTypes(config = readConfig()) {
   const temporary = file + ".tmp";
   fs.writeFileSync(temporary, JSON.stringify(data.types)); fs.renameSync(temporary, file);
 }
+async function mutateType(change, config = readConfig()) {
+  const types = require("./package-types");
+  if (config.unconfigured) throw new Error("请先设置连接模式");
+  if (config.mode !== "team") {
+    await refreshTypes(config);
+    return change.action === "create" ? types.registerPackageType(change.name, change.aliases || []) : types.updatePackageType(change.currentName, change);
+  }
+  const data = await request(config, "POST", "/v1/types", { ...change, libraryPath: config.libraryPath });
+  await refreshTypes(config);
+  return data.name;
+}
 async function preflight(config, eagle) {
   if (config.unconfigured) throw new Error("请先在设置中选择单机或团队模式");
   if (config.mode !== "team") return null;
@@ -82,10 +125,10 @@ async function preflight(config, eagle) {
   if (!sameLibrary(health.libraryPath, config.libraryPath)) throw new Error("服务端素材库与团队配置不一致");
   return health;
 }
-async function withTeamWrite(eagle, action, config = readConfig()) {
+async function withTeamWrite(eagle, action, config = readConfig(), options = {}) {
   await preflight(config, eagle);
   if (config.mode !== "team") {
-    if (String(eagle?.library?.path || "").startsWith("\\\\")) throw new Error("共享库请选择团队入库模式");
+    await assertLocalLibrary(eagle?.library?.path, options);
     return action();
   }
   await refreshTypes(config);
@@ -98,4 +141,4 @@ async function withTeamWrite(eagle, action, config = readConfig()) {
   catch { result.teamLockWarning = "保存已完成，写入锁释放失败，请维护者核对后解锁"; }
   return result;
 }
-module.exports = { configPath, validateConfig, readConfig, saveConfig, request, sameLibrary, preflight, withTeamWrite, refreshTypes, assertUnchanged };
+module.exports = { mutateType, configPath, validateConfig, readConfig, saveConfig, request, sameLibrary, preflight, withTeamWrite, refreshTypes, assertUnchanged, assertLocalLibrary, inspectWindowsDrive };

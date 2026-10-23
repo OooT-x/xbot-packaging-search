@@ -206,11 +206,15 @@
     .update-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:18px}
     .update-card-head p{margin:5px 0 0;color:var(--ink-2);font-size:12px}
     .update-demo-tag{display:inline-flex;align-items:center;min-height:21px;padding:0 7px;border:1px solid color-mix(in srgb,var(--amber) 36%,var(--line));border-radius:999px;background:var(--amber-soft);color:var(--amber);font-size:10px;font-weight:750;white-space:nowrap}
+    .update-actions button:disabled{border-color:var(--line-2);background:var(--panel-3);color:var(--ink-3);box-shadow:none;cursor:not-allowed;transform:none;opacity:.7}
     .update-version-row{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:10px;min-height:44px;border-bottom:1px solid var(--line)}
     .update-version-row span{color:var(--ink-2);font-size:12px}
     .update-version-row strong{color:var(--ink);font:750 13px var(--mono)}
     .update-state{min-height:38px;margin:14px 0 4px;color:var(--amber);font-size:12px;line-height:1.6}
     .update-channel{margin:0;color:var(--ink-3);font-size:10px;line-height:1.6}
+    .update-actions :is(button,a.ghost-btn){display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;min-height:34px;font:750 12px/20px var(--ui);white-space:nowrap}
+    .update-actions a.ghost-btn{text-decoration:none}
+    .update-actions a.ghost-btn:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
     .update-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
     .update-install-hint{margin:16px 0 0;padding:11px;border:1px dashed var(--line-2);border-radius:var(--r-sm);color:var(--ink-2);font-size:11px;line-height:1.65}
     .update-notes{margin:0;color:var(--ink-2);font-size:12px;line-height:1.8}
@@ -356,6 +360,15 @@
     .project-filter-option:disabled{opacity:.45;cursor:default}
     .manage-toolbar{flex-wrap:wrap}.manage-toolbar-actions{flex-wrap:wrap;max-width:100%}.manage-toolbar h2{flex-shrink:0}#manageSort{width:112px;flex-shrink:0;font-size:11px}
 
+    /* Shared dropdown treatment, including dynamic modal and drawer selects. */
+    .project-filter-trigger{min-width:0;background:var(--panel-2);line-height:20px;transition:border-color .15s,background .15s}
+    .project-filter-trigger:disabled{opacity:.45;cursor:default}
+    .project-filter-trigger[aria-expanded="true"]::after{transform:translateY(1px) rotate(225deg)}
+    .project-filter-menu{z-index:100;box-sizing:border-box;isolation:isolate}
+    .project-filter-option,.package-type-option{min-height:34px;font-size:12px;line-height:20px}
+    .project-filter-option:focus-visible,.package-type-option:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
+    .project-filter-list,.package-type-menu{scrollbar-color:var(--line-2) transparent}
+    .form-group>.project-filter-trigger,.pair-edit-fields label>.project-filter-trigger{margin-top:6px}
     .manage-sort-control{display:flex;align-items:center;gap:4px;flex-shrink:0}.manage-sort-control .project-filter-trigger{width:108px;font-size:11px}.manage-sort-control .project-filter-trigger:focus-visible,#manageSortDirection:focus-visible{outline:2px solid var(--blue);outline-offset:2px}#manageSortDirection{width:32px;min-width:32px;padding:0;font-size:16px;line-height:32px}.project-filter-search[hidden]{display:none}
     #screen-manage .manage-main{scrollbar-width:auto;scrollbar-color:auto;scrollbar-gutter:stable}
     #screen-manage .manage-main::-webkit-scrollbar{width:12px}
@@ -376,6 +389,79 @@
     #manageGrid[data-card-size="small"] .manage-card .pill-row{padding-right:74px}
     .manage-sync-detail{margin:12px 0;padding:12px;background:var(--panel-2);border:1px solid var(--line);border-radius:9px;font-size:12px}
     .manage-sync-detail p{margin:6px 0;line-height:1.65;overflow-wrap:anywhere}.manage-sync-detail small{color:var(--ink-2);line-height:1.6}
+  /* Use alignment and grouping instead of repeated section captions. */
+    .aep-filter>.input{margin-bottom:14px}
+    .manage-side>.field-label:first-child{margin-top:0}
+    .settings-update-copy{display:flex;align-items:center;min-height:24px}
+    .side-task{gap:24px}.side-task .quiet{align-self:flex-start}
+    .update-page-head h1{margin:0}
+    .type-manager-toolbar{display:grid;grid-template-columns:minmax(0,1fr) 120px auto;gap:10px;align-items:center;margin-bottom:18px}
+    .type-manager .type-management-list{gap:0;margin-top:0;border-top:1px solid var(--line)}
+    .type-manager-columns,.type-manager .type-management-row{display:grid;grid-template-columns:minmax(120px,1fr) minmax(180px,2fr) 132px;gap:12px;align-items:start}
+    .type-manager-columns{padding:0 0 9px;color:var(--ink-3);font-size:11px}
+    .type-manager .type-management-row{padding:12px 0;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent}
+    .type-manager .type-management-actions{margin:0;gap:6px;min-height:35px;align-items:center}
+    .type-manager .type-management-actions button{padding:0 10px}
+    .type-row-state{font-size:10px;color:var(--green)}.type-row-state.is-disabled{color:var(--ink-3)}
+    .type-manager input[readonly]{border-color:transparent;background:transparent;padding-left:0;font-weight:750}
+    [data-type-manager-error]{color:var(--red)}
+    @media(max-width:640px){.type-manager-toolbar{grid-template-columns:1fr auto}.type-manager-toolbar input{grid-column:1/-1}.type-manager-columns{display:none}.type-manager .type-management-row{grid-template-columns:1fr auto}.type-manager .type-management-row>label:nth-child(2){grid-column:1/-1;grid-row:2}.type-manager .type-management-actions{grid-column:2;grid-row:1}}
+    .modal:has(.type-manager),.modal:has(.type-editor){display:flex;flex-direction:column;overflow:hidden;max-height:calc(100vh - 56px)}
+    .modal:has(.type-manager)>.modal-head,.modal:has(.type-editor)>.modal-head{flex:none}
+    .type-manager{display:flex;flex-direction:column;min-height:0;overflow:hidden;padding-bottom:0}
+    .type-manager .type-manager-toolbar{display:flex;flex:none}.type-manager-toolbar>.input{flex:1;min-width:0}
+    .type-browse-list{overflow:auto;min-height:0;overscroll-behavior:contain}
+    .type-browse-row{display:flex;align-items:center;gap:16px;padding:16px 0;border-bottom:1px solid var(--line)}
+    .type-browse-row>div{flex:1;min-width:0}.type-browse-row p{margin:5px 0 0;color:var(--ink-3);font-size:12px;overflow-wrap:anywhere}
+    .type-manager-footer{display:flex;flex:none;align-items:center;justify-content:flex-end;gap:10px;padding:16px 20px;border-top:1px solid var(--line);background:var(--panel)}
+    .type-manager>.type-manager-footer{padding:16px 0}.type-manager-footer>label{margin-right:auto;color:var(--ink-2);font-size:12px}
+    .type-editor{overflow:auto}.type-editor>.form-group{display:grid;gap:8px;margin:0 0 20px}.type-editor textarea{padding:10px;resize:vertical;min-height:88px}
+    .type-enabled-field{display:flex;gap:8px;align-items:center}.type-editor input[type=checkbox]{accent-color:var(--blue)}
+    [data-type-error]{color:var(--red)}
+    .type-inline-fields{min-width:0;flex:1;display:grid;gap:3px}
+    .type-inline-name,.type-inline-aliases{width:100%;min-width:0;padding:4px 6px;margin-left:0;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--ink);outline-offset:1px}
+    .type-inline-name{font-weight:750}.type-inline-aliases{color:var(--ink-3);font-size:12px}
+    .type-inline-fields input:not([readonly]):hover{border-color:var(--line)}
+    .type-inline-fields input:focus{border-color:var(--blue);background:var(--panel-2);color:var(--ink)}
+    .type-inline-fields [data-type-error]:empty{display:none}.type-inline-fields [data-type-error]{color:var(--red);margin:2px 0}
+    .type-inline-enabled{display:flex;gap:5px;align-items:center;color:var(--ink-3);font-size:11px;white-space:nowrap}
+    .type-inline-enabled input{accent-color:var(--blue)}
+    .type-browse-row [data-type-apply]:disabled{opacity:.4;cursor:default}
+    .type-browse-row.is-dirty [data-type-apply]:not(:disabled){border-color:var(--blue);color:var(--blue-2);background:var(--blue-soft)}
+    .type-browse-list{padding:0 4px;scrollbar-gutter:stable}
+    .type-browse-row [data-type-apply]{min-width:58px;flex:none}
+    .type-browse-row [data-type-apply][data-state="enabled"]{color:var(--green);border-color:color-mix(in srgb,var(--green) 35%,var(--line));background:var(--green-soft)}
+    .type-browse-row [data-type-apply][data-state="disabled"]{color:var(--ink-3);border-color:var(--line);background:var(--panel-3)}
+    .type-manager{padding-bottom:16px}
+    .type-browse-row:last-of-type{border-bottom:0}
+    .type-browse-row [data-type-apply]{position:relative;width:64px;min-width:64px;overflow:hidden;transition:background-color 180ms ease,border-color 180ms ease,color 180ms ease,box-shadow 180ms ease;transform:none}
+    .type-browse-row [data-type-apply]:disabled{opacity:1;cursor:default}
+    .type-browse-row [data-type-apply]:disabled:hover{transform:none;box-shadow:none}
+    .type-browse-row [data-type-apply][data-pending="true"]::after{content:"";position:absolute;left:0;bottom:0;width:40%;height:2px;background:currentColor;border-radius:2px;animation:type-state-progress 900ms ease-in-out infinite}
+    @keyframes type-state-progress{0%{transform:translateX(-100%)}100%{transform:translateX(350%)}}
+    @media(prefers-reduced-motion:reduce){.type-browse-row [data-type-apply]{transition:none}.type-browse-row [data-type-apply][data-pending="true"]::after{animation:none;width:100%;opacity:.5}}
+    body.reduce-motion .type-browse-row [data-type-apply][data-pending="true"]::after{animation:none;width:100%;opacity:.5}
+    .type-inline-fields{justify-items:start}
+    .type-inline-name,.type-inline-aliases{width:auto;max-width:100%;min-width:0;transition:background-color 140ms ease,border-color 140ms ease}
+    .type-inline-fields input:focus{outline:0;border-color:transparent;border-bottom-color:var(--blue);border-radius:0;background:transparent;box-shadow:none}
+    .type-inline-fields input:not([readonly]):hover{border-color:transparent;border-bottom-color:var(--line-2)}
+
+    /* Compact task home: one source area and one direct management entry. */
+    #screen-home{width:min(100%,880px);margin:clamp(12px,5vh,48px) auto 0}
+    #screen-home .home-grid{grid-template-columns:minmax(0,1fr);gap:12px}
+    #screen-home .hero-card{min-height:300px;padding:32px 24px;gap:20px;border:1px dashed var(--line-2);background:var(--panel);box-shadow:none}
+    #screen-home .home-title{order:1;margin:0;font-size:21px;line-height:1.4;letter-spacing:0;font-weight:750}
+    #screen-home .hero-upload-icon{order:0;width:48px;height:48px;border:0;border-radius:0;background:transparent;color:var(--ink-3)}
+    #screen-home .hero-upload-icon svg{width:38px;height:38px}
+    #screen-home .hero-actions{order:2;gap:10px}
+    #screen-home .hero-card:hover{border-color:var(--blue)}
+    #screen-home .hero-card.is-dragover{border-color:var(--blue);background:var(--blue-soft)}
+    .home-manage{display:flex;align-items:center;gap:14px;width:100%;min-height:76px;padding:20px 24px;text-align:left;color:var(--ink);font-size:15px;font-weight:700;box-shadow:none;transition:border-color .16s ease,background-color .16s ease}
+    .home-manage>svg{flex:none;color:var(--ink-3)}
+    .home-manage-arrow{margin-left:auto;color:var(--ink-3);font-size:20px;font-weight:400}
+    .home-manage:hover{border-color:var(--blue);background:var(--panel-2)}
+    #screen-home .resume{box-shadow:none}
+    @media(max-width:600px){#screen-home{margin-top:12px}#screen-home .hero-card{min-height:260px;padding:24px 16px}.home-manage{padding:18px 20px}#screen-home .resume{flex-wrap:wrap}}
   </style></head><body data-theme="light" data-screen="home">
   <div class="app">
     <header class="topbar">
@@ -394,8 +480,8 @@
     <main class="workspace">
       <section id="screen-home" class="screen">
         <div class="home-grid">
-          <article class="panel hero-card" id="homeDropZone" aria-label="添加包装"><h1 class="sr-only">添加包装</h1><div class="hero-upload-icon" aria-hidden="true"><svg viewBox="0 0 48 48"><path d="M10 30.5v5.5a3 3 0 0 0 3 3h22a3 3 0 0 0 3-3v-5.5"/><path d="M24 30V9"/><path d="m16.5 16.5 7.5-7.5 7.5 7.5"/><path d="M16 39h16"/></svg></div><div class="hero-actions" aria-label="选择包装来源"><button class="primary-btn" type="button" data-home-pick="aep">选择工程</button><button class="ghost-btn" type="button" data-home-pick="folder">选文件夹</button></div><input class="home-file-input" id="homeAepPicker" type="file" accept=".aep,application/octet-stream" /><input class="home-file-input" id="homeFolderPicker" type="file" webkitdirectory directory /></article>
-          <article class="panel side-task"><div><div class="task-icon">素材</div><h2>管理包装</h2><p>查看版本，更换图片和工程包</p></div><button class="quiet" data-action="open-manage">打开图库</button></article>
+          <article class="panel hero-card" id="homeDropZone" aria-label="添加包装"><h1 class="home-title">添加包装</h1><div class="hero-upload-icon" aria-hidden="true"><svg viewBox="0 0 48 48"><path d="M10 30.5v5.5a3 3 0 0 0 3 3h22a3 3 0 0 0 3-3v-5.5"/><path d="M24 30V9"/><path d="m16.5 16.5 7.5-7.5 7.5 7.5"/><path d="M16 39h16"/></svg></div><div class="hero-actions" aria-label="选择包装来源"><button class="primary-btn" type="button" data-home-pick="aep">选择工程</button><button class="ghost-btn" type="button" data-home-pick="folder">选文件夹</button></div><input class="home-file-input" id="homeAepPicker" type="file" accept=".aep,application/octet-stream" /><input class="home-file-input" id="homeFolderPicker" type="file" webkitdirectory directory /></article>
+          <button class="panel home-manage" type="button" data-action="open-manage"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>管理包装</span><span class="home-manage-arrow" aria-hidden="true">→</span></button>
         </div>
         <article class="panel resume" id="homeResume" hidden><div><strong>继续整理</strong><small id="homeResumeTitle"></small></div><span class="resume-state" id="homeResumeState">进度保留</span><button class="primary-btn" type="button" data-action="resume">继续</button></article>
       </section>
@@ -403,7 +489,7 @@
       <section id="screen-aep" class="screen" hidden>
         <div class="aep-top-row"><div class="panel source-strip"><div class="source-main"><span class="source-mark">AE</span><div><strong id="aepSourceName">未选工程</strong><small id="aepSourceMeta">选择后自动读取工程内容</small></div></div><div class="source-actions"><button class="ghost-btn" data-action="choose-aep">更换工程</button><button class="ghost-btn" data-action="open-folder">选文件夹</button></div></div><section class="panel aep-options"><div class="aep-output-path"><input class="input" id="aepOutputPath" value="" readonly aria-label="保存位置" /><button class="ghost-btn" type="button" data-action="choose-output-path">更换位置</button><input id="aepOutputPathPicker" type="file" webkitdirectory directory hidden /></div></section></div>
         <div class="panel aep-layout">
-          <aside class="aep-filter"><h3>筛选</h3><label class="field-label">查找合成</label><input class="input" id="aepSearch" placeholder="输入名称、尺寸或用途" /><div class="filter-list" id="aepFilters"><button data-filter="all">全部合成 <em>17</em></button><button class="active" data-filter="candidate">推荐内容 <em>16</em></button><button data-filter="root">顶层合成 <em>1</em></button><button data-filter="child">子合成 <em>13</em></button><button data-filter="warning">建议检查 <em>3</em></button></div><div class="detail-block"><h4>怎么选择</h4><p style="margin:0;color:var(--ink-2);font-size:11px">点名称看详情，勾选后导出</p></div></aside>
+          <aside class="aep-filter"><input class="input" id="aepSearch" aria-label="查找合成" placeholder="查找合成" /><div class="filter-list" id="aepFilters"><button data-filter="all">全部合成 <em>17</em></button><button class="active" data-filter="candidate">推荐内容 <em>16</em></button><button data-filter="root">顶层合成 <em>1</em></button><button data-filter="child">子合成 <em>13</em></button><button data-filter="warning">建议检查 <em>3</em></button></div></aside>
           <section class="tree"><div class="tree-toolbar"><div><h2>合成列表</h2><p>选择工程后显示合成列表</p></div><div class="tree-actions"><button class="ghost-btn" data-action="expand">展开</button><button class="ghost-btn" data-action="select-visible" aria-pressed="false">全选当前</button></div></div><div class="tree-head"><span></span><span></span><span>合成名称</span><span>尺寸</span><span>时长</span><span>状态</span></div><div class="tree-list" id="treeList"></div></section>
           <aside class="inspector" id="aepInspector"></aside>
         </div>
@@ -419,23 +505,23 @@
       </section>
 
       <section id="screen-manage" class="screen" hidden>
-        <div class="panel manage-layout"><aside class="manage-side"><h3>筛选</h3><label class="field-label">项目</label><select class="select"><option value="">全部项目</option><option value="">项目</option><option value="">项目</option></select><label class="field-label">包装类型</label><div class="filter-list"><button class="active">全部类型 <em>0</em></button><button>包装类型 <em>0</em></button><button>包装类型 <em>0</em></button><button>包装类型 <em>0</em></button><button>包装类型 <em>0</em></button></div><div class="detail-block"><h4>状态</h4><div class="pill-row"><span class="status-chip ok">当前版本 0</span></div></div></aside><section class="manage-main"><div class="manage-toolbar"><h2>素材库 <span style="color:var(--ink-3);font-size:11px;font-weight:500">0 条</span></h2><div class="manage-toolbar-actions"><label class="card-size-control" title="调整卡片大小"><span aria-hidden="true">小</span><input id="manageCardSize" type="range" min="0" max="2" step="1" value="1" aria-label="卡片大小" aria-valuetext="中"><span aria-hidden="true">大</span></label><div class="manage-sort-control"><select id="manageSort" class="select" aria-label="排序依据"><option value="time">入库时间</option><option value="name">素材名称</option><option value="project">所属项目</option><option value="type">包装类型</option></select><button id="manageSortDirection" class="ghost-btn" type="button" aria-label="最近入库优先，点击切换" title="最近入库优先，点击切换">↓</button></div><input class="input search" placeholder="输入项目、包装或合成名称" /><button class="ghost-btn" data-action="refresh">刷新</button></div></div><div class="package-grid" id="manageGrid"></div></section><aside class="manage-inspector" id="manageInspector"></aside></div>
+        <div class="panel manage-layout"><aside class="manage-side"><label class="field-label">项目</label><select class="select"><option value="">全部项目</option><option value="">项目</option><option value="">项目</option></select><label class="field-label">包装类型</label><div class="filter-list"><button class="active">全部类型 <em>0</em></button><button>包装类型 <em>0</em></button><button>包装类型 <em>0</em></button><button>包装类型 <em>0</em></button><button>包装类型 <em>0</em></button></div><div class="detail-block"><h4>状态</h4><div class="pill-row"><span class="status-chip ok">当前版本 0</span></div></div></aside><section class="manage-main"><div class="manage-toolbar"><h2>素材库 <span style="color:var(--ink-3);font-size:11px;font-weight:500">0 条</span></h2><div class="manage-toolbar-actions"><label class="card-size-control" title="调整卡片大小"><span aria-hidden="true">小</span><input id="manageCardSize" type="range" min="0" max="2" step="1" value="1" aria-label="卡片大小" aria-valuetext="中"><span aria-hidden="true">大</span></label><div class="manage-sort-control"><select id="manageSort" class="select" aria-label="排序依据"><option value="time">入库时间</option><option value="name">素材名称</option><option value="project">所属项目</option><option value="type">包装类型</option></select><button id="manageSortDirection" class="ghost-btn" type="button" aria-label="最近入库优先，点击切换" title="最近入库优先，点击切换">↓</button></div><input class="input search" placeholder="输入项目、包装或合成名称" /><button class="ghost-btn" data-action="refresh">刷新</button></div></div><div class="package-grid" id="manageGrid"></div></section><aside class="manage-inspector" id="manageInspector"></aside></div>
       </section>
 
       <section id="screen-updates" class="screen" hidden aria-labelledby="updatesTitle">
-        <div class="update-page-head"><div><div class="eyebrow">Plugin / Update</div><h1 id="updatesTitle">插件更新</h1><p>查看更新内容，下载后确认安装</p></div></div>
+        <div class="update-page-head"><div><h1 id="updatesTitle">插件更新</h1></div></div>
         <div class="update-layout">
           <section class="update-card" aria-labelledby="updateStatusTitle">
-            <div class="update-card-head"><div><h2 id="updateStatusTitle">检查更新</h2><p>版本状态</p></div><span class="update-demo-tag">检查中</span></div>
+            <div class="update-card-head"><div><h2 id="updateStatusTitle">版本</h2></div><span class="update-demo-tag">检查中</span></div>
             <div class="update-version-row"><span>当前版本</span><strong>加载中</strong><span></span></div>
             <div class="update-version-row"><span>最新版本</span><strong id="previewLatestVersion">等待检查</strong><span class="update-demo-tag">等待检查</span></div>
             <p class="update-state" id="previewUpdateStatus" role="status" aria-live="polite">正在查询最新版本</p>
-            <p class="update-channel">更新来源 · GitHub</p>
-            <div class="update-actions"><button class="ghost-btn" type="button" data-action="check-plugin-updates">检查更新</button><button class="primary-btn" type="button" data-action="download-plugin-update" disabled>下载更新</button></div>
+
+            <div class="update-actions"><button class="ghost-btn" type="button" data-action="check-plugin-updates">检查更新</button><button class="primary-btn" type="button" data-action="download-plugin-update" disabled>下载更新</button><a id="updateReleaseLink" class="ghost-btn" target="_blank" rel="noopener noreferrer" hidden>查看版本页</a></div>
             <p class="update-install-hint">下载后，在 Eagle 确认安装</p>
           </section>
           <section class="update-card" aria-labelledby="updateNotesTitle">
-            <div class="update-card-head"><div><h2 id="updateNotesTitle">更新内容</h2><p>更新内容</p></div></div>
+            <div class="update-card-head"><div><h2 id="updateNotesTitle">更新内容</h2></div></div>
             <div class="update-notes"><p>检查后显示更新内容</p><ul><li>查看当前和最新版本</li><li>更新内容与发布时间。</li><li>在 Eagle 确认安装</li></ul></div>
           </section>
         </div>
@@ -447,7 +533,7 @@
   <div class="modal-wrap" id="modal" hidden><div class="modal" id="modalContent" role="dialog" aria-modal="true"></div></div>
   <aside class="drawer" id="drawer" role="dialog" aria-modal="false" hidden></aside>
   <div class="bottom-sheet-backdrop" id="bottomSheetBackdrop" aria-hidden="true"></div>
-  <div class="tweaks" id="tweaks" role="dialog" aria-label="设置"><h3>设置</h3><button class="settings-update" type="button" data-action="open-updates"><span class="settings-update-copy"><strong>插件更新</strong><small>检查版本状态</small></span><span class="settings-update-badge" hidden></span></button><button class="settings-update" type="button" data-action="manage-types"><span class="settings-update-copy"><strong>类型管理</strong><small>修改名称、别名，停用或恢复类型</small></span></button><div class="tweak-row"><span>减少动画</span><button class="toggle" id="motionToggle" type="button" aria-label="减少动画" aria-pressed="false"></button></div></div>
+  <div class="tweaks" id="tweaks" role="dialog" aria-label="设置"><h3>设置</h3><button class="settings-update" type="button" data-action="open-updates"><span class="settings-update-copy"><strong>插件更新</strong></span><span class="settings-update-badge" hidden></span></button><button class="settings-update" type="button" data-action="manage-types"><span class="settings-update-copy"><strong>类型管理</strong></span></button><div class="tweak-row"><span>减少动画</span><button class="toggle" id="motionToggle" type="button" aria-label="减少动画" aria-pressed="false"></button></div></div>
   <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"><strong id="toastTitle"></strong><span id="toastText"></span></div>
 
 <script src='js/window-controls.js'></script><script src='js/project-filter.js'></script><script src='js/workbench.js'></script><script src='js/v5-runtime.js'></script></body></html>

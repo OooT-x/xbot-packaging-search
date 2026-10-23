@@ -4,6 +4,23 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const source = fs.readFileSync(require("node:path").join(__dirname, "../eagle-plugin/js/workbench.js"), "utf8");
 
+test("missing receipts render neither a badge nor an inspector notice, while failures remain visible", () => {
+  let elements = 0, appended = 0;
+  const item = { id: "legacy", packageId: "p", sync: { state: "unknown" } };
+  const c = { managed: [item], managedId: "legacy", prodManagedSyncRetrying: new Set(),
+    document: { querySelectorAll: () => [{ dataset: { managedCard: "legacy" }, appendChild: () => { appended++; } }],
+      querySelector: () => ({}), createElement: () => { elements++; return {}; } },
+  };
+  vm.createContext(c);
+  vm.runInContext(source.slice(source.indexOf("function prodManagedSyncView("), source.indexOf("async function prodRetryManagedSync(")), c);
+  c.prodDecorateManagedSync();
+  assert.equal(elements, 0); assert.equal(appended, 0);
+  assert.equal(c.prodManagedSyncView(item).visible, false);
+  for (const state of ["queued", "failed", "completed", "unavailable"]) {
+    assert.equal(c.prodManagedSyncView({ sync: { state } }).visible, true);
+  }
+});
+
 test("library retry blocks double clicks, rereads the current pair, and never imports an Eagle file", async () => {
   const record = { packageId: "p", preview: { id: "png" } }, card = { packageId: "p", sync: { state: "failed" } };
   let release, retryCalls = 0, reads = 0, refreshed = 0, replaced = 0;

@@ -4,6 +4,9 @@ const https = require("node:https");
 const path = require("node:path");
 
 const RELEASES_API_URL = "https://api.github.com/repos/OooT-x/xbot-packaging-search/releases?per_page=100";
+const RELEASE_BASE_URL = "https://github.com/OooT-x/xbot-packaging-search/releases";
+const STATIC_UPDATE_URL = RELEASE_BASE_URL + "/latest/download/update.json";
+const UPDATE_COOLDOWN_KEY = "xbot.pluginUpdate.webCooldown.v1";
 const MAX_RELEASE_RESPONSE_BYTES = 8 * 1024 * 1024;
 const MAX_PLUGIN_PACKAGE_BYTES = 180 * 1024 * 1024;
 const ALLOWED_DOWNLOAD_HOSTS = new Set([
@@ -42,6 +45,34 @@ function validateHttpsUrl(value) {
   return url;
 }
 
+// Only explicit rate-limit evidence should create a persisted cooldown.
+function updateHttpError(status, headers = {}, now = Date.now()) {
+  const limited = status === 429 || (status === 403 &&
+    (String(headers["x-ratelimit-remaining"]) === "0" || headers["retry-after"] != null));
+  const error = new Error(limited ? "GitHub 暂时限制了更新查询频率。"
+    : status === 403 ? "GitHub 拒绝了更新查询（HTTP 403），请检查网络或访问权限。"
+    : status === 404 ? "GitHub 尚未发布可用的插件更新。"
+    : `GitHub 更新请求失败（HTTP ${status}）。`);
+  error.statusCode = status;
+  if (limited) {
+    const reset = Number(headers["x-ratelimit-reset"]) * 1000;
+    const retry = headers["retry-after"];
+    const retryTime = retry == null ? NaN : /^\d+$/.test(String(retry))
+      ? now + Number(retry) * 1000 : Date.parse(retry);
+    error.retryAt = Math.max(now + 60000, Number.isFinite(reset) ? reset : 0,
+      Number.isFinite(retryTime) ? retryTime : 0);
+    error.rateLimited = true;
+  }
+  return error;
+}
+
+function readUpdateCooldown(storage, now = Date.now()) {
+  try {
+    const record = JSON.parse(storage.getItem(UPDATE_COOLDOWN_KEY) || "null");
+    return Number.isFinite(record?.retryAt) && record.retryAt > now ? record.retryAt : 0;
+  } catch (_) { return 0; }
+}
+
 function requestBuffer(value, options = {}) {
   const url = validateHttpsUrl(value);
   const maxBytes = options.maxBytes || MAX_RELEASE_RESPONSE_BYTES;
@@ -77,18 +108,13 @@ function requestBuffer(value, options = {}) {
       }
 
       if (status !== 200) {
-        const message = status === 403 || status === 429
-          ? "GitHub 暂时限制了更新查询频率，请稍后重试。"
-          : status === 404
-            ? "GitHub 尚未发布可用的插件更新。"
-            : `GitHub 更新请求失败（HTTP ${status}）。`;
+        const error = updateHttpError(status, response.headers);
         response.resume();
-        const error = new Error(message);
-        error.statusCode = status;
         reject(error);
         return;
       }
 
+      options.onResponse?.({ url: url.toString(), status });
       const contentLength = Number(response.headers["content-length"] || 0);
       if (contentLength > maxBytes) {
         response.destroy();
@@ -217,9 +243,62 @@ function readUpdateCache(storage, currentVersion, now = Date.now()) {
   } catch (_) { return null; }
 }
 
+function inspectStaticManifest(manifest, currentVersion) {
+  if (!manifest || manifest.schemaVersion !== 1 || manifest.pluginId !== "LB5UL2P0Q9FFF"
+    || manifest.channel !== "stable" || !parseStableVersion(manifest.version)) {
+    throw new Error("静态更新清单的格式、插件身份或稳定版本无效。");
+  }
+  const version = manifest.version;
+  const releaseUrl = RELEASE_BASE_URL + "/tag/eagle-plugin-v" + version;
+  const assetName = `xbot-eagle-plugin-v${version}.eagleplugin`;
+  if (manifest.releaseUrl !== releaseUrl || manifest.asset?.name !== assetName
+    || manifest.asset?.url !== RELEASE_BASE_URL + `/download/eagle-plugin-v${version}/` + assetName
+    || !/^[a-f\d]{64}$/i.test(manifest.asset?.sha256 || "")) {
+    throw new Error("静态更新清单的版本、下载地址或SHA-256不一致。");
+  }
+  const info = inspectLatestRelease({ tag_name: "eagle-plugin-v" + version,
+    name: manifest.title, body: manifest.notes, published_at: manifest.publishedAt,
+    html_url: releaseUrl, assets: [{ name: assetName, size: manifest.asset.size,
+      browser_download_url: manifest.asset.url, digest: "sha256:" + manifest.asset.sha256 }] }, currentVersion);
+  return { ...info, source: "manifest" };
+}
+
+async function fetchReleasePage(currentVersion, options = {}) {
+  let finalUrl = RELEASE_BASE_URL + "/latest";
+  await (options.webRequest || requestBuffer)(finalUrl, {
+    accept: "text/html", maxBytes: MAX_RELEASE_RESPONSE_BYTES,
+    onResponse: response => { finalUrl = response.url; },
+  });
+  const prefix = RELEASE_BASE_URL + "/tag/eagle-plugin-v";
+  const version = finalUrl.startsWith(prefix) ? finalUrl.slice(prefix.length) : "";
+  if (!parseStableVersion(version)) throw new Error("最新Release页面没有指向有效的稳定插件版本，请检查仓库发布设置。");
+  return { releaseFound: true, updateAvailable: compareVersions(version, currentVersion) > 0,
+    currentVersion, version, title: `Eagle 插件 v${version}`, releaseUrl: finalUrl,
+    publishedAt: "", source: "release-page", asset: null,
+    notes: "已从最新Release页面核对公开版本。静态清单暂不可用，未取得完整发布说明及安装包校验信息。",
+    warning: "已改用Release页面核对版本；静态清单暂不可用。" };
+}
+
 async function checkForUpdate(currentVersion, options = {}) {
-  const release = await (options.fetchRelease || fetchLatestRelease)(options);
-  return inspectLatestRelease(release, currentVersion);
+  if (!parseStableVersion(currentVersion)) throw new Error("本地插件版本号无效。");
+  // Retain the API parser for compatibility and explicit diagnostics, not normal startup.
+  if (options.fetchRelease || options.request) {
+    const release = await (options.fetchRelease || fetchLatestRelease)(options);
+    return { ...inspectLatestRelease(release, currentVersion), source: "api" };
+  }
+  try {
+    const buffer = await (options.webRequest || requestBuffer)(STATIC_UPDATE_URL, {
+      accept: "application/json", maxBytes: 128 * 1024,
+    });
+    return inspectStaticManifest(JSON.parse(buffer.toString("utf8")), currentVersion);
+  } catch (error) {
+    if (error.rateLimited) throw error;
+    try { return await fetchReleasePage(currentVersion, options); }
+    catch (pageError) {
+      if (pageError.rateLimited) throw pageError;
+      throw new Error(`静态清单和Release页面均无法核对更新：${pageError.message}`);
+    }
+  }
 }
 
 async function downloadPluginUpdate(update, downloadsDirectory, options = {}) {
@@ -269,6 +348,12 @@ async function downloadPluginUpdate(update, downloadsDirectory, options = {}) {
 }
 
 module.exports = {
+  STATIC_UPDATE_URL,
+  UPDATE_COOLDOWN_KEY,
+  inspectStaticManifest,
+  fetchReleasePage,
+  updateHttpError,
+  readUpdateCooldown,
   MAX_PLUGIN_PACKAGE_BYTES,
   checkForUpdate,
   compareVersions,

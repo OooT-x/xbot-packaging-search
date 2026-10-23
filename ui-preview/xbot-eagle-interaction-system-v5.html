@@ -211,11 +211,15 @@
     .update-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:18px}
     .update-card-head p{margin:5px 0 0;color:var(--ink-2);font-size:12px}
     .update-demo-tag{display:inline-flex;align-items:center;min-height:21px;padding:0 7px;border:1px solid color-mix(in srgb,var(--amber) 36%,var(--line));border-radius:999px;background:var(--amber-soft);color:var(--amber);font-size:10px;font-weight:750;white-space:nowrap}
+    .update-actions button:disabled{border-color:var(--line-2);background:var(--panel-3);color:var(--ink-3);box-shadow:none;cursor:not-allowed;transform:none;opacity:.7}
     .update-version-row{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:10px;min-height:44px;border-bottom:1px solid var(--line)}
     .update-version-row span{color:var(--ink-2);font-size:12px}
     .update-version-row strong{color:var(--ink);font:750 13px var(--mono)}
     .update-state{min-height:38px;margin:14px 0 4px;color:var(--amber);font-size:12px;line-height:1.6}
     .update-channel{margin:0;color:var(--ink-3);font-size:10px;line-height:1.6}
+    .update-actions :is(button,a.ghost-btn){display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;min-height:34px;font:750 12px/20px var(--ui);white-space:nowrap}
+    .update-actions a.ghost-btn{text-decoration:none}
+    .update-actions a.ghost-btn:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
     .update-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
     .update-install-hint{margin:16px 0 0;padding:11px;border:1px dashed var(--line-2);border-radius:var(--r-sm);color:var(--ink-2);font-size:11px;line-height:1.65}
     .update-notes{margin:0;color:var(--ink-2);font-size:12px;line-height:1.8}
@@ -361,6 +365,15 @@
     .project-filter-option:disabled{opacity:.45;cursor:default}
     .manage-toolbar{flex-wrap:wrap}.manage-toolbar-actions{flex-wrap:wrap;max-width:100%}.manage-toolbar h2{flex-shrink:0}#manageSort{width:112px;flex-shrink:0;font-size:11px}
 
+    /* Shared dropdown treatment, including dynamic modal and drawer selects. */
+    .project-filter-trigger{min-width:0;background:var(--panel-2);line-height:20px;transition:border-color .15s,background .15s}
+    .project-filter-trigger:disabled{opacity:.45;cursor:default}
+    .project-filter-trigger[aria-expanded="true"]::after{transform:translateY(1px) rotate(225deg)}
+    .project-filter-menu{z-index:100;box-sizing:border-box;isolation:isolate}
+    .project-filter-option,.package-type-option{min-height:34px;font-size:12px;line-height:20px}
+    .project-filter-option:focus-visible,.package-type-option:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
+    .project-filter-list,.package-type-menu{scrollbar-color:var(--line-2) transparent}
+    .form-group>.project-filter-trigger,.pair-edit-fields label>.project-filter-trigger{margin-top:6px}
     .manage-sort-control{display:flex;align-items:center;gap:4px;flex-shrink:0}.manage-sort-control .project-filter-trigger{width:108px;font-size:11px}.manage-sort-control .project-filter-trigger:focus-visible,#manageSortDirection:focus-visible{outline:2px solid var(--blue);outline-offset:2px}#manageSortDirection{width:32px;min-width:32px;padding:0;font-size:16px;line-height:32px}.project-filter-search[hidden]{display:none}
     #screen-manage .manage-main{scrollbar-width:auto;scrollbar-color:auto;scrollbar-gutter:stable}
     #screen-manage .manage-main::-webkit-scrollbar{width:12px}
@@ -438,7 +451,7 @@
             <div class="update-version-row"><span>最新版本</span><strong id="previewLatestVersion">v1.8.0</strong><span class="update-demo-tag">示例</span></div>
             <p class="update-state" id="previewUpdateStatus" role="status" aria-live="polite">已有新版本。版本号和说明为预览示例，生产插件会读取 更新内容。</p>
             <p class="update-channel">更新来源 · GitHub · eagle-plugin-v1.8.0</p>
-            <div class="update-actions"><button class="ghost-btn" type="button" data-action="check-plugin-updates">检查更新</button><button class="primary-btn" type="button" data-action="download-plugin-update">下载更新</button></div>
+            <div class="update-actions"><button class="ghost-btn" type="button" data-action="check-plugin-updates">检查更新</button><button class="primary-btn" type="button" data-action="download-plugin-update">下载更新</button><a id="updateReleaseLink" class="ghost-btn" target="_blank" rel="noopener noreferrer" hidden>查看版本页</a></div>
             <p class="update-install-hint">正式插件会校验 Release 安装包后交给 Eagle 安装。此预览仅展示更新入口与操作状态，不会发起真实下载或更改本地插件。</p>
           </section>
           <section class="update-card" aria-labelledby="updateNotesTitle">

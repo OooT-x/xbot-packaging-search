@@ -175,3 +175,117 @@ test("transport reports progress and rejects interrupted or unsafe redirected re
   const rateLimited = transport(429, {}, () => {});
   await assert.rejects(rateLimited("https://github.com/file"), /频率/);
 });
+
+
+test("rate-limit evidence distinguishes forbidden responses and persists only live cooldowns", () => {
+  const { updateHttpError, readUpdateCooldown } = require("../eagle-plugin/lib/updater.js");
+  const now = 1700000000000;
+  const forbidden = updateHttpError(403, {}, now);
+  assert.equal(forbidden.rateLimited, undefined);
+  assert.match(forbidden.message, /权限/);
+  const primary = updateHttpError(403, { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String((now + 3600000) / 1000) }, now);
+  assert.equal(primary.retryAt, now + 3600000);
+  assert.equal(primary.rateLimited, true);
+  assert.equal(updateHttpError(429, { "retry-after": "120" }, now).retryAt, now + 120000);
+  assert.equal(updateHttpError(403, { "retry-after": new Date(now + 180000).toUTCString() }, now).retryAt, now + 180000);
+  assert.equal(updateHttpError(429, { "x-ratelimit-reset": "invalid" }, now).retryAt, now + 60000);
+  assert.equal(updateHttpError(403, { "x-ratelimit-remaining": "0", "x-ratelimit-reset": "1" }, now).retryAt, now + 60000);
+  const storage = { getItem: () => JSON.stringify({ retryAt: primary.retryAt }) };
+  assert.equal(readUpdateCooldown(storage, now), primary.retryAt);
+  assert.equal(readUpdateCooldown(storage, primary.retryAt), 0);
+  assert.equal(readUpdateCooldown({ getItem: () => "{bad" }, now), 0);
+  assert.equal(readUpdateCooldown({ getItem() { throw new Error("blocked"); } }, now), 0);
+});
+
+
+function staticManifest(version = "1.9.7") {
+  const base = "https://github.com/OooT-x/xbot-packaging-search/releases";
+  const name = `xbot-eagle-plugin-v${version}.eagleplugin`;
+  return { schemaVersion: 1, pluginId: "LB5UL2P0Q9FFF", channel: "stable", version,
+    title: "静态发布", notes: "发布说明", publishedAt: "2026-10-23T00:00:00Z",
+    releaseUrl: base + "/tag/eagle-plugin-v" + version,
+    asset: { name, size: 6, sha256: "a".repeat(64), url: base + `/download/eagle-plugin-v${version}/` + name } };
+}
+
+test("static update manifest is primary and requires matching identity, stable version and exact verified asset", async () => {
+  const { inspectStaticManifest, STATIC_UPDATE_URL } = require("../eagle-plugin/lib/updater.js");
+  let requests = [];
+  const info = await checkForUpdate("1.9.6", { webRequest: async url => {
+    requests.push(url); return Buffer.from(JSON.stringify(staticManifest()));
+  } });
+  assert.deepEqual(requests, [STATIC_UPDATE_URL]);
+  assert.equal(info.source, "manifest"); assert.equal(info.updateAvailable, true);
+  assert.equal(info.asset.digest, "a".repeat(64));
+  assert.equal(inspectStaticManifest(staticManifest("1.8.9"), "1.9.6").updateAvailable, false);
+  for (const patch of [{ schemaVersion: 2 }, { pluginId: "other" }, { channel: "beta" },
+    { releaseUrl: "https://github.com/other/repo/releases/tag/eagle-plugin-v1.9.7" },
+    { asset: { ...staticManifest().asset, sha256: "invalid" } },
+    { asset: { ...staticManifest().asset, size: 0 } },
+    { asset: { ...staticManifest().asset, url: "https://github.com/other/repo/file" } },
+    { asset: { ...staticManifest().asset, name: "different.eagleplugin" } }]) {
+    assert.throws(() => inspectStaticManifest({ ...staticManifest(), ...patch }, "1.9.6"));
+  }
+});
+
+test("missing or malformed manifest falls back only to the repository stable Release page, never API", async () => {
+  for (const missing of [true, false]) {
+    const calls = [];
+    const info = await checkForUpdate("1.9.6", { webRequest: async (url, options) => {
+      calls.push(url);
+      if (url.endsWith("update.json")) {
+        if (missing) throw Object.assign(new Error("not found"), { statusCode: 404 });
+        return Buffer.from("{broken");
+      }
+      options.onResponse({ url: "https://github.com/OooT-x/xbot-packaging-search/releases/tag/eagle-plugin-v1.9.7" });
+      return Buffer.from("<html>Release</html>");
+    } });
+    assert.equal(calls.length, 2); assert.ok(calls.every(url => !url.includes("api.github.com")));
+    assert.equal(info.version, "1.9.7"); assert.equal(info.source, "release-page");
+    assert.equal(info.asset, null); assert.equal(info.updateAvailable, true);
+    assert.match(info.warning, /清单/);
+    await assert.rejects(downloadPluginUpdate(info, "unused"), /没有可下载/);
+  }
+  await assert.rejects(checkForUpdate("1.9.6", { webRequest: async (url, options) => {
+    if (url.endsWith("update.json")) throw new Error("missing");
+    options.onResponse({ url: "https://github.com/other/repo/releases/tag/eagle-plugin-v9.0.0" });
+    return Buffer.from("html");
+  } }), /稳定插件版本/);
+});
+
+test("web-source rate limits stop the fallback chain and legacy API cooldown does not block web checks", async () => {
+  const { UPDATE_COOLDOWN_KEY, readUpdateCooldown } = require("../eagle-plugin/lib/updater.js");
+  let requests = 0;
+  const error = Object.assign(new Error("limited"), { rateLimited: true, retryAt: Date.now() + 60000 });
+  await assert.rejects(checkForUpdate("1.9.6", { webRequest: async () => { requests++; throw error; } }), e => e === error);
+  assert.equal(requests, 1);
+  assert.notEqual(UPDATE_COOLDOWN_KEY, "xbot.pluginUpdate.cooldown.v1");
+  assert.equal(readUpdateCooldown({ getItem: key => key === "xbot.pluginUpdate.cooldown.v1" ? JSON.stringify({ retryAt: Date.now() + 3600000 }) : null }), 0);
+});
+
+
+test("manifest generator rejects review snapshots and mismatched bundle records", () => {
+  const { spawnSync } = require("node:child_process");
+  const code = `import hashlib,json,runpy,tempfile,zipfile
+from pathlib import Path
+create=runpy.run_path('scripts/create-update-manifest.py')['create_manifest']
+with tempfile.TemporaryDirectory() as folder:
+ p=Path(folder); name='xbot-eagle-plugin-v1.9.7.eagleplugin'
+ manifest=json.dumps({'id':'LB5UL2P0Q9FFF','version':'1.9.7'}).encode()
+ with zipfile.ZipFile(p/name,'w') as z:z.writestr('manifest.json',manifest)
+ data=(p/name).read_bytes()
+ record={'version':'1.9.7','worktree_review_only':False,'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest(),'files':{'manifest.json':hashlib.sha256(manifest).hexdigest()}}
+ (p/'record.json').write_text(json.dumps(record));(p/'notes.md').write_text('verified notes')
+ info=create(p/'record.json',p/'notes.md','2026-10-23T00:00:00Z',p/'update.json')
+ assert info['asset']['sha256']==record['sha256']
+ assert info['asset']['size']==len(data)
+ for patch in [{'worktree_review_only':True},{'sha256':'0'*64}]:
+  (p/'record.json').write_text(json.dumps(dict(record,**patch)))
+  try:create(p/'record.json',p/'notes.md','2026-10-23T00:00:00Z',p/'invalid.json')
+  except ValueError:pass
+  else:raise AssertionError('unsafe manifest accepted')
+ assert not (p/'invalid.json').exists()
+ print('verified')`;
+  const result = spawnSync("python", ["-c", code], { cwd: path.join(__dirname, ".."), encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /verified/);
+});

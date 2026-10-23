@@ -7,7 +7,42 @@ const path = require("path");
 const {
   buildIngestEvent,
   publishIngestEvent,
+  retryPendingIngestEvents,
 } = require("../eagle-plugin/lib/ingest-bridge");
+
+test("all local enqueue paths isolate torn tails and retain recovery files on write failure", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "xbot-local-torn-"));
+  const filePath = path.join(root, "events.jsonl"), outboxDir = path.join(root, "outbox");
+  const result = { batchId: "batch-torn", projectName: "项目", importMode: "new",
+    filed: [{ packageId: "p", packageName: "条", packageType: "信息条", previewItemId: "png", sourceItemId: "zip" }] };
+  const event = buildIngestEvent(result);
+  const read = () => require("../bot/lib/ingest-sync").readIngestEvents(filePath);
+  const recovery = path.join(outboxDir, event.event_id + ".json");
+  fs.mkdirSync(outboxDir);
+  try {
+    fs.writeFileSync(filePath, '{"torn":');
+    assert.equal(publishIngestEvent(result, { filePath, outboxDir }).state, "queued");
+    assert.equal(read()[1].event_id, event.event_id);
+    fs.writeFileSync(filePath, '{"torn":');
+    fs.writeFileSync(recovery, JSON.stringify({ event, filePath }));
+    assert.equal(retryPendingIngestEvents({ outboxDir })[0].state, "queued");
+    assert.equal(read()[1].event_id, event.event_id);
+    assert.equal(fs.existsSync(recovery), false);
+    fs.writeFileSync(filePath, '{"torn":');
+    fs.writeFileSync(recovery, JSON.stringify({ event, filePath }));
+    await require("../eagle-plugin/lib/team-sync").retryPackage({ packageId: "p", projectName: "项目", packageName: "条",
+      packageType: "信息条", version: "v01", preview: { id: "png" }, source: { id: "zip" } },
+      { config: { mode: "local" }, outboxDir, filePath });
+    assert.equal(read()[1].event_id, event.event_id);
+    const blocked = path.join(root, "blocked"); fs.mkdirSync(blocked);
+    fs.writeFileSync(recovery, JSON.stringify({ event, filePath: blocked }));
+    assert.equal(retryPendingIngestEvents({ outboxDir })[0].state, "pending");
+    assert.equal(fs.existsSync(recovery), true);
+    const published = publishIngestEvent(result, { filePath: blocked, outboxDir });
+    assert.equal(published.state, "pending");
+    assert.equal(fs.existsSync(published.recoveryPath), true);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
 
 test("publishes a deterministic filed event with the bot sync fields", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "xbot-ingest-"));

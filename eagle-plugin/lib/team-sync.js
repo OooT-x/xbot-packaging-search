@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const bridge = require("./ingest-bridge");
 const team = require("./team-client");
+const { appendDurably } = require("./durable-jsonl");
 
 function pendingDir(options = {}) { return path.join(options.outboxDir || bridge.defaultOutboxDir(), "team"); }
 async function deliver(record, file, config) {
@@ -101,7 +102,7 @@ async function retryPackage(item, options = {}) {
     if (config.mode === "team") await deliver(record, record.recoveryPath, config);
     else {
       fs.mkdirSync(path.dirname(record.filePath), { recursive: true });
-      fs.appendFileSync(record.filePath, JSON.stringify(record.event) + "\n");
+      appendDurably(record.filePath, record.event);
       fs.unlinkSync(record.recoveryPath);
     }
   }

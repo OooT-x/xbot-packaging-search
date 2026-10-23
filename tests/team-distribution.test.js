@@ -14,6 +14,33 @@ const sync = require("../eagle-plugin/lib/team-sync");
 const result = () => ({ batchId: "team-batch", projectName: "团队项目", importMode: "new", filed: [{ packageId: "p", packageName: "背景", packageType: "背景", previewItemId: "png", sourceItemId: "zip", version: "v01" }] });
 const currentPackage = () => ({ packageId: "p", projectName: "团队项目", packageName: "背景", packageType: "背景", version: "v01", preview: { id: "png" }, source: { id: "zip" } });
 
+test("legacy pairs without events are completed only when current Eagle files and index agree", async t => {
+  const f = await fixture(t);
+  const eagle = require("../bot/lib/eagle-sync");
+  fs.writeFileSync(path.join(f.root, "metadata.json"), JSON.stringify({ name: "历史库" }));
+  const annotation = "package_id：p\n项目：团队项目\n包装名称：背景\n包装类型：背景\n版本：v01\n状态：启用";
+  for (const [id, ext] of [["png", "png"], ["zip", "zip"]]) {
+    const dir = path.join(f.root, "images", `${id}.info`); fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `背景.${ext}`), "test-file");
+    fs.writeFileSync(path.join(dir, "metadata.json"), JSON.stringify({ id, ext, name: "背景", annotation }));
+  }
+  const library = eagle.readLibraryFromDisk(f.root), catalog = eagle.buildCatalog(library.items, f.root);
+  f.database.replaceCatalog(catalog.projects, catalog.packages);
+  const status = async item => (await sync.listStatus([item || currentPackage()], { config: f.config }))[0];
+  assert.equal((await status()).state, "completed");
+  assert.equal((await status()).evidence, "catalog");
+  assert.equal(fs.existsSync(f.watcher.eventFile), false, "a read must not manufacture an ingestion event");
+  for (const changed of [{ ...currentPackage(), packageType: "信息条" }, { ...currentPackage(), preview: { id: "other" } }, { ...currentPackage(), meta: { revision_id: "unseen" } }]) assert.equal((await status(changed)).state, "unknown");
+  const pngMeta = path.join(f.root, "images/png.info/metadata.json"), meta = JSON.parse(fs.readFileSync(pngMeta));
+  fs.writeFileSync(pngMeta, JSON.stringify({ ...meta, annotation: annotation + "\nrevision_id：new" }));
+  assert.equal((await status()).state, "unknown", "a changed Eagle revision must invalidate an old client snapshot");
+  fs.writeFileSync(pngMeta, JSON.stringify(meta));
+  fs.unlinkSync(path.join(f.root, "images/zip.info/背景.zip"));
+  assert.equal((await status()).state, "unknown", "a stale index cannot certify a missing file");
+  f.database.replaceCatalog([], []);
+  assert.equal((await status()).state, "unknown");
+});
+
 test("another terminal can see a failed current pair and retry its durable event without writing Eagle", async t => {
   const f = await fixture(t), options = { config: f.config, outboxDir: path.join(f.root, "terminal-a") };
   f.setIndexed(false);
@@ -162,6 +189,21 @@ test("configuration rejects credentials in URLs and mapped drives; unconfigured 
   assert.throws(() => team.assertUnchanged(original, { ...original, preview: { id: "png", annotation: "revision: new" } }), /被其他人/u);
 });
 
+test("local writes reject mapped/UNC/unknown drives and permit a verified local disk", async () => {
+  let calls = 0;
+  const action = async () => { calls++; return {}; };
+  const local = { mode: "local" };
+  const drive = type => ({ platform: "win32", inspectDrive: async () => type });
+  await assert.rejects(team.withTeamWrite({ library: { path: "Z:\\包装.library" } }, action, local, drive(4)), /映射共享盘/u);
+  await assert.rejects(team.withTeamWrite({ library: { path: "\\\\server\\share\\包装.library" } }, action, local, drive(3)), /共享库/u);
+  await assert.rejects(team.withTeamWrite({ library: { path: "Z:\\包装.library" } }, action, local, drive(0)), /无法确认/u);
+  await assert.rejects(team.withTeamWrite({ library: { path: "Z:\\包装.library" } }, action, local,
+    { platform: "win32", inspectDrive: async () => { throw new Error("WMI unavailable"); } }), /无法核验/u);
+  assert.equal(calls, 0);
+  await team.withTeamWrite({ library: { path: "C:\\包装.library" } }, action, local, drive(3));
+  assert.equal(calls, 1);
+});
+
 test("a successful team write releases the lock; partial failure retains it; clients cannot edit team types", async t => {
   const f = await fixture(t);
   const previous = { config: process.env.XBOT_TEAM_CONFIG, types: process.env.XBOT_PACKAGE_TYPES_FILE, readonly: process.env.XBOT_TEAM_READONLY_TYPES };
@@ -174,4 +216,50 @@ test("a successful team write releases the lock; partial failure retains it; cli
   assert.throws(() => types.registerPackageType("禁止客户端新增"), /维护者/u);
   await assert.rejects(team.withTeamWrite(eagle, async () => { throw new Error("second item failed"); }, f.config), /核对结果后解锁/u);
   assert.equal(fs.existsSync(f.lockFile), true);
+});
+
+
+test("team members centrally create and edit types; stale edits, conflicts and foreign libraries fail", async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "xbot-type-edit-"));
+  const previous = process.env.XBOT_PACKAGE_TYPES_FILE;
+  process.env.XBOT_PACKAGE_TYPES_FILE = path.join(root, "central-types.json");
+  t.after(() => { if (previous === undefined) delete process.env.XBOT_PACKAGE_TYPES_FILE; else process.env.XBOT_PACKAGE_TYPES_FILE = previous; fs.rmSync(root, { recursive: true, force: true }); });
+  const f = await fixture(t);
+  const post = body => team.request(f.config, "POST", "/v1/types", { libraryPath: f.config.libraryPath, ...body });
+  const list = async () => (await team.request(f.config, "GET", "/v1/types")).types;
+  const created = await post({ action: "create", name: "章节标题", aliases: ["章节名"] });
+  assert.equal(created.name, "章节标题");
+  const before = (await list()).find(type => type.name === "章节标题");
+  const edited = await post({ action: "update", currentName: before.name, expected: before, name: "章节页", aliases: ["章节名"], enabled: false });
+  assert.equal(edited.types.find(type => type.name === "章节页").enabled, false);
+  assert.ok(edited.types.find(type => type.name === "章节页").aliases.includes("章节标题"));
+  await assert.rejects(post({ action: "update", currentName: before.name, expected: before, name: "覆盖" }), /其他人修改/u);
+  const disabled = (await list()).find(type => type.name === "章节页");
+  await post({ action: "update", currentName: disabled.name, expected: disabled, name: disabled.name, enabled: true });
+  const builtin = (await list()).find(type => type.name === "背景");
+  await post({ action: "update", currentName: builtin.name, expected: builtin, name: builtin.name, aliases: [...builtin.aliases, "底图"] });
+  const updated = (await list()).find(type => type.name === "背景");
+  assert.ok(updated.aliases.includes("底图"));
+  await assert.rejects(post({ action: "update", currentName: updated.name, expected: builtin, name: updated.name, enabled: false }), /其他人修改/u);
+  const renamed = await post({ action: "update", currentName: updated.name, expected: updated, name: "背景改名", aliases: updated.aliases });
+  assert.ok(renamed.types.find(type => type.name === "背景改名").aliases.includes("背景"));
+  assert.equal(renamed.types.some(type => type.name === "背景"), false);
+  assert.equal(require("../eagle-plugin/lib/package-types").isBackgroundType("背景改名"), true);
+  await assert.rejects(post({ action: "create", name: "新类型", aliases: ["底图"] }), /冲突/u);
+  await assert.rejects(post({ action: "create", name: "../路径" }), /名称无效/u);
+  await assert.rejects(post({ action: "create", name: "外库", libraryPath: "other.library" }), /素材库/u);
+  await assert.rejects(team.request({ ...f.config, token: "bad" }, "POST", "/v1/types", { action: "create", name: "无权限" }), /密钥/u);
+  assert.equal(fs.existsSync(f.lockFile), false, "type edits do not alter Eagle write locks");
+  const oldConfig = process.env.XBOT_TEAM_CONFIG, oldReadonly = process.env.XBOT_TEAM_READONLY_TYPES;
+  process.env.XBOT_TEAM_CONFIG = path.join(root, "client", "team.json");
+  try {
+    assert.equal(await team.mutateType({ action: "create", name: "客户端类型", aliases: ["客户端别名"] }, f.config), "客户端类型");
+    assert.ok(JSON.parse(fs.readFileSync(path.join(root, "client", "team-types.json"))).some(type => type.name === "客户端类型"));
+    assert.ok((await list()).some(type => type.name === "客户端类型"));
+    assert.throws(() => require("../eagle-plugin/lib/package-types").registerPackageType("绕过中央"), /维护者/u);
+  } finally {
+    if (oldConfig === undefined) delete process.env.XBOT_TEAM_CONFIG; else process.env.XBOT_TEAM_CONFIG = oldConfig;
+    if (oldReadonly === undefined) delete process.env.XBOT_TEAM_READONLY_TYPES; else process.env.XBOT_TEAM_READONLY_TYPES = oldReadonly;
+  }
+
 });

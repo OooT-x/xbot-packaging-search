@@ -7,9 +7,10 @@ const { pathToFileURL } = require("node:url");
 
 test("production import reaches Eagle instead of the earlier preview capture listener", () => {
   const source = fs.readFileSync(path.join(__dirname, "../eagle-plugin/js/v5-runtime.js"), "utf8");
-  const marker = "    document.addEventListener('click',event=>{\n      if(event.target.closest('[data-action]')?.dataset.action!=='import')return;";
-  const start = source.indexOf(marker);
-  const end = source.indexOf("    },true);", start) + "    },true);".length;
+  const marker = /document\.addEventListener\('click',event=>\{\s*if\(event\.target\.closest\('\[data-action\]'\)\?\.dataset\.action!=='import'\)return;/u;
+  const start = source.search(marker);
+  const endMarker = "    },true);";
+  const end = source.indexOf(endMarker, start) + endMarker.length;
   assert.ok(start >= 0 && end > start);
   let handler;
   let previewWrites = 0;

@@ -1,3 +1,4 @@
+const { isBackgroundType } = require("../lib/package-types");
 /* global eagle */
 const fs = require("fs");
 const path = require("path");
@@ -963,12 +964,12 @@ function refreshScanDerivedState() {
     const sourceOptional = Boolean(
       pkg.sourceOptional ||
       pkg.source_optional ||
-      (!sourcePath && String(pkg.packageType || "").trim() === "背景")
+      (!sourcePath && isBackgroundType(pkg.packageType))
     );
     pkg.sourceOptional = sourceOptional;
     if (!previewPath) pairErrors.push("缺少配对 PNG");
     if (!sourcePath && !sourceOptional) pairErrors.push("缺少配对 ZIP");
-    if (sourceOptional && String(pkg.packageType || "").trim() !== "背景") {
+    if (sourceOptional && !isBackgroundType(pkg.packageType)) {
       pairErrors.push("仅图片素材只能登记为背景");
     }
     if (!KNOWN_PACKAGE_TYPES.includes(String(pkg.packageType || "").trim())) {
@@ -1050,7 +1051,7 @@ function packageCard(pkg) {
   const sourceOptional = Boolean(
     pkg.sourceOptional ||
     pkg.source_optional ||
-    (!sourcePath && String(pkg.packageType || "").trim() === "背景")
+    (!sourcePath && isBackgroundType(pkg.packageType))
   );
   const editing = String(state.editingPackageId || "") === String(pkg.packageId || "");
   const editingKind = state.editingPackageKind || "preview";

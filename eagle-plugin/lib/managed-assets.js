@@ -1,3 +1,4 @@
+const { isBackgroundType } = require("./package-types");
 const path = require("path");
 const {
   FORMAL_PREVIEW_ROOT_NAME,
@@ -248,7 +249,7 @@ module.exports = {
 async function changeFormalPackageType(adapter, record, value) {
   const packageType = normalizePackageType(value);
   if (!isPackageTypeActive(packageType) || !record?.packageId) throw new Error("包装或类型无效（类型未注册或已停用）");
-  if (!record.source && packageType !== "背景") throw new Error("仅图片包装只能归入背景；请先补齐 ZIP");
+  if (!record.source && !isBackgroundType(packageType)) throw new Error("仅图片包装只能归入背景；请先补齐 ZIP");
   const metadata = { ...metadataFromEntry(record), ...record, packageType, sourceOptional: !record.source };
   const library = await getFormalLibraryItems(adapter);
   validateFormalItemNames([metadata], {}, library.items, library.folders);

@@ -1,35 +1,42 @@
 /* Keep the existing select as the filtering source of truth. */
 (() => {
- function enhanceSelect(select, searchable = true) {
-  if (!select) return;
+ let sequence = 0;
+ const controls = new Map();
+ let activeClose;
+ function enhanceSelect(select, searchable = true, name = searchable ? "项目" : "排序依据") {
+  if (!select || select.dataset.xbotEnhanced) return;
+  select.dataset.xbotEnhanced = "1";
   const trigger = document.createElement("button");
   trigger.type = "button"; trigger.className = "project-filter-trigger";
+  trigger.dataset.selectFor = select.id || "";
   trigger.setAttribute("aria-haspopup", "listbox"); trigger.setAttribute("aria-expanded", "false");
   const label = document.createElement("span");
   trigger.append(label);
   const menu = document.createElement("div");
-  menu.id = searchable ? "projectFilterMenu" : "manageSortMenu"; menu.className = "project-filter-menu"; menu.hidden = true;
+  menu.id = select.id === "manageSyncFilter" ? "manageSyncFilterMenu" : select.id === "manageSort" ? "manageSortMenu" : "xbotSelectMenu" + (++sequence); menu.className = "project-filter-menu"; menu.hidden = true;
   const search = document.createElement("input");
   search.hidden = !searchable;
   search.type = "search"; search.className = "project-filter-search";
-  search.placeholder = "查找项目"; search.setAttribute("aria-label", "查找项目");
+  search.placeholder = "查找" + name; search.setAttribute("aria-label", "查找" + name);
   const list = document.createElement("div");
-  list.className = "project-filter-list"; list.setAttribute("role", "listbox"); list.setAttribute("aria-label", searchable ? "项目" : "排序依据");
+  list.className = "project-filter-list"; list.setAttribute("role", "listbox"); list.setAttribute("aria-label", name);
   const empty = document.createElement("div");
-  empty.className = "project-filter-empty"; empty.textContent = "没有匹配项目"; empty.hidden = true;
+  empty.className = "project-filter-empty"; empty.textContent = "没有匹配选项"; empty.hidden = true;
   empty.setAttribute("role", "status");
   menu.append(search, list, empty);
   trigger.setAttribute("aria-controls", menu.id);
   select.classList.add("project-filter-native"); select.tabIndex = -1; select.setAttribute("aria-hidden", "true");
   select.after(trigger); document.body.append(menu);
   let options = [];
+  const listeners = new AbortController();
   function close(restoreFocus = false) {
     menu.hidden = true; trigger.setAttribute("aria-expanded", "false");
+    if (activeClose === close) activeClose = null;
     if (restoreFocus) trigger.focus();
   }
   function sync() {
-    label.textContent = select.selectedOptions[0]?.textContent || "全部项目";
-    trigger.setAttribute("aria-label", (searchable ? "项目：" : "排序依据：") + label.textContent);
+    label.textContent = select.selectedOptions[0]?.textContent || "请选择";
+    trigger.setAttribute("aria-label", name + "：" + label.textContent);
     trigger.disabled = select.disabled;
     list.replaceChildren();
     options = [...select.options].map(option => {
@@ -37,9 +44,10 @@
       button.type = "button"; button.className = "project-filter-option";
       button.textContent = option.textContent; button.title = option.textContent;
       button.setAttribute("role", "option"); button.setAttribute("aria-selected", String(option.selected));
-      button.tabIndex = -1; button.disabled = option.disabled;
+      button.tabIndex = -1; button.disabled = option.disabled || option.parentElement?.disabled;
+      button.hidden = option.hidden;
       button.addEventListener("click", () => {
-        select.value = option.value; sync(); close(true);
+        select.selectedIndex = [...select.options].indexOf(option); sync(); close(true);
         select.dispatchEvent(new Event("change", { bubbles: true }));
       });
       list.append(button); return button;
@@ -48,12 +56,14 @@
   }
   function filter() {
     const query = search.value.trim().toLocaleLowerCase();
-    options.forEach(option => { option.hidden = !option.textContent.toLocaleLowerCase().includes(query); });
+    options.forEach((option, index) => { option.hidden = select.options[index].hidden || !option.textContent.toLocaleLowerCase().includes(query); });
     empty.hidden = options.some(option => !option.hidden);
     list.scrollTop = 0;
   }
   search.addEventListener("input", filter);
   function open(direction = 0) {
+    if (select.disabled) return;
+    activeClose?.(); activeClose = close;
     search.value = ""; sync();
     const rect = trigger.getBoundingClientRect();
     const width = Math.min(rect.width, window.innerWidth - 24);
@@ -65,7 +75,7 @@
     menu.style.top = upward ? "auto" : rect.bottom + 6 + "px";
     menu.style.bottom = upward ? window.innerHeight - rect.top + 6 + "px" : "auto";
     menu.hidden = false; trigger.setAttribute("aria-expanded", "true");
-    const enabled = options.filter(option => !option.disabled);
+    const enabled = options.filter(option => !option.disabled && !option.hidden);
     const selected = enabled.find(option => option.getAttribute("aria-selected") === "true");
     const target = selected || (direction < 0 ? enabled.at(-1) : enabled[0]);
     if (direction) { target?.focus({ preventScroll: true }); target?.scrollIntoView({ block: "nearest" }); }
@@ -93,19 +103,37 @@
   });
   document.addEventListener("pointerdown", event => {
     if (!menu.hidden && !menu.contains(event.target) && !trigger.contains(event.target)) close();
-  });
+  }, { signal: listeners.signal });
   document.addEventListener("keydown", event => {
     if (!menu.hidden && !event.isComposing && event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(true); }
-  }, true);
-  window.addEventListener("resize", () => close());
-  document.addEventListener("scroll", event => { if (!menu.hidden && !menu.contains(event.target)) close(); }, true);
+  }, { capture: true, signal: listeners.signal });
+  window.addEventListener("resize", () => close(), { signal: listeners.signal });
+  document.addEventListener("scroll", event => { if (!menu.hidden && !menu.contains(event.target)) close(); }, { capture: true, signal: listeners.signal });
   select.addEventListener("change", sync);
   select.addEventListener("xbot-select-sync", sync);
-  new MutationObserver(() => { close(); sync(); }).observe(select, { childList: true, subtree: true, attributes: true });
+  const observer = new MutationObserver(() => { close(); sync(); });
+  observer.observe(select, { childList: true, subtree: true, attributes: true, characterData: true });
+  controls.set(select, () => { close(); observer.disconnect(); trigger.remove(); menu.remove(); listeners.abort(); });
   sync();
  }
+ window.xbotEnhanceSelect = enhanceSelect;
  enhanceSelect(document.querySelector(".manage-side select"));
  enhanceSelect(document.querySelector("#manageSort"), false);
+ enhanceSelect(document.querySelector("#manageSyncFilter"), false, "信息同步");
+ function enhanceAll() {
+  for (const [select, dispose] of controls) {
+   if (!select.isConnected) { dispose(); controls.delete(select); }
+  }
+  document.querySelectorAll("select:not([multiple])").forEach(select => {
+   const name = select.getAttribute("aria-label") || (select.id && document.querySelector(`label[for="${select.id}"]`)?.textContent?.trim()) || "选项";
+   enhanceSelect(select, select.options.length > 8, name);
+  });
+  for (const [select] of controls) {
+   if (select.closest("[hidden]") && select.nextElementSibling?.getAttribute("aria-expanded") === "true") activeClose?.();
+  }
+ }
+ enhanceAll();
+ new MutationObserver(enhanceAll).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden"] });
  const panel = document.querySelector("#screen-manage .manage-main");
  if (panel) {
    let idle;

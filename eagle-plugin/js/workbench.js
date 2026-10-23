@@ -103,7 +103,7 @@ function prodMapPackage(pkg, index) {
     previewPath: preview, sourcePath: source, state: pkg.state === "ready" ? "ready" : "review",
     selected: pkg.selectedForImport !== false && (pkg.state === "ready" || pkg.riskAccepted),
     tone: "", risk: Boolean(pkg.riskOverrideEligible || missingFiles.length), riskAccepted: Boolean(pkg.riskAccepted),
-    missing: !preview || (!source && pkg.packageType !== "背景"), conflict: Boolean(pkg.conflict || pkg.ambiguous),
+    missing: !preview || (!source && !prodTypes.isBackgroundType(pkg.packageType)), conflict: Boolean(pkg.conflict || pkg.ambiguous),
     packageId: pkg.packageId || "", basePackageId: pkg.basePackageId || "", note: (pkg.errors || []).join("；") || (pkg.warnings || []).join("；") || "图片和工程包已检查",
     missingFiles, _package: pkg,
   };
@@ -122,11 +122,11 @@ function prodRefreshPairState(pair) {
   else pkg.previewPath = "";
   if (pair.sourcePath) pkg.sourcePath = pair.sourcePath;
   else pkg.sourcePath = "";
-  const hard = !pkg.previewPath || (!pkg.sourcePath && pkg.packageType !== "背景") || !prodTypes.isPackageTypeActive(pkg.packageType) || pair.conflict;
+  const hard = !pkg.previewPath || (!pkg.sourcePath && !prodTypes.isBackgroundType(pkg.packageType)) || !prodTypes.isPackageTypeActive(pkg.packageType) || pair.conflict;
   const riskPending = Boolean((pkg.missingFiles || pkg.missingFootage || []).length && !pkg.riskAccepted);
   pkg.state = hard || riskPending ? "blocked" : "ready";
   pkg.riskOverrideEligible = Boolean((pkg.missingFiles || pkg.missingFootage || []).length);
-  pkg.errors = hard ? [!pkg.previewPath ? "缺少图片" : !pkg.sourcePath && pkg.packageType !== "背景" ? "缺少工程包" : !prodTypes.isPackageTypeActive(pkg.packageType) ? (prodTypes.normalizePackageType(pkg.packageType) ? "类型已停用，请更换或恢复" : "请先在设置中保存此类型") : "图片和工程包无法唯一对应"] : riskPending ? ["有素材缺失，确认影响后可保存"] : [];
+  pkg.errors = hard ? [!pkg.previewPath ? "缺少图片" : !pkg.sourcePath && !prodTypes.isBackgroundType(pkg.packageType) ? "缺少工程包" : !prodTypes.isPackageTypeActive(pkg.packageType) ? (prodTypes.normalizePackageType(pkg.packageType) ? "类型已停用，请更换或恢复" : "请先在设置中保存此类型") : "图片和工程包无法唯一对应"] : riskPending ? ["有素材缺失，确认影响后可保存"] : [];
   pkg.matchError = pkg.errors[0] || "";
   pair.state = pkg.state === "ready" ? "ready" : "review";
   pair.note = pair.state === "ready" ? (pkg.riskAccepted ? `风险已确认 · ${pkg.missingFiles?.join("、") || pkg.missingFootage?.join("、") || "素材缺失"}` : "文件已检查，可以保存") : pkg.errors.join("；");
@@ -388,7 +388,7 @@ function prodRenderAep() {
   document.querySelectorAll("[data-comp-check]").forEach(input => input.addEventListener("change", () => { if (input.checked) prodAepSelectedOccurrences.add(input.dataset.compCheck); else prodAepSelectedOccurrences.delete(input.dataset.compCheck); prodActiveOccurrence = input.dataset.compCheck; prodActiveId = prodAepOccurrenceMap.get(input.dataset.compCheck)?.id ?? prodActiveId; prodRenderCollectionSheet(); prodRenderAep(); }));
   document.querySelectorAll("[data-prod-toggle-tree]").forEach(button => button.addEventListener("click", () => { const key = button.closest("[data-occurrence]")?.dataset.occurrence; if (!key) return; if (prodCollapsedTreeOccurrences.has(key)) prodCollapsedTreeOccurrences.delete(key); else prodCollapsedTreeOccurrences.add(key); prodRenderAep(); document.querySelector(`[data-occurrence="${CSS.escape(key)}"]`)?.focus(); }));
   const c = prodComp(prodActiveId); const inspector = document.querySelector("#aepInspector");
-  if (c && inspector) { const size = `${c.width} × ${c.height}`, duration = Number(c.duration || 0), time = Number(c.previewTime || 0).toFixed(2), needsReview = hasWarning(c); inspector.innerHTML = `<div class="inspector-head"><div><strong>${prodEsc(c.name)}</strong><small>${prodEsc(c.role || "AE 合成")}</small></div>${needsReview ? `<button type="button" class="status-chip warn aep-review-button" data-prod-aep-review="${prodEsc(c.id)}" aria-label="查看 ${prodEsc(c.name)} 的复核原因和建议">建议检查 ↗</button>` : '<span class="status-chip ok">可导出</span>'}</div><button type="button" class="preview-frame ${c.prodPreviewPath ? "has-actual-preview" : "is-empty"} ${c.prodPreviewRendering ? "is-rendering" : ""}" aria-busy="${Boolean(c.prodPreviewRendering)}" aria-label="查看 ${prodEsc(c.name)} 的查看大图">${c.prodPreviewPath ? `<img class="frame-art actual-preview-image" src="${prodImageUrl(c.prodPreviewPath)}" alt="${prodEsc(c.name)} 画面时间">` : '<span class="preview-empty">暂无图片</span>'}${c.prodPreviewRendering ? '<span class="preview-rendering-overlay" role="status"><i class="preview-rendering-spinner"></i><span>生成中</span></span>' : ''}</button><div class="preview-actions"><label class="preview-time"><span>画面时间</span><input data-prod-preview-time type="number" min="0" max="${duration}" step="0.01" value="${time}"><span>秒</span></label><button class="primary-btn" data-prod-render-preview ${c.prodPreviewRendering ? "disabled" : ""}>${c.prodPreviewRendering ? "生成中" : c.prodPreviewPath ? "重新生成" : "生成预览"}</button></div><div class="detail-block"><h4>内容信息</h4><div class="detail-grid"><div><span>尺寸</span><strong>${size}</strong></div><div><span>时长</span><strong>${duration.toFixed(2)} 秒 · ${Number(c.frame_rate || 0)} fps</strong></div><div><span>画面来源</span><strong>${prodEsc(c.prodPreviewSourceName || c.name)}</strong></div><div><span>画面时间</span><strong data-prod-time-label>${time} 秒</strong></div></div></div><div class="detail-block"><h4>选择状态</h4><p>${prodActiveOccurrence && prodAepSelectedOccurrences.has(prodActiveOccurrence) ? "已选中" : "未选中"} · 重复选择只导出一份</p></div>`;
+  if (c && inspector) { const size = `${c.width} × ${c.height}`, duration = Number(c.duration || 0), time = Number(c.previewTime || 0).toFixed(2), needsReview = hasWarning(c); inspector.innerHTML = `<div class="inspector-head"><div><strong>${prodEsc(c.name)}</strong><small>${prodEsc(c.role || "AE 合成")}</small></div>${needsReview ? `<button type="button" class="status-chip warn aep-review-button" data-prod-aep-review="${prodEsc(c.id)}" aria-label="查看 ${prodEsc(c.name)} 的复核原因和建议">建议检查 ↗</button>` : '<span class="status-chip ok">可导出</span>'}</div><button type="button" class="preview-frame ${c.prodPreviewPath ? "has-actual-preview" : "is-empty"} ${c.prodPreviewRendering ? "is-rendering" : ""}" aria-busy="${Boolean(c.prodPreviewRendering)}" aria-label="查看 ${prodEsc(c.name)} 的查看大图">${c.prodPreviewPath ? `<img class="frame-art actual-preview-image" src="${prodImageUrl(c.prodPreviewPath)}" alt="${prodEsc(c.name)} 画面时间">` : '<span class="preview-empty">暂无图片</span>'}${c.prodPreviewRendering ? '<span class="preview-rendering-overlay" role="status"><i class="preview-rendering-spinner"></i><span>生成中</span></span>' : ''}</button><div class="preview-actions"><label class="preview-time"><span>画面时间</span><input data-prod-preview-time type="number" min="0" max="${duration}" step="0.01" value="${time}"><span>秒</span></label><button class="primary-btn" data-prod-render-preview ${c.prodPreviewRendering ? "disabled" : ""}>${c.prodPreviewRendering ? "生成中" : c.prodPreviewPath ? "重新生成" : "生成预览"}</button></div><div class="detail-block"><div class="detail-grid"><div><span>尺寸</span><strong>${size}</strong></div><div><span>时长</span><strong>${duration.toFixed(2)} 秒 · ${Number(c.frame_rate || 0)} fps</strong></div><div><span>画面来源</span><strong>${prodEsc(c.prodPreviewSourceName || c.name)}</strong></div><div><span>画面时间</span><strong data-prod-time-label>${time} 秒</strong></div></div></div><div class="detail-block"><h4>选择状态</h4><p>${prodActiveOccurrence && prodAepSelectedOccurrences.has(prodActiveOccurrence) ? "已选中" : "未选中"} · 重复选择只导出一份</p></div>`;
     inspector.querySelector("[data-prod-preview-time]").addEventListener("change", event => { c.previewTime = Math.min(duration, Math.max(0, Number(event.target.value) || 0)); event.target.value = c.previewTime.toFixed(2); inspector.querySelector("[data-prod-time-label]").textContent = `${c.previewTime.toFixed(2)} 秒`; });
     inspector.querySelector("[data-prod-render-preview]").addEventListener("click", () => prodRenderPreview(c));
     inspector.querySelector(".preview-frame")?.addEventListener("click", () => prodOpenAepPreview(c));
@@ -467,7 +467,7 @@ async function prodCollectAep(confirmDuplicates = false) {
 function prodOpenRename() {
   pairs.forEach(prodRefreshPairState);
   const selected = pairs.filter(p => p.selected && p.state === "ready");
-  openModal(`<div class="modal-head"><div><h2>检查名称</h2><p>${prodEsc(prodProject)} · 确认后通过 Eagle Plugin API 正式入库</p></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="form-grid"><div class="form-group"><label>图片命名</label><input class="input" data-prod-template="preview" value="{项目}_{包装类型}_{包装名称}_{版本}.png"></div><div class="form-group"><label>工程命名</label><input class="input" data-prod-template="source" value="{项目}_{包装名称}_{版本}.zip"></div></div><p>可用字段：</p><p>{项目}、{包装类型}</p><p>{包装名称}、{版本}</p><div class="rename-output-list">${selected.map(p => `<div class="rename-output-row"><strong>${prodEsc(p.name)} · ${prodEsc(p.type)} · ${prodEsc(p.version)}</strong><small>${prodEsc(p.previewPath)}<br>${prodEsc(p.sourcePath || "仅有图片")}</small><div class="rename-output-grid"><label>图片名称<input class="input" data-prod-name="preview" data-id="${prodEsc(p.id)}" value="${prodEsc(`${prodProject}_${p.type}_${p.name}_${p.version}.png`)}"></label><label>工程名称<input class="input" data-prod-name="source" data-id="${prodEsc(p.id)}" value="${prodEsc(`${prodProject}_${p.name}_${p.version}.zip`)}" ${p.sourcePath ? "" : "disabled"}></label></div></div>`).join("")}</div><div class="drawer-footer"><button class="ghost-btn" data-close>返回检查</button><button class="primary-btn" data-prod-confirm-import ${selected.length ? "" : "disabled"}>确认保存</button></div></div>`);
+  openModal(`<div class="modal-head"><div><h2>检查名称</h2><p>${prodEsc(prodProject)}</p></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="form-grid"><div class="form-group"><label>图片命名</label><input class="input" data-prod-template="preview" value="{项目}_{包装类型}_{包装名称}_{版本}.png"></div><div class="form-group"><label>工程命名</label><input class="input" data-prod-template="source" value="{项目}_{包装名称}_{版本}.zip"></div></div><p class="form-help">可用字段：{项目}、{包装类型}、{包装名称}、{版本}</p><div class="rename-output-list">${selected.map(p => `<div class="rename-output-row"><strong>${prodEsc(p.name)} · ${prodEsc(p.type)} · ${prodEsc(p.version)}</strong><small>${prodEsc(p.previewPath)}<br>${prodEsc(p.sourcePath || "仅有图片")}</small><div class="rename-output-grid"><label>图片名称<input class="input" data-prod-name="preview" data-id="${prodEsc(p.id)}" value="${prodEsc(`${prodProject}_${p.type}_${p.name}_${p.version}.png`)}"></label><label>工程名称<input class="input" data-prod-name="source" data-id="${prodEsc(p.id)}" value="${prodEsc(`${prodProject}_${p.name}_${p.version}.zip`)}" ${p.sourcePath ? "" : "disabled"}></label></div></div>`).join("")}</div><div class="drawer-footer"><button class="ghost-btn" data-close>返回检查</button><button class="primary-btn" data-prod-confirm-import ${selected.length ? "" : "disabled"}>确认保存</button></div></div>`);
   document.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", closeModal));
   const previewTemplate = document.querySelector('[data-prod-template="preview"]');
   const sourceTemplate = document.querySelector('[data-prod-template="source"]');
@@ -608,7 +608,7 @@ async function prodRunImport(mode = "prompt") {
     });
     if (result.state === "duplicate") {
       const matches = result.matches.map(match => `<div class="detail-grid"><div><span>包装编号</span><strong>${prodEsc(match.packageId || "—")}</strong></div><div><span>已有版本</span><strong>${prodEsc(match.version || "—")}</strong></div><div><span>判断依据</span><strong>${prodEsc((match.matchedBy || []).join("、") || "稳定身份")}</strong></div></div>`).join("");
-      openModal(`<div class="modal-head"><div><h2>已有包装</h2><p>选择如何处理重复内容</p></div><button class="icon-btn" data-close>×</button></div><div class="modal-body">${matches}<div class="warning-box">使用已有、替换已有，或另存包装</div><div class="drawer-footer"><button class="ghost-btn" data-close>返回检查</button><button class="quiet" data-prod-duplicate="reuse">使用已有</button><button class="quiet" data-prod-duplicate="update">替换已有</button><button class="primary-btn" data-prod-duplicate="new">另存包装</button></div></div>`);
+      openModal(`<div class="modal-head"><div><h2>已有包装</h2><p>选择如何处理重复内容</p></div><button class="icon-btn" data-close>×</button></div><div class="modal-body">${matches}<div class="drawer-footer"><button class="ghost-btn" data-close>返回检查</button><button class="quiet" data-prod-duplicate="reuse">使用已有</button><button class="quiet" data-prod-duplicate="update">替换已有</button><button class="primary-btn" data-prod-duplicate="new">另存包装</button></div></div>`);
       document.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", closeModal));
       document.querySelectorAll("[data-prod-duplicate]").forEach(button => button.addEventListener("click", () => { const nextMode = button.dataset.prodDuplicate; closeModal(); prodRunImport(nextMode); }));
       return;
@@ -706,15 +706,16 @@ async function prodRefreshManagedSync() {
 
 function prodManagedSyncView(item) {
   const state = item.sync?.state || "checking";
-  const labels = { checking: "核对中", queued: "待同步", failed: "同步失败", completed: "已同步", unknown: "未核对", unavailable: "连接失败" };
-  const detail = item.sync?.error || ({ checking: "正在查询同步状态", queued: "文件已在 Eagle，等待机器人核对信息", completed: "当前配对已取得同步完成回执", unknown: "当前配对没有可核对的同步记录，不能判断为已同步", unavailable: "暂时无法获取同步状态，请检查团队连接" })[state] || "";
-  return { state, label: labels[state] || "未核对", detail };
+  const labels = { checking: "核对中", queued: "待同步", failed: "同步失败", completed: "已同步", unavailable: "连接失败" };
+  const detail = item.sync?.error || ({ checking: "正在查询同步状态", queued: "文件已在 Eagle，等待机器人核对信息", completed: "当前配对已与机器人索引核对一致", unavailable: "暂时无法获取同步状态，请检查团队连接" })[state] || "";
+  return { state, label: labels[state] || "", detail, visible: Boolean(labels[state]) };
 }
 
 function prodDecorateManagedSync() {
   document.querySelectorAll("#manageGrid .manage-card").forEach(card => {
     const item = managed.find(value => value.id === card.dataset.managedCard); if (!item) return;
-    const view = prodManagedSyncView(item), button = document.createElement("button");
+    const view = prodManagedSyncView(item); if (!view.visible) return;
+    const button = document.createElement("button");
     const retryable = item.isCurrent && ["queued", "failed"].includes(view.state);
     const retrying = prodManagedSyncRetrying.has(item.packageId);
     button.type = "button";
@@ -730,7 +731,8 @@ function prodDecorateManagedSync() {
   });
   const selected = managed.find(item => item.id === managedId), inspector = document.querySelector("#manageInspector");
   if (selected && inspector) {
-    const view = prodManagedSyncView(selected), info = document.createElement("section");
+    const view = prodManagedSyncView(selected); if (!view.visible) return;
+    const info = document.createElement("section");
     info.className = "manage-sync-detail";
     info.innerHTML = `<strong>信息同步 · ${prodEsc(view.label)}</strong><p>${prodEsc(view.detail)}</p><small>重试只提交信息，不重新导入文件。同批包装会一起核对。</small>`;
     inspector.querySelector(".inspector-head")?.after(info);
@@ -778,9 +780,10 @@ function prodRenderManageFilters() {
   const count = document.querySelector(".manage-toolbar h2 span"); if (count) count.textContent = `${prodManagedCards.length} 条`;
   const side = document.querySelector(".manage-side");
   if (side && !side.querySelector("#manageSyncFilter")) {
-    side.insertAdjacentHTML("beforeend", '<label class="field-label" for="manageSyncFilter">信息同步</label><select id="manageSyncFilter" class="select"><option value="">全部状态</option><option value="queued">待同步</option><option value="failed">同步失败</option><option value="completed">已同步</option><option value="unknown">未核对</option><option value="unavailable">连接失败</option></select>');
+    side.insertAdjacentHTML("beforeend", '<label class="field-label" for="manageSyncFilter">信息同步</label><select id="manageSyncFilter" class="select"><option value="">全部状态</option><option value="queued">待同步</option><option value="failed">同步失败</option><option value="completed">已同步</option><option value="unavailable">连接失败</option></select>');
     side.querySelector("#manageSyncFilter").addEventListener("change", event => { prodManageSyncFilter = event.target.value; prodApplyManageFilters(); renderManage(); });
   }
+  window.xbotEnhanceSelect?.(side?.querySelector("#manageSyncFilter"), false, "信息同步");
 }
 
 function prodApplyManageFilters() {
@@ -833,7 +836,7 @@ async function prodReplaceManaged(packageId, kind) {
 }
 
 function prodOpenRepairChoice(item) {
-  openModal(`<div class="modal-head"><div><h2>替换文件</h2><p>${prodEsc(item.name)} · 选择需要修复的素材</p></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="decision-list"><button class="decision-card" data-prod-repair="preview"><i>PNG</i><span><strong>更换图片</strong><small>${prodEsc(item.preview || "当前 PNG")}</small></span><b>→</b></button><button class="decision-card" data-prod-repair="source"><i>ZIP</i><span><strong>更换工程</strong><small>${prodEsc(item.source || "当前 ZIP")}</small></span><b>→</b></button></div><div class="drawer-footer"><button class="ghost-btn" data-close>取消</button></div></div>`);
+  openModal(`<div class="modal-head"><div><h2>替换文件</h2><p>${prodEsc(item.name)}</p></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="decision-list"><button class="decision-card" data-prod-repair="preview"><i>PNG</i><span><strong>更换图片</strong><small>${prodEsc(item.preview || "当前 PNG")}</small></span><b>→</b></button><button class="decision-card" data-prod-repair="source"><i>ZIP</i><span><strong>更换工程</strong><small>${prodEsc(item.source || "当前 ZIP")}</small></span><b>→</b></button></div><div class="drawer-footer"><button class="ghost-btn" data-close>取消</button></div></div>`);
   document.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", closeModal));
   document.querySelectorAll("[data-prod-repair]").forEach(button => button.addEventListener("click", () => { const kind = button.dataset.prodRepair; closeModal(); prodReplaceManaged(item.packageId, kind); }));
 }
@@ -858,8 +861,15 @@ async function prodCheckUpdates(force = false) {
   if (prodUpdateState.checking || prodUpdateState.downloading) return prodLatestRelease;
   const cached = prodUpdater.readUpdateCache(window.localStorage, prodManifest.version);
   if (cached) { prodLatestRelease = cached.info; prodUpdateState.checkedAt = cached.checkedAt; }
+  prodUpdateState.retryAt = Math.max(prodUpdateState.retryAt || 0,
+    prodUpdater.readUpdateCooldown(window.localStorage));
+  if (prodUpdateState.retryAt > Date.now()) {
+    prodUpdateState.error = "GitHub 暂时限制了更新查询频率。";
+    prodUpdateState.errorStage = "check";
+    prodRenderUpdates(); return prodLatestRelease;
+  }
   if (!force && cached?.fresh) { prodRenderUpdates(); return prodLatestRelease; }
-  prodUpdateState.checking = true; prodUpdateState.error = ""; prodRenderUpdates();
+  prodUpdateState.checking = true; prodUpdateState.error = ""; prodUpdateState.errorStage = "check"; prodRenderUpdates();
   try {
     prodLatestRelease = await prodUpdater.checkForUpdate(prodManifest.version);
     prodUpdateState.checkedAt = Date.now();
@@ -868,16 +878,20 @@ async function prodCheckUpdates(force = false) {
     return prodLatestRelease;
   } catch (error) {
     prodUpdateState.error = error.message;
+    if (error.rateLimited && Number.isFinite(error.retryAt)) {
+      prodUpdateState.retryAt = error.retryAt;
+      try { localStorage.setItem(prodUpdater.UPDATE_COOLDOWN_KEY, JSON.stringify({ retryAt: error.retryAt })); } catch (_) {}
+    }
     return null;
   } finally { prodUpdateState.checking = false; prodRenderUpdates(); }
 }
 
-function prodAddTypeFromMenu(menu, input) {
+async function prodAddTypeFromMenu(menu, input) {
   const picker = menu._xbotPicker || menu.closest(".package-type-picker");
   const trigger = picker?.querySelector("[data-package-type-trigger]");
   const scope = trigger?.dataset.packageTypeScope || "card";
   try {
-    const name = prodTypes.registerPackageType(input.value.trim());
+    const name = await prodTeam.mutateType({ action: "create", name: input.value.trim() });
     prodRefreshTypes();
     closePackageTypePickers();
     if (scope === "managed" || scope === "migration") {
@@ -891,43 +905,129 @@ function prodAddTypeFromMenu(menu, input) {
   } catch (error) { prodToast("保存失败", error.message, "error"); }
 }
 
-function prodOpenTypeManager() {
-  prodRefreshTypes();
-  const types = prodTypes.listPackageTypes();
-  if (process.env.XBOT_TEAM_READONLY_TYPES === "1") {
-    openModal('<div class="modal-head"><h2>团队类型</h2><button class="icon-btn" data-close>×</button></div><div class="modal-body"><p>由维护者统一管理</p>' + types.map(type => `<p><strong>${prodEsc(type.name)}</strong> · ${type.enabled ? "已启用" : "已停用"}<br><small>${prodEsc(type.aliases.join("、"))}</small></p>`).join("") + '<div class="drawer-footer"><button class="ghost-btn" data-close>关闭</button></div></div>'); bindClose(); return;
-  }
-  openModal('<div class="modal-head"><div><h2>类型管理</h2><p>修改名称、别名，停用或恢复</p></div><button class="icon-btn" data-close aria-label="关闭类型管理">×</button></div><div class="modal-body"><p class="form-help">改名后，旧名称仍可用来查找</p><p class="form-help">停用后不可新增，已有素材仍可查</p><p class="form-help">默认类型不能改名</p><div class="type-management-list">' + types.map(type => '<section class="type-management-row" data-type-record="' + prodEsc(type.name) + '"><div class="type-management-heading"><strong>' + prodEsc(type.name) + '</strong><span class="status-chip ' + (type.enabled ? 'ok' : 'warn') + '">' + (type.enabled ? '已启用' : '已停用') + '</span></div><div class="form-grid"><label>类型名称<input class="input" data-type-name value="' + prodEsc(type.name) + '" ' + (type.builtin ? 'readonly aria-readonly="true"' : '') + ' aria-label="' + prodEsc(type.name) + ' 类型名称"></label><label>其他叫法<input class="input" data-type-aliases value="' + prodEsc(type.aliases.filter(alias => alias !== type.name).join('，')) + '" aria-label="' + prodEsc(type.name) + ' 别名"></label></div><div class="type-management-actions"><button class="ghost-btn" data-type-save>保存修改</button><button class="quiet" data-type-enabled="' + String(!type.enabled) + '">' + (type.enabled ? '停用类型' : '恢复类型') + '</button></div></section>').join('') + '</div><p class="form-help">更改类型设置不影响已有文件</p><p data-type-manager-error role="alert"></p><div class="drawer-footer"><button class="ghost-btn" data-close aria-label="关闭类型管理">关闭</button><button class="primary-btn" data-type-add>添加类型</button></div></div>');
-  document.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', closeModal));
-  document.querySelector('[data-type-add]')?.addEventListener('click', () => { closeModal(); prodOpenAddType(); });
-  document.querySelectorAll('[data-type-record]').forEach(row => {
-    const apply = changes => {
-      try {
-        prodTypes.updatePackageType(row.dataset.typeRecord, changes);
-        prodRefreshTypes(); pairs.forEach(pair => { pair.type = prodTypes.normalizePackageType(pair.type) || pair.type; delete prodOutputNames[pair.id]; });
-        if (screen === 'pair') prodRenderPairs();
-        if (screen === 'manage') renderManage();
-        prodOpenTypeManager(); prodToast('类型更新', '插件和机器人共用此类型', 'success');
-      } catch (error) { document.querySelector('[data-type-manager-error]').textContent = error.message; }
-    };
-    row.querySelector('[data-type-save]').addEventListener('click', () => apply({ name: row.querySelector('[data-type-name]').value, aliases: row.querySelector('[data-type-aliases]').value.split(/[,，、]/).map(value => value.trim()).filter(Boolean) }));
-    row.querySelector('[data-type-enabled]').addEventListener('click', event => apply({ enabled: event.currentTarget.dataset.typeEnabled === 'true' }));
+function prodBindTypeRow(row, type, context) {
+  const name = row.querySelector('[data-type-name]'), aliases = row.querySelector('[data-type-aliases]'), enabled = row.querySelector('[data-type-enabled]'), apply = row.querySelector('[data-type-apply]'), error = row.querySelector('[data-type-error]');
+  const values = () => ({ name: name.value.trim(), aliases: aliases.value, enabled: enabled.checked });
+  let baseline = JSON.stringify(values());
+  const state = {
+    type, busy: false,
+    dirty: () => !state.type || JSON.stringify(values()) !== baseline,
+    update: () => {
+      const dirty = state.dirty();
+      apply.disabled = context.busy || !name.value.trim();
+      const label = dirty ? (state.type ? '更新' : '新增') : state.type.enabled ? '启用' : '停用';
+      const changed = apply.textContent !== label;
+      if (changed) apply.textContent = label;
+      apply.dataset.state = dirty ? 'dirty' : state.type.enabled ? 'enabled' : 'disabled';
+      apply.dataset.pending = String(state.busy);
+      apply.setAttribute('aria-busy', String(state.busy));
+      if (changed && typeof prefersReducedMotion === 'function' && !prefersReducedMotion()) apply.animate?.([{ opacity: .65 }, { opacity: 1 }], { duration: 140, easing: 'ease-out' });
+      apply.title = dirty ? '保存本行修改，保持当前启停状态' : state.type.enabled ? '当前启用，点击停用；已有素材仍可查' : '当前停用，点击启用';
+      apply.setAttribute('aria-label', name.value + '：' + apply.title);
+      row.classList.toggle('is-dirty', dirty);
+    },
+  };
+  const fit = () => [name, aliases].forEach(input => {
+    const length = [...(input.value || input.placeholder || '')].reduce((sum, char) => sum + (/[^\x00-\x7f]/.test(char) ? 1 : .58), 0);
+    input.style.width = Math.max(input === name ? 5 : 12, length + 2) + 'em';
   });
+  [name, aliases, enabled].forEach(input => input.addEventListener('input', () => { fit(); state.update(); }));
+  fit();
+  apply.onclick = async () => {
+    if (apply.disabled || context.busy) return;
+    const toggleStatus = Boolean(state.type) && !state.dirty();
+    context.busy = true; state.busy = true; context.update();
+    [name, aliases, enabled].forEach(input => input.disabled = true);
+    error.textContent = '';
+    try {
+      const draft = values();
+      if (toggleStatus) draft.enabled = !state.type.enabled;
+      const created = await prodTeam.mutateType({ action: state.type ? 'update' : 'create', name: draft.name, aliases: draft.aliases.split(/[,，、\n]/).map(value => value.trim()).filter(Boolean), enabled: draft.enabled, ...(state.type ? { currentName: state.type.name, expected: state.type } : {}) });
+      prodRefreshTypes();
+      state.type = prodTypes.listPackageTypes().find(item => item.name === created);
+      name.value = state.type.name; aliases.value = state.type.aliases.filter(alias => alias !== state.type.name).join('、'); enabled.checked = state.type.enabled;
+      row.dataset.typeRecord = state.type.name;
+      baseline = JSON.stringify(values()); fit();
+      pairs.forEach(pair => { pair.type = prodTypes.normalizePackageType(pair.type) || pair.type; delete prodOutputNames[pair.id]; });
+      if (screen === 'pair') prodRenderPairs(); if (screen === 'manage') renderManage();
+      // The row itself confirms success; avoid a second transient notification.
+    } catch (cause) { error.textContent = cause.message; }
+    finally {
+      context.busy = false; state.busy = false; [name, aliases, enabled].forEach(input => input.disabled = false);
+      context.update();
+    }
+  };
+  state.update(); return state;
 }
 
-function prodOpenAddType() {
-  const pendingManagedId = prodPendingManagedTypeId, pendingPairId = prodPendingPairTypeId; prodPendingManagedTypeId = ""; prodPendingPairTypeId = "";
-  openModal(`<div class="modal-head"><div><h2>添加类型</h2><p>插件和机器人共用此类型</p></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="form-grid"><div class="form-group"><label for="newTypeName">类型名称</label><input class="input" id="newTypeName" autocomplete="off" placeholder="例如：章节标题"></div><div class="form-group"><label for="newTypeAliases">其他叫法</label><input class="input" id="newTypeAliases" autocomplete="off" placeholder="多个叫法用逗号分开，可不填"></div></div><div class="drawer-footer"><button class="ghost-btn" data-close>取消</button><button class="primary-btn" data-prod-save-type>保存类型</button></div></div>`);
-  document.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", closeModal));
-  document.querySelector("[data-prod-save-type]")?.addEventListener("click", () => {
-    const name = document.querySelector("#newTypeName").value.trim(), aliases = document.querySelector("#newTypeAliases").value.split(/[,，、]/).map(value => value.trim()).filter(Boolean);
+async function prodOpenTypeManager(query = "", showDisabled = false, scrollTop = 0) {
+  try { await prodTeam.refreshTypes(); prodRefreshTypes(); }
+  catch (error) { prodToast("读取失败", error.message, "error"); return; }
+  const types = prodTypes.listPackageTypes();
+  const rowHtml = type => `<article class="type-browse-row" data-type-record="${prodEsc(type?.name || '')}"><div class="type-inline-fields"><input class="type-inline-name" data-type-name aria-label="类型名称" placeholder="类型名称" value="${prodEsc(type?.name || '')}" ><input class="type-inline-aliases" data-type-aliases aria-label="别名" placeholder="添加别名，用逗号分隔" value="${prodEsc(type?.aliases.filter(alias => alias !== type.name).join('、') || '')}"><p data-type-error role="alert"></p></div><input type="checkbox" data-type-enabled hidden ${type?.enabled !== false ? 'checked' : ''}><button class="ghost-btn" data-type-apply disabled>应用</button></article>`;
+  openModal(`<div class="modal-head"><h2>类型管理</h2><button class="icon-btn" data-close aria-label="关闭类型管理">×</button></div><div class="modal-body type-manager"><div class="type-manager-toolbar"><input class="input" data-type-search aria-label="搜索类型或别名" placeholder="搜索类型或别名" value="${prodEsc(query)}"><button class="primary-btn" data-type-add>新增类型</button></div><div class="type-browse-list">${types.map(rowHtml).join('')}<p data-type-empty hidden>没有匹配的类型</p></div></div>`);
+  bindClose();
+  const search = document.querySelector('[data-type-search]'), list = document.querySelector('.type-browse-list'), add = document.querySelector('[data-type-add]');
+  const states = new Map();
+  const context = { busy: false, update: () => { states.forEach(state => state.update()); add.disabled = context.busy; } };
+  document.querySelectorAll('[data-type-record]').forEach((row, i) => states.set(row, prodBindTypeRow(row, types[i], context)));
+  document.querySelector('#modal')._beforeClose = () => !context.busy && (![...states.values()].some(state => state.dirty()) || window.confirm('修改尚未应用，放弃修改？'));
+  const filter = () => {
+    let count = 0;
+    states.forEach((state, row) => {
+      const name = row.querySelector('[data-type-name]').value, aliases = row.querySelector('[data-type-aliases]').value;
+      row.hidden = !state.dirty() && !(name + ' ' + aliases).toLocaleLowerCase().includes(search.value.trim().toLocaleLowerCase());
+      if (!row.hidden) count++;
+    });
+    document.querySelector('[data-type-empty]').hidden = count > 0;
+  };
+  search.oninput = filter; filter(); list.scrollTop = scrollTop;
+  add.onclick = () => {
+    const pending = [...states].find(([, state]) => !state.type);
+    if (pending) { pending[0].querySelector('[data-type-name]').focus(); return; }
+    list.insertAdjacentHTML('afterbegin', rowHtml(null));
+    const row = list.firstElementChild; states.set(row, prodBindTypeRow(row, null, context));
+    filter(); list.scrollTop = 0; row.querySelector('[data-type-name]').focus();
+  };
+}
+
+function prodOpenTypeEditor(type, back, afterSave) {
+  const initial = { name: type?.name || '', aliases: type?.aliases.filter(alias => alias !== type.name).join('，') || '', enabled: type?.enabled !== false };
+  openModal(`<div class="modal-head"><h2>${type ? '编辑类型' : '新增类型'}</h2><button class="icon-btn" data-close aria-label="关闭类型编辑">×</button></div><div class="modal-body type-editor"><label class="form-group">类型名称<input class="input" data-type-name value="${prodEsc(initial.name)}"  placeholder="例如：章节标题"></label><label class="form-group">别名<textarea class="input" data-type-aliases rows="3" placeholder="用逗号分隔，例如：章节名、章节页">${prodEsc(initial.aliases)}</textarea></label><label class="type-enabled-field" ${type ? '' : 'hidden'}><input type="checkbox" data-type-enabled ${initial.enabled ? 'checked' : ''}> 启用此类型</label>${type ? '<p class="form-help">停用后不能用于新入库，已有素材仍可查。</p>' : ''}<p data-type-error role="alert"></p></div><div class="type-manager-footer"><button class="ghost-btn" data-type-cancel>取消</button><button class="primary-btn" data-type-save>保存</button></div>`);
+  const modal = document.querySelector('#modal'), name = document.querySelector('[data-type-name]'), aliases = document.querySelector('[data-type-aliases]'), enabled = document.querySelector('[data-type-enabled]'), save = document.querySelector('[data-type-save]'), error = document.querySelector('[data-type-error]');
+  let busy = false, saved = false;
+  const values = () => ({ name: name.value.trim(), aliases: aliases.value, enabled: enabled.checked });
+  const dirty = () => JSON.stringify(values()) !== JSON.stringify(initial);
+  const mayLeave = () => !busy && (saved || !dirty() || window.confirm('修改尚未保存，放弃修改？'));
+  modal._beforeClose = mayLeave;
+  const cancel = () => { if (!mayLeave()) return; modal._beforeClose = null; if (back) back(); else closeModal(); };
+  document.querySelector('[data-type-cancel]').onclick = cancel;
+  document.querySelector('[data-close]').onclick = cancel;
+  const update = () => { save.disabled = busy || !name.value.trim() || (Boolean(type) && !dirty()); };
+  [name, aliases, enabled].forEach(input => input.addEventListener('input', update)); update();
+  save.onclick = async () => {
+    if (save.disabled || busy) return;
+    busy = true; [name, aliases, enabled].forEach(input => input.disabled = true); update(); save.textContent = '保存中…'; error.textContent = '';
     try {
-      const created = prodTypes.registerPackageType(name, aliases); prodRefreshTypes(); closeModal();
-      const pendingPair = prodPair(pendingPairId); if (pendingPair) { pendingPair.type = created; delete prodOutputNames[pendingPair.id]; }
-      if (pendingManagedId) prodChangeManagedType(pendingManagedId, name);
-      else { if (screen === "pair") prodRenderPairs(); if (screen === "manage") renderManage(); prodToast("类型保存", `${name} · 插件和机器人共用此类型`, "success"); }
-    }
-    catch (error) { prodToast("保存失败", error.message, "error"); }
+      const change = { action: type ? 'update' : 'create', name: name.value.trim(), aliases: aliases.value.split(/[,，、\n]/).map(value => value.trim()).filter(Boolean), enabled: enabled.checked, ...(type ? { currentName: type.name, expected: type } : {}) };
+      const created = await prodTeam.mutateType(change);
+      prodRefreshTypes(); pairs.forEach(pair => { pair.type = prodTypes.normalizePackageType(pair.type) || pair.type; delete prodOutputNames[pair.id]; });
+      if (screen === 'pair') prodRenderPairs(); if (screen === 'manage') renderManage();
+      saved = true; modal._beforeClose = null;
+      if (afterSave) afterSave(created);
+      if (back) await back(); else closeModal();
+      prodToast('已保存', created, 'success');
+    } catch (cause) { error.textContent = cause.message; }
+    finally { busy = false; [name, aliases, enabled].forEach(input => input.disabled = false); save.textContent = '保存'; update(); }
+  };
+}
+
+function prodOpenAddType(returnToManager = false) {
+  const managedId = prodPendingManagedTypeId, pairId = prodPendingPairTypeId;
+  prodPendingManagedTypeId = ''; prodPendingPairTypeId = '';
+  prodOpenTypeEditor(null, returnToManager ? () => prodOpenTypeManager() : null, created => {
+    const pair = prodPair(pairId); if (pair) { pair.type = created; delete prodOutputNames[pair.id]; prodRenderPairs(); }
+    if (managedId) prodChangeManagedType(managedId, created);
   });
 }
 
@@ -950,10 +1050,17 @@ async function prodChangeManagedType(managedIdValue, value) {
 function prodRenderUpdates() {
   const update = prodLatestRelease || {};
   const state = prodUpdateState, busy = state.checking || state.downloading;
+  const cooling = (state.retryAt || 0) > Date.now();
+  const retryTime = cooling ? new Date(state.retryAt).toLocaleString("zh-CN", { hour12: false }) : "";
+  const newer = Boolean(update.updateAvailable && update.version && prodUpdater.compareVersions(update.version, prodManifest.version) > 0);
+  if (state.cooldownTimer) { window.clearTimeout?.(state.cooldownTimer); state.cooldownTimer = null; }
+  if (cooling && typeof window.setTimeout === "function") {
+    state.cooldownTimer = window.setTimeout(() => { state.cooldownTimer = null; prodRenderUpdates(); }, Math.min(state.retryAt - Date.now() + 50, 2147483647));
+  }
   const title = state.checking ? "检查中" : state.downloading ? "下载中"
-    : state.error ? "更新失败" : !prodLatestRelease ? "等待检查"
+    : state.error ? (state.errorStage === "download" ? "下载失败" : "检查失败") : !prodLatestRelease ? "等待检查"
     : !update.releaseFound ? "暂无新版"
-    : update.updateAvailable ? "有新版本"
+    : newer ? "有新版本"
     : prodUpdater.compareVersions(prodManifest.version, update.version) > 0 ? "版本较新" : "已是最新";
   const setText = (selector, value) => { const element = document.querySelector(selector); if (element) element.textContent = value; };
   const versions = [...document.querySelectorAll(".update-version-row strong")];
@@ -962,26 +1069,38 @@ function prodRenderUpdates() {
   setText("#updateStatusTitle", title);
   setText("#previewUpdateStatus", state.checking ? "正在查询最新版本"
     : state.downloading ? state.progress || "正在连接下载服务…"
-    : state.error ? `${state.error}${prodLatestRelease ? " · 保留上次查询结果，可重试。" : " · 请重试。"}`
-    : update.releaseFound ? `${update.title} · ${title}` : prodLatestRelease ? "还没有可用的正式版本" : "检查后显示发布信息。");
+    : state.error ? `${state.error}${cooling ? ` 可于 ${retryTime} 后重试，期间暂停查询。` : " 可重新检查。"}${prodLatestRelease ? " · 保留上次查询结果，尚未重新核实。" : ""}`
+    : update.releaseFound ? `${update.title} · ${title}${update.warning ? " · " + update.warning : ""}` : prodLatestRelease ? "还没有可用的正式版本" : "检查后显示发布信息。");
   const check = document.querySelector('[data-action="check-plugin-updates"]');
-  if (check) { check.disabled = busy; check.textContent = state.checking ? "检查中" : "检查更新"; }
+  if (check) { check.disabled = busy || cooling; check.textContent = state.checking ? "检查中" : cooling ? "等待恢复" : "检查更新"; }
   const download = document.querySelector('[data-action="download-plugin-update"]');
   const hasDigest = /^[a-f\d]{64}$/i.test(update.asset?.digest || "");
   if (download) {
-    download.disabled = busy || !update.updateAvailable || !hasDigest;
-    download.textContent = state.downloading ? "下载中" : "下载更新";
+    download.disabled = busy || !newer || !hasDigest;
+    download.textContent = state.downloading ? "下载中" : !newer ? "暂无可用更新" : "下载更新";
   }
+  const latestLabel = document.querySelector(".update-version-row:nth-of-type(3) > span:first-child");
+  if (latestLabel) latestLabel.textContent = state.error ? "上次查询版本" : "公开发布版本";
   const lastCheck = state.checkedAt ? `上次成功检查：${new Date(state.checkedAt).toLocaleString()}` : "尚未完成检查";
-  setText(".update-channel", `更新来源 · GitHub · ${lastCheck}`);
+  const sourceLabel = !prodLatestRelease ? "GitHub 静态清单 / Release 页面" : update.source === "manifest" ? "GitHub 静态清单" : update.source === "release-page" ? "GitHub Release 页面" : "GitHub（历史API结果）";
+  setText(".update-channel", `更新来源 · ${sourceLabel} · ${lastCheck}`);
   const published = update.publishedAt && Number.isFinite(Date.parse(update.publishedAt))
     ? new Date(update.publishedAt).toLocaleString() : "未提供日期";
   setText(".update-card:nth-of-type(2) .update-card-head p", update.releaseFound ? `v${update.version} · 发布于 ${published}` : "更新内容");
   document.querySelectorAll(".update-demo-tag").forEach(tag => { tag.textContent = title; });
+  const releaseBadge = document.querySelector(".update-version-row .update-demo-tag");
+  if (releaseBadge) releaseBadge.textContent = state.error ? "历史结果" : newer ? "可更新" : "无需更新";
   setText(".update-notes", update.releaseFound ? update.notes || "此版本没有更新说明" : "还没有可用的正式版本");
   setText(".update-install-hint", state.file ? `安装包已保存：${state.file.path}。在 Eagle 确认安装后重开插件`
-    : update.updateAvailable && !hasDigest ? "暂不能下载，等待发布者补齐校验信息"
+    : !newer ? "当前没有比本机更新的安装包，无需下载或降级。"
+    : newer && !hasDigest ? "已发现新版，但尚无完整校验信息；可查看公开版本页，暂不提供插件内下载。"
     : "文件检查通过后，在 Eagle 确认安装");
+  const releaseLink = document.querySelector("#updateReleaseLink");
+  if (releaseLink) {
+    const validRelease = update.version && update.releaseUrl === "https://github.com/OooT-x/xbot-packaging-search/releases/tag/eagle-plugin-v" + update.version;
+    releaseLink.hidden = !validRelease;
+    releaseLink.href = validRelease ? update.releaseUrl : "#";
+  }
   const settingsCopy = document.querySelector(".settings-update-copy small");
   if (settingsCopy) settingsCopy.textContent = update.updateAvailable ? `v${update.version} 可用 · 查看更新内容` : `当前版本 v${prodManifest.version} · 查看更新状态`;
   const settingsBadge = document.querySelector(".settings-update-badge"); if (settingsBadge) { settingsBadge.textContent = update.updateAvailable ? "新" : ""; settingsBadge.hidden = !update.updateAvailable; }
@@ -990,11 +1109,11 @@ function prodRenderUpdates() {
 async function prodDownloadUpdate() {
   if (prodUpdateState.checking || prodUpdateState.downloading) return;
   if (!prodLatestRelease) return;
-  prodUpdateState.downloading = true; prodUpdateState.error = ""; prodUpdateState.progress = "";
+  prodUpdateState.downloading = true; prodUpdateState.error = ""; prodUpdateState.errorStage = "download"; prodUpdateState.progress = "";
   prodUpdateState.file = null; prodRenderUpdates();
   try {
     const update = prodLatestRelease;
-    if (!update?.updateAvailable || !update.asset) throw new Error("当前没有可下载的稳定版 Release 安装包。");
+    if (!update?.updateAvailable || !update.asset || prodUpdater.compareVersions(update.version, prodManifest.version) <= 0) throw new Error("当前没有可下载的稳定版 Release 安装包。");
     const downloads = prodPath.join(require("os").homedir(), "Downloads", "Xbot Eagle Plugin Updates");
     const file = await prodUpdater.downloadPluginUpdate(update, downloads, { onProgress: ({ received, total }) => {
       const mb = value => (value / 1024 / 1024).toFixed(1);

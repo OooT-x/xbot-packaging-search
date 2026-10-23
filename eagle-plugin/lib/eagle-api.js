@@ -1,3 +1,4 @@
+const { isBackgroundType } = require("./package-types");
 const path = require("path");
 const {
   COLLECTED_ROOT,
@@ -1284,7 +1285,7 @@ async function importFormalBatch(adapter, scanResult, options = {}) {
     return Boolean(
       pkg.sourceOptional ||
       pkg.source_optional ||
-      (!sourcePath && String(pkg.packageType || "").trim() === "背景")
+      (!sourcePath && isBackgroundType(pkg.packageType))
     );
   };
   const missingSources = readyPackages.filter(

@@ -1,6 +1,8 @@
+const { isBackgroundType } = require("./package-types");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const { appendDurably } = require("./durable-jsonl");
 
 const EVENT_SCHEMA_VERSION = 1;
 const EVENT_FILE_NAME = "packaging-ingest-events.jsonl";
@@ -74,7 +76,7 @@ function buildIngestEvent(fileResult) {
       replaced_kind: String(item.replacedKind || "").trim(),
       status: "filed",
     }))
-    .filter((item) => item.package_id && item.preview_eagle_id && (item.source_eagle_id || item.package_type === "背景"))
+    .filter((item) => item.package_id && item.preview_eagle_id && (item.source_eagle_id || isBackgroundType(item.package_type)))
     .sort((left, right) => left.package_id.localeCompare(right.package_id));
   if (filed.length === 0) return null;
 
@@ -103,7 +105,7 @@ function publishIngestEvent(fileResult, options = {}) {
   const filePath = path.resolve(options.filePath || defaultEventFile());
   try {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.appendFileSync(filePath, `${JSON.stringify(event)}\n`, "utf8");
+    appendDurably(filePath, event);
     return { state: "queued", skipped: false, event, filePath };
   } catch (error) {
     const outbox = path.resolve(options.outboxDir || defaultOutboxDir());
@@ -130,7 +132,7 @@ function retryPendingIngestEvents(options = {}) {
         throw new Error("invalid outbox event");
       }
       fs.mkdirSync(path.dirname(filePath), { recursive: true });
-      fs.appendFileSync(filePath, `${JSON.stringify(event)}\n`, "utf8");
+      appendDurably(filePath, event);
       fs.unlinkSync(recoveryPath);
       return { state: "queued", event, filePath, recoveryPath };
     } catch (error) { return { state: "pending", recoveryPath, error: error.message }; }

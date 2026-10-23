@@ -32,8 +32,11 @@ function buildRecords(entries) {
     const name = validateTypeName(entry.name);
     if (seen.has(name)) throw new Error("包装类型配置含重复名称");
     seen.add(name);
+    const builtinName = entry.builtinName || (DEFAULT_ALIASES.has(name) ? name : null);
+    if (builtinName && !DEFAULT_ALIASES.has(builtinName)) throw new Error("默认类型身份无效");
+    if (builtinName && builtinName !== name) all.delete(builtinName);
     const aliases = [...new Set([name, ...(Array.isArray(entry.aliases) ? entry.aliases.map(validateTypeName) : DEFAULT_ALIASES.get(name) || []), ...(Array.isArray(entry.previousNames) ? entry.previousNames.map(validateTypeName) : [])])];
-    all.set(name, { name, aliases, enabled: entry.enabled !== false, builtin: DEFAULT_ALIASES.has(name) });
+    all.set(name, { name, aliases, enabled: entry.enabled !== false, builtin: Boolean(builtinName), ...(builtinName && builtinName !== name ? { builtinName } : {}) });
   }
   const owners = new Map();
   for (const record of all.values()) for (const alias of record.aliases) {
@@ -72,13 +75,12 @@ function updatePackageType(currentName, changes = {}) {
   const current = records.find(record => record.name === currentName);
   if (!current) throw new Error("找不到包装类型，请刷新后重试");
   const name = changes.name === undefined ? current.name : validateTypeName(changes.name);
-  if (current.builtin && name !== current.name) throw new Error("内置类型名称固定，可修改别名或停用");
   const owner = normalizePackageType(name);
   if (owner && owner !== current.name) throw new Error("类型名称或别名已存在");
   const entries = readEntries(), stored = entries.find(entry => entry.name === current.name);
   const aliases = changes.aliases === undefined ? (stored?.aliases || current.aliases) : changes.aliases.map(validateTypeName);
   // Preserve historical custom aliases so existing indexed assets remain searchable.
-  const next = { name, aliases: [...new Set(aliases)], previousNames: [...new Set([...(stored?.previousNames || []), ...(name !== current.name ? [current.name] : [])])], enabled: changes.enabled === undefined ? current.enabled : Boolean(changes.enabled) };
+  const next = { name, ...(current.builtin ? { builtinName: current.builtinName || current.name } : {}), aliases: [...new Set(aliases)], previousNames: [...new Set([...(stored?.previousNames || []), ...(name !== current.name ? [current.name] : [])])], enabled: changes.enabled === undefined ? current.enabled : Boolean(changes.enabled) };
   const updated = entries.filter(entry => entry.name !== current.name); updated.push(next); saveEntries(updated);
   return name;
 }
@@ -87,6 +89,11 @@ function normalizePackageType(value) {
   refreshPackageTypes(); const key = compact(value);
   return key ? records.find(record => record.aliases.some(alias => compact(alias) === key))?.name || null : null;
 }
+function isBackgroundType(value) {
+  const normalized = normalizePackageType(value);
+  const record = records.find(item => item.name === normalized);
+  return Boolean(record && (record.builtinName || (record.builtin ? record.name : '')) === '背景');
+}
 function isPackageTypeActive(value) { const type = normalizePackageType(value); return Boolean(type && PACKAGE_TYPE_SET.has(type)); }
 function inferPackageType(value) {
   refreshPackageTypes(); const text = compact(value);
@@ -94,4 +101,4 @@ function inferPackageType(value) {
   return records.find(record => record.aliases.some(alias => compact(alias) === text))?.name || records.find(record => record.aliases.some(alias => text.includes(compact(alias))))?.name || null;
 }
 refreshPackageTypes();
-module.exports = { registryPath, registerPackageType, updatePackageType, listPackageTypes, isPackageTypeActive, refreshPackageTypes, PACKAGE_TYPES, PACKAGE_TYPE_ALIASES, PACKAGE_TYPE_SET, inferPackageType, normalizePackageType };
+module.exports = { isBackgroundType, registryPath, registerPackageType, updatePackageType, listPackageTypes, isPackageTypeActive, refreshPackageTypes, PACKAGE_TYPES, PACKAGE_TYPE_ALIASES, PACKAGE_TYPE_SET, inferPackageType, normalizePackageType };
