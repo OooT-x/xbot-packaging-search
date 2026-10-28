@@ -462,6 +462,16 @@
     .home-manage:hover{border-color:var(--blue);background:var(--panel-2)}
     #screen-home .resume{box-shadow:none}
     @media(max-width:600px){#screen-home{margin-top:12px}#screen-home .hero-card{min-height:260px;padding:24px 16px}.home-manage{padding:18px 20px}#screen-home .resume{flex-wrap:wrap}}
+    .tweaks{width:232px;padding:12px}
+    .tweaks h3{margin:2px 8px 8px;font-size:12px}
+    .settings-group{display:grid;gap:2px}
+    .settings-group+.settings-group{margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
+    .tweaks .settings-update{display:flex;align-items:center;gap:8px;width:100%;min-height:38px;margin:0;padding:8px 10px;border:0;border-radius:6px;background:transparent;text-align:left;color:var(--ink);font-size:12px;font-weight:700}
+    .tweaks .settings-update::after{content:"›";margin-left:auto;color:var(--ink-3);font-size:17px;font-weight:400}
+    .tweaks .settings-update:hover{background:var(--panel-3)}
+    .tweaks .settings-update:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
+    .tweaks .settings-update-copy{min-height:0}
+    .tweaks .settings-motion{margin-top:8px;padding:12px 10px 2px;border-top:1px solid var(--line)}
   </style></head><body data-theme="light" data-screen="home">
   <div class="app">
     <header class="topbar">
@@ -533,7 +543,7 @@
   <div class="modal-wrap" id="modal" hidden><div class="modal" id="modalContent" role="dialog" aria-modal="true"></div></div>
   <aside class="drawer" id="drawer" role="dialog" aria-modal="false" hidden></aside>
   <div class="bottom-sheet-backdrop" id="bottomSheetBackdrop" aria-hidden="true"></div>
-  <div class="tweaks" id="tweaks" role="dialog" aria-label="设置"><h3>设置</h3><button class="settings-update" type="button" data-action="open-updates"><span class="settings-update-copy"><strong>插件更新</strong></span><span class="settings-update-badge" hidden></span></button><button class="settings-update" type="button" data-action="manage-types"><span class="settings-update-copy"><strong>类型管理</strong></span></button><div class="tweak-row"><span>减少动画</span><button class="toggle" id="motionToggle" type="button" aria-label="减少动画" aria-pressed="false"></button></div></div>
+  <div class="tweaks" id="tweaks" role="dialog" aria-label="设置"><h3>设置</h3><div class="settings-group settings-workspace" aria-label="团队与类型"><button class="settings-update" type="button" data-action="manage-types"><span class="settings-update-copy"><strong>类型管理</strong></span></button></div><div class="settings-group settings-support" aria-label="更新与诊断"><button class="settings-update" type="button" data-action="open-updates"><span class="settings-update-copy"><strong>插件更新</strong></span><span class="settings-update-badge" hidden></span></button></div><div class="tweak-row settings-motion"><span>减少动画</span><button class="toggle" id="motionToggle" type="button" aria-label="减少动画" aria-pressed="false"></button></div></div>
   <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"><strong id="toastTitle"></strong><span id="toastText"></span></div>
 
 <script src='js/window-controls.js'></script><script src='js/project-filter.js'></script><script src='js/workbench.js'></script><script src='js/v5-runtime.js'></script></body></html>

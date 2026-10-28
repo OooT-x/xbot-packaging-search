@@ -549,9 +549,10 @@ function prodInstallTeamSettings() {
   const button = document.createElement("button"); button.className = "settings-update";
   button.type = "button"; button.dataset.action = "team-settings";
   button.textContent = "团队连接";
-  document.querySelector("#tweaks")?.appendChild(button);
+  const workspace = document.querySelector("#tweaks .settings-workspace");
+  workspace?.insertBefore(button, workspace.firstChild);
   const diagnostics = document.createElement("button"); diagnostics.className = "settings-update"; diagnostics.type = "button"; diagnostics.textContent = "诊断信息";
-  diagnostics.addEventListener("click", prodOpenDiagnostics); document.querySelector("#tweaks")?.appendChild(diagnostics);
+  diagnostics.addEventListener("click", prodOpenDiagnostics); document.querySelector("#tweaks .settings-support")?.appendChild(diagnostics);
   const status = document.querySelector(".top-actions .api span");
   if (status) { try { const config = prodTeam.readConfig(); status.textContent = config.unconfigured ? "请配置使用模式" : config.mode === "team" ? "团队模式" : "单机模式"; } catch { status.textContent = "连接配置有误"; } }
 }
