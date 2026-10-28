@@ -1,6 +1,8 @@
+const { isBackgroundType } = require("./package-types");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const { appendDurably } = require("./durable-jsonl");
 
 const EVENT_SCHEMA_VERSION = 1;
 const EVENT_FILE_NAME = "packaging-ingest-events.jsonl";
@@ -33,6 +35,30 @@ function stableEventId(payload) {
     .slice(0, 24)}`;
 }
 
+// Match the current pair, not only package_id: an old receipt cannot certify a revision.
+function packageSyncIdentity(item) {
+  const revisionIds = [...new Set([item.meta?.revision_id, item.revision_id,
+    item.preview?.annotation?.match(/^revision_id[：:]\s*(.*)$/mu)?.[1],
+    item.source?.annotation?.match(/^revision_id[：:]\s*(.*)$/mu)?.[1]].filter(Boolean).map(value => String(value).trim()))];
+  return {
+    package_id: item.packageId || item.package_id || "",
+    package_name: item.packageName || item.package_name || "",
+    package_type: item.packageType || item.package_type || "",
+    version: item.version || "v01",
+    project_name: item.projectName || item.project_name || "",
+    preview_eagle_id: item.preview?.id || item.preview_eagle_id || "",
+    source_eagle_id: item.source?.id || item.source_eagle_id || "",
+    revision_id: item.meta?.revision_id || item.revision_id || "",
+    revision_ids: revisionIds,
+  };
+}
+function eventMatchesPackage(event, identity) {
+  if (event?.batch?.project_name !== identity.project_name) return false;
+  return (event.details || []).some(detail => ["package_id", "package_name", "package_type", "version", "preview_eagle_id", "source_eagle_id"]
+    .every(key => String(detail[key] || (key === "version" ? "v01" : "")) === String(identity[key] || (key === "version" ? "v01" : "")))
+    && (identity.revision_ids?.length ? identity.revision_ids.includes(String(detail.revision_id || "")) : String(detail.revision_id || "") === String(identity.revision_id || "")));
+}
+
 function buildIngestEvent(fileResult) {
   const filed = (fileResult?.filed || [])
     .map((item) => ({
@@ -50,7 +76,7 @@ function buildIngestEvent(fileResult) {
       replaced_kind: String(item.replacedKind || "").trim(),
       status: "filed",
     }))
-    .filter((item) => item.package_id && item.preview_eagle_id && (item.source_eagle_id || item.package_type === "背景"))
+    .filter((item) => item.package_id && item.preview_eagle_id && (item.source_eagle_id || isBackgroundType(item.package_type)))
     .sort((left, right) => left.package_id.localeCompare(right.package_id));
   if (filed.length === 0) return null;
 
@@ -79,7 +105,7 @@ function publishIngestEvent(fileResult, options = {}) {
   const filePath = path.resolve(options.filePath || defaultEventFile());
   try {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.appendFileSync(filePath, `${JSON.stringify(event)}\n`, "utf8");
+    appendDurably(filePath, event);
     return { state: "queued", skipped: false, event, filePath };
   } catch (error) {
     const outbox = path.resolve(options.outboxDir || defaultOutboxDir());
@@ -106,7 +132,7 @@ function retryPendingIngestEvents(options = {}) {
         throw new Error("invalid outbox event");
       }
       fs.mkdirSync(path.dirname(filePath), { recursive: true });
-      fs.appendFileSync(filePath, `${JSON.stringify(event)}\n`, "utf8");
+      appendDurably(filePath, event);
       fs.unlinkSync(recoveryPath);
       return { state: "queued", event, filePath, recoveryPath };
     } catch (error) { return { state: "pending", recoveryPath, error: error.message }; }
@@ -123,4 +149,6 @@ module.exports = {
   retryPendingIngestEvents,
   publishIngestEvent,
   stableEventId,
+  packageSyncIdentity,
+  eventMatchesPackage,
 };

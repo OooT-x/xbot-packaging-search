@@ -117,6 +117,24 @@ class IngestEventWatcher {
         .map(normalizeBatchDetail)
         .filter((detail) => detail.packageId);
       if (details.length === 0) throw new Error("ingest event has no package details");
+      let verifiedReport;
+      if (event._team === true) {
+        verifiedReport = await this.refreshCatalog(true);
+        if (!verifiedReport) throw new Error("catalog refresh did not complete");
+        for (const detail of details) {
+          const indexed = this.database.getPackage(detail.packageId);
+          if (!indexed || indexed.preview_eagle_id !== detail.previewEagleId ||
+              (indexed.source_eagle_id || "") !== detail.sourceEagleId ||
+              indexed.project_name !== String(batch.project_name || "").trim() ||
+              indexed.status !== "active" || indexed.version !== detail.version ||
+              indexed.package_type !== detail.packageType || indexed.package_name !== detail.packageName) {
+            throw new Error(`Eagle 配对尚未核实: ${detail.packageId}`);
+          }
+          // Client drive letters are not readable on the service host.
+          detail.previewPath = indexed.preview_path;
+          detail.sourcePath = indexed.source_path || "";
+        }
+      }
       this.database.recordBatchImport(
         {
           batchId,
@@ -143,7 +161,7 @@ class IngestEventWatcher {
           });
         }
       }
-      const report = await this.refreshCatalog(true);
+      const report = verifiedReport || await this.refreshCatalog(true);
       if (!report) throw new Error("catalog refresh did not complete");
       this.database.markBatchSyncEventCompleted(eventId);
       this.log(

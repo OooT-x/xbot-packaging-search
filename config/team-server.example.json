@@ -1,0 +1,5 @@
+{
+  "host": "127.0.0.1",
+  "port": 41596,
+  "token": "REPLACE_WITH_A_RANDOM_SECRET_OF_AT_LEAST_32_CHARACTERS"
+}

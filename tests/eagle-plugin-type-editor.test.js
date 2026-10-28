@@ -1,0 +1,62 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+function harness(fail = false) {
+  const elements = new Map();
+  const element = selector => { if (!elements.has(selector)) elements.set(selector, { value: '', checked: true, disabled: false, addEventListener(event, fn) { this[event] = fn; } }); return elements.get(selector); };
+  const type = { name: '示例', aliases: ['示例', '旧别名'], enabled: true };
+  const calls = { changes: [], back: 0, confirms: 0 };
+  const context = { document: { querySelector: element }, prodEsc: s => s, openModal() { element('[data-type-name]').value = type.name; element('[data-type-aliases]').value = '旧别名'; }, window: { confirm() { calls.confirms++; return false; } }, prodTeam: { async mutateType(change) { calls.changes.push(change); if (fail) throw Error('类型已被其他人修改'); return change.name; } }, prodRefreshTypes() {}, pairs: [], screen: 'home', closeModal() {}, prodToast() {} };
+  const source = fs.readFileSync('eagle-plugin/js/workbench.js','utf8');
+  const start = source.indexOf('function prodOpenTypeEditor('), end = source.indexOf('\nfunction prodOpenAddType(',start);
+  vm.runInNewContext(source.slice(start,end)+'\nthis.edit=prodOpenTypeEditor;',context);
+  context.edit(type, () => { calls.back++; });
+  return { element, calls };
+}
+test('type editor stages status and aliases, saves once, then returns to list', async () => {
+  const { element:e, calls } = harness();
+  assert.equal(e('[data-type-save]').disabled,true);
+  e('[data-type-enabled]').checked=false; e('[data-type-enabled]').input();
+  e('[data-type-aliases]').value='新别名'; e('[data-type-aliases]').input();
+  assert.equal(calls.changes.length,0);
+  e('[data-type-cancel]').onclick(); assert.equal(calls.back,0); assert.equal(calls.confirms,1);
+  assert.equal(e('#modal')._beforeClose(),false);
+  const first=e('[data-type-save]').onclick(); await e('[data-type-save]').onclick(); await first;
+  assert.equal(calls.changes.length,1); assert.equal(calls.changes[0].enabled,false);
+  assert.equal(calls.changes[0].aliases[0],'新别名'); assert.equal(calls.back,1);
+  assert.equal(e('#modal')._beforeClose,null);
+});
+test('failed save retains form values and keeps unsaved protection', async () => {
+  const { element:e, calls } = harness(true);
+  e('[data-type-aliases]').value='未保存别名'; e('[data-type-aliases]').input();
+  await e('[data-type-save]').onclick();
+  assert.equal(e('[data-type-aliases]').value,'未保存别名');
+  assert.match(e('[data-type-error]').textContent,/其他人修改/); assert.equal(calls.back,0);
+  assert.equal(e('[data-type-save]').disabled,false); assert.equal(e('#modal')._beforeClose(),false);
+});
+test('inline apply updates only its row and preserves other drafts on success or failure', async () => {
+  const source=fs.readFileSync('eagle-plugin/js/workbench.js','utf8');
+  const start=source.indexOf('function prodBindTypeRow('), end=source.indexOf('\nasync function prodOpenTypeManager(',start);
+  let fail=false; const calls=[]; const types=[{name:'甲',aliases:['甲','原甲'],enabled:true},{name:'乙',aliases:['乙','原乙'],enabled:true}];
+  const ctx={prodTeam:{async mutateType(change){calls.push(change);if(fail)throw Error('冲突');const type=types.find(t=>t.name===change.currentName);Object.assign(type,{name:change.name,aliases:[change.name,...change.aliases],enabled:change.enabled});return type.name;}},prodRefreshTypes(){},prodTypes:{listPackageTypes:()=>types},pairs:[],screen:'home',prodToast(){}};
+  vm.runInNewContext(source.slice(start,end)+'\nthis.bind=prodBindTypeRow;',ctx);
+  const makeRow=type=>{const fields={};for(const key of ['name','aliases','enabled','apply','error'])fields['[data-type-'+key+']']={value:key==='name'?type.name:key==='aliases'?type.aliases[1]:'',checked:true,style:{},dataset:{},setAttribute(){},addEventListener(event,fn){this[event]=fn;}};fields['.type-inline-enabled']={hidden:false};return {dataset:{},classList:{toggle(){}},querySelector:s=>fields[s]};};
+  const rows=types.map(makeRow), states=[];const context={busy:false,update:()=>states.forEach(s=>s.update())};
+  rows.forEach((row,i)=>states.push(ctx.bind(row,types[i],context)));
+  assert.equal(rows[0].querySelector('[data-type-apply]').textContent,'启用');
+  const pendingToggle = rows[0].querySelector('[data-type-apply]').onclick();
+  assert.equal(rows[0].querySelector('[data-type-apply]').textContent,'启用');
+  assert.equal(rows[0].querySelector('[data-type-apply]').dataset.pending,'true');
+  assert.equal(rows[1].querySelector('[data-type-apply]').textContent,'启用');
+  await pendingToggle;
+  assert.equal(rows[0].querySelector('[data-type-apply]').dataset.pending,'false');
+  assert.equal(rows[0].querySelector('[data-type-apply]').textContent,'停用');
+  assert.equal(rows[0].querySelector('[data-type-apply]').dataset.state,'disabled');
+  assert.equal(states[0].dirty(),false); calls.length=0;
+  rows[0].querySelector('[data-type-aliases]').value='新甲';rows[1].querySelector('[data-type-aliases]').value='新乙';context.update();
+  assert.equal(calls.length,0);assert.equal(rows[0].querySelector('[data-type-apply]').textContent,'更新');await rows[0].querySelector('[data-type-apply]').onclick();
+  assert.equal(states[0].dirty(),false);assert.equal(calls[0].enabled,false);assert.equal(rows[0].querySelector('[data-type-apply]').textContent,'停用');assert.equal(states[1].dirty(),true);assert.equal(rows[1].querySelector('[data-type-aliases]').value,'新乙');
+  fail=true;await rows[1].querySelector('[data-type-apply]').onclick();
+  assert.equal(states[1].dirty(),true);assert.equal(rows[1].querySelector('[data-type-aliases]').value,'新乙');assert.match(rows[1].querySelector('[data-type-error]').textContent,/冲突/);
+});

@@ -1,4 +1,6 @@
 # Local configuration and secrets
+config/eagle-library.local.json
+config/team-server.local.json
 .env
 .env.*
 !.env.example
@@ -16,6 +18,7 @@ build/
 eagle-plugin/workers/
 coverage/
 .cache/
+output/
 
 # Runtime data
 data/

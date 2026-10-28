@@ -1,3 +1,4 @@
+const { isBackgroundType } = require("./package-types");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
@@ -680,7 +681,7 @@ function scanDirectory(sourceDir, options = {}) {
       const sourcePath = sourceName
         ? registerReference(sourceName, packageId, "源文件", entry.manifestPath)
         : null;
-      const imageOnlyBackground = packageType === "背景" && !sourcePath && !sourceName;
+      const imageOnlyBackground = isBackgroundType(packageType) && !sourcePath && !sourceName;
       if (!previewPath || (!sourcePath && !imageOnlyBackground)) {
         packages.push({
           packageId,
@@ -808,7 +809,7 @@ function scanDirectory(sourceDir, options = {}) {
       ];
       const entryErrors = [];
       const packageType = inferPackageType(packageName);
-      const imageOnlyBackground = packageType === "背景" && !sourceName;
+      const imageOnlyBackground = isBackgroundType(packageType) && !sourceName;
 
       if (!imageOnlyBackground && (!sourcePath || (selectedPaths && !selectedPaths.has(path.resolve(sourcePath))) || !fs.existsSync(sourcePath) || path.extname(sourcePath).toLowerCase() !== ZIP_EXT)) {
         entryErrors.push(`收集记录引用的 ZIP 不存在：${sourceName || "未填写"}`);
@@ -913,7 +914,7 @@ function scanDirectory(sourceDir, options = {}) {
         });
       } else if (png && !zip) {
         const metadata = metadataFromPair(png, null, projectName);
-        const imageOnlyBackground = metadata.packageType === "背景" && !hasAnyZip;
+        const imageOnlyBackground = isBackgroundType(metadata.packageType) && !hasAnyZip;
         packages.push({
           ...metadata,
           preview: { path: png.path, relative: png.relative },

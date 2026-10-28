@@ -1,14 +1,22 @@
+const { PackagingCardFlow } = require("./packaging-card-flow");
+const { buildPackagingCard } = require("./packaging-card");
+const { versionFamily } = require("./packaging-followup");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const { stageFile, fileDigest } = require("./candidate-snapshot");
 const {
   confirmationIntent,
+  TYPE_SYNONYMS,
+  extractPackageType,
+  isBrowseMore,
   findProject,
   hasPackagingAction,
   hasPackagingDomain,
   isPackagingQueryText,
   isProjectCatalogInquiry,
   isPotentialConfirmation,
+  isPackagingNonQuery,
   searchPackages,
 } = require("./package-intent");
 const { syncEagleCatalog } = require("./eagle-sync");
@@ -165,11 +173,13 @@ class PackagingService {
     this.driveUploadThresholdBytes = Number(
       options.driveUploadThresholdBytes || 25 * 1024 * 1024
     );
+    this.judgeFollowUp = options.judgeFollowUp || null;
     this.log = options.log || (() => {});
     this.expiresMinutes = Number(options.expiresMinutes || 20);
     this.syncIntervalMs = Number(options.syncIntervalMs || 60_000);
     this.lastSyncAt = 0;
     this.lastSyncError = null;
+    this.cardFlow = this.transport.updateCard ? new PackagingCardFlow(this) : null;
   }
 
   async initialize() {
@@ -202,6 +212,10 @@ class PackagingService {
   async tryHandleQuery(event, options = {}) {
     const aiHint = options.aiHint || null;
     if (!options.mentioned) return false;
+    if (isPackagingNonQuery(event.content) && !aiHint) return false;
+    if (this.cardFlow && (isProjectCatalogInquiry(event.content) || isPackagingQueryText(event.content) || aiHint)) {
+      return this.cardFlow.start(event, aiHint);
+    }
     if (isProjectCatalogInquiry(event.content)) {
       return await this.handleProjectCatalogInquiry(event);
     }
@@ -233,7 +247,15 @@ class PackagingService {
     const packages = this.database.listActivePackages();
     let effectiveContent = event.content;
     if (aiHint) {
-      effectiveContent = [event.content, aiHint.project_name, aiHint.package_type]
+      // Model fields never override an explicitly named project; blank/unknown hints ask for one.
+      const explicitProject = findProject(packages, event.content);
+      const hintedProject = aiHint.project_name && findProject(packages, aiHint.project_name);
+      if (!explicitProject && (!hintedProject || hintedProject.matched_name !== aiHint.project_name)) {
+        await this.transport.replyText(event.message_id, missingProjectPrompt(packages),
+          `package-query-${event.event_id || event.message_id}-missing-project`);
+        return true;
+      }
+      effectiveContent = [event.content, explicitProject ? "" : hintedProject.project_name, aiHint.package_type]
         .filter(Boolean)
         .join(" ");
     } else {
@@ -252,7 +274,8 @@ class PackagingService {
       if (!hasAction && !hasDomain) return false;
     }
 
-    const result = searchPackages(packages, effectiveContent, 3);
+    const validHintType = aiHint && TYPE_SYNONYMS.has(aiHint.package_type) ? aiHint.package_type : "";
+    let result = searchPackages(packages, effectiveContent, 3, { packageType: validHintType });
     if (!result.project) {
       await this.transport.replyText(
         event.message_id,
@@ -291,9 +314,9 @@ class PackagingService {
         }
         imageKeys.push(await this.transport.uploadImage(candidate.preview_path));
       }
-      const reply = await this.transport.replyPost(
+      const reply = await (this.transport.replyCard || this.transport.replyPost).call(this.transport,
         event.message_id,
-        buildImageOnlyPost(candidates, imageKeys),
+        this.transport.replyCard ? buildPackagingCard(candidates, imageKeys) : buildImageOnlyPost(candidates, imageKeys),
         `package-image-only-${event.event_id || event.message_id}`
       );
       this.log(
@@ -312,37 +335,42 @@ class PackagingService {
   async startQueryFromResult(event, result) {
     const requestId = crypto.randomUUID();
     const createdAt = Date.now();
-    this.database.createPreparingQuery(
-      {
-        request_id: requestId,
-        requester_id: event.sender_id,
-        chat_id: event.chat_id,
-        root_message_id: event.message_id,
-        created_at: createdAt,
-        expires_at: createdAt + this.expiresMinutes * 60_000,
-      },
-      result.candidates
-    );
-
     try {
+      this.database.createPreparingQuery(
+        {
+          request_id: requestId,
+          requester_id: event.sender_id,
+          chat_id: event.chat_id,
+          root_message_id: event.message_id,
+          created_at: createdAt,
+          expires_at: createdAt + this.expiresMinutes * 60_000,
+          search_type: result.package_type || "",
+          followup_filters: result.followup_filters || {},
+          seen_package_ids: [...new Set([...(result.seen_package_ids || []), ...result.candidates.map(item => item.package_id)])],
+        },
+        result.candidates
+      );
+
       this.log(`packaging dbg: upload phase begin request_id=${requestId} candidates=${result.candidates.length}`);
       const imageKeys = [];
-      for (const candidate of result.candidates) {
+      for (const candidate of this.database.getQueryWithCandidates(requestId).candidates) {
         if (!fs.existsSync(candidate.preview_path)) {
           throw new Error(`preview file missing: ${candidate.preview_eagle_id}`);
         }
-        imageKeys.push(await this.transport.uploadImage(candidate.preview_path));
+        const staged = stageFile(candidate.preview_path, JSON.parse(candidate.snapshot_json).preview_hash);
+        try { imageKeys.push(await this.transport.uploadImage(staged.path)); }
+        finally { staged.cleanup(); }
         this.log(`packaging dbg: uploaded image request_id=${requestId} idx=${imageKeys.length}`);
       }
       this.log(`packaging dbg: upload phase done request_id=${requestId} imageKeys=${imageKeys.length}`);
-      const postContent = buildCandidatePost(
+      const postContent = this.transport.replyCard ? buildPackagingCard(result.candidates, imageKeys, { requestId, expiresMinutes: this.expiresMinutes }) : buildCandidatePost(
         result.candidates,
         imageKeys,
         this.expiresMinutes
       );
       this.log(`packaging dbg: built post request_id=${requestId} postLen=${JSON.stringify(postContent).length}`);
       this.log(`packaging dbg: replyPost begin request_id=${requestId}`);
-      const reply = await this.transport.replyPost(
+      const reply = await (this.transport.replyCard || this.transport.replyPost).call(this.transport,
         event.message_id,
         postContent,
         `package-query-${requestId}-candidates`
@@ -377,6 +405,21 @@ class PackagingService {
     return true;
   }
 
+  async tryHandleCardAction(event) {
+    if (this.cardFlow && await this.cardFlow.action(event)) return true;
+    if (event.type !== "card.action.trigger" || event.action_tag !== "button" ||
+        !event.operator_id || !event.chat_id || !event.message_id || !event.event_id) return false;
+    let value;
+    try { value = typeof event.action_value === "string" ? JSON.parse(event.action_value) : event.action_value; }
+    catch { return false; }
+    if (!value || value.scope !== "packaging" || !["select", "more", "cancel"].includes(value.action)) return false;
+    const query = this.database.findQueryByReplyMessage(event.chat_id, event.message_id);
+    if (!query || query.prompt_message_id !== event.message_id || query.request_id !== value.request_id) return false;
+    if (value.action === "select" && (!Number.isInteger(value.position) || !query.candidates.some(c => c.position === value.position))) return false;
+    const content = value.action === "select" ? `第${value.position}个` : value.action === "more" ? "换一批" : "取消";
+    return this.tryHandleConfirmation({ ...event, message_type: "text", sender_id: event.operator_id, content }, { cardQuery: query });
+  }
+
   async tryHandleConfirmation(event, options = {}) {
     try {
       return await this.handleConfirmation(event, options);
@@ -390,13 +433,15 @@ class PackagingService {
     if (!["text", "post"].includes(event.message_type)) return false;
     const content = String(event.content || "").trim();
     const catalogInquiry = isProjectCatalogInquiry(content);
-    if (!isPotentialConfirmation(content) && !hasPackagingDomain(content) && !catalogInquiry) {
+    const browseMore = isBrowseMore(content);
+    const semanticQuestion = /(?:怎么|如何|新版|旧版|版本|简洁|风格|合适|类型|名字)/.test(content);
+    if (!isPotentialConfirmation(content) && !hasPackagingDomain(content) && !catalogInquiry && !browseMore && !this.judgeFollowUp) {
       return false;
     }
 
     if (options.mentioned) {
       const project = findProject(this.database.listActivePackages(), content);
-      if (project && isPackagingQueryText(content)) {
+      if (project && isPackagingQueryText(content) && !isPackagingNonQuery(content) && !browseMore) {
         this.log(
           `packaging confirmation skipped for explicit query message_id=${event.message_id} project=${project.project_name}`
         );
@@ -406,7 +451,7 @@ class PackagingService {
 
     let message;
     try {
-      message = await this.transport.getMessage(event.message_id);
+      message = options.cardQuery ? { reply_to: event.message_id } : await this.transport.getMessage(event.message_id);
     } catch (error) {
       this.log(`packaging confirmation lookup failed message_id=${event.message_id}: ${error.message}`);
       return false;
@@ -414,7 +459,21 @@ class PackagingService {
     const replyTo = String(message?.reply_to || "").trim();
     if (!replyTo) return false;
 
-    const query = this.database.findQueryByReplyMessage(event.chat_id, replyTo);
+    if (this.cardFlow && !options.cardQuery && await this.cardFlow.text(event, replyTo)) return true;
+    let query = options.cardQuery || this.database.findQueryByReplyMessage(event.chat_id, replyTo);
+    // Only browsing may traverse a real reply chain. Confirmation must target the candidate itself.
+    if (!query && (browseMore || (this.judgeFollowUp && (!isPotentialConfirmation(content) || semanticQuestion)))) {
+      const visited = new Set([event.message_id]);
+      let ancestorId = replyTo;
+      for (let depth = 0; depth < 6 && ancestorId && !visited.has(ancestorId); depth++) {
+        visited.add(ancestorId);
+        query = this.database.findQueryByReplyMessage(event.chat_id, ancestorId);
+        if (query) break;
+        const ancestor = await this.transport.getMessage(ancestorId);
+        if (ancestor?.chat_id && ancestor.chat_id !== event.chat_id) break;
+        ancestorId = String(ancestor?.reply_to || "").trim();
+      }
+    }
     if (!query) {
       if (!catalogInquiry) return false;
       return await this.handleProjectCatalogInquiry(event);
@@ -436,6 +495,24 @@ class PackagingService {
         `package-query-${query.request_id}-expired`
       );
       return true;
+    }
+    if (browseMore) {
+      if (!["pending", "completed"].includes(query.status)) {
+        await this.transport.replyText(event.message_id, "这次候选暂时不能继续浏览，请重新 @X.bot 查询。",
+          `package-query-${query.request_id}-browse-${query.status}`);
+        return true;
+      }
+      return await this.tryHandleFollowUp(event, query, { browseMore: true });
+    }
+    const clearConfirmation = confirmationIntent(content, query.candidates.length, query.replied_position);
+    if (this.judgeFollowUp && (clearConfirmation.kind === "unknown" || semanticQuestion)) {
+      if (!["pending", "completed"].includes(query.status)) {
+        await this.transport.replyText(event.message_id, "这次查询暂时不能继续，请重新 @X.bot 查询。", `package-followup-${event.message_id}-inactive`);
+        return true;
+      }
+      const exactType = extractPackageType(content);
+      if (exactType && !semanticQuestion && !isPackagingNonQuery(content)) return await this.tryHandleFollowUp(event, query);
+      return await this.handleSemanticFollowUp(event, query);
     }
     if (!isPotentialConfirmation(content)) {
       return await this.tryHandleFollowUp(event, query);
@@ -478,7 +555,7 @@ class PackagingService {
     if (intent.kind === "ambiguous") {
       await this.transport.replyText(
         event.message_id,
-        "这里有多个候选，请回复“第一个”“第二个”或“第三个”。",
+        `${query.candidates.length > 1 ? "这里有多个候选，" : "我还没收到明确选择，"}请回复“第一个”“第二个”或“第三个”（有效编号 1—${query.candidates.length}）。确认后我再发源文件。`,
         `package-query-${query.request_id}-ambiguous`
       );
       return true;
@@ -493,6 +570,12 @@ class PackagingService {
         "这个背景只有图片，没有对应工程 ZIP，不需要确认源文件。",
         `package-query-${query.request_id}-image-only`
       );
+      return true;
+    }
+    // A cached index is not sufficient evidence that a package is still deliverable.
+    if (!await this.refreshCatalog(true)) {
+      await this.transport.replyText(event.message_id, "当前无法核验素材库，暂不发送源文件，请稍后重试。",
+        `package-query-${query.request_id}-verification-unavailable`);
       return true;
     }
     if (!fs.existsSync(selected.source_path)) {
@@ -529,26 +612,41 @@ class PackagingService {
     if (claim.state !== "claimed") {
       await this.transport.replyText(
         event.message_id,
-        "这次候选状态已经变化，请重新 @X.bot 查询。",
+        "这次候选已变化或已撤下，请重新 @X.bot 查询。",
         `package-query-${query.request_id}-claim-${claim.state}`
       );
       return true;
     }
 
+    let staged;
     try {
+      staged = stageFile(claim.candidate.source_path, claim.snapshot.source_hash);
       await this.transport.replyText(
         event.message_id,
         `确认：${selected.package_name} ${selected.version}。源文件会回复到最初的查询消息下面。`,
         `${idempotencyKey}-confirmed`
       );
-      const fileSize = fs.statSync(selected.source_path).size;
+      const verify = async () => {
+        if (!await this.refreshCatalog(true)) throw new Error("当前无法核验素材库，请稍后重试");
+        const liveQuery = this.database.getQueryByRootMessage(query.root_message_id);
+        const current = this.database.candidateEligibility(query.request_id, selected.package_id);
+        if (!liveQuery || liveQuery.status !== "pending" || liveQuery.expires_at <= Date.now() ||
+            current.state !== "valid" || current.snapshotKey !== claim.snapshotKey ||
+            fileDigest(current.candidate.preview_path) !== claim.snapshot.preview_hash ||
+            fileDigest(current.candidate.source_path) !== claim.snapshot.source_hash) {
+          throw new Error("候选已变化或已撤下，请重新查询");
+        }
+      };
+      await verify();
+      const fileSize = fs.statSync(staged.path).size;
       if (fileSize > this.driveUploadThresholdBytes) {
-        const drive = claim.resource || await this.transport.uploadToDrive(selected.source_path);
+        const drive = claim.resource || await this.transport.uploadToDrive(staged.path);
         if (!drive.url || !drive.token) throw new Error("drive upload did not return url/token");
         this.database.markDeliveryUploaded(query.request_id, selected.package_id, drive);
+        await verify();
         this.database.markDeliveryDispatching(query.request_id, selected.package_id);
         const linkReply = await this.transport.replyText(
-          query.root_message_id,
+          query.source_root_message_id || query.root_message_id,
           `这份源文件有 ${formatFileSize(fileSize)}，飞书直接发文件会被限制，我传到云盘了：\n${drive.url}\n下载后直接使用。`,
           `${idempotencyKey}-drive-link`
         );
@@ -564,8 +662,8 @@ class PackagingService {
       } else {
         this.database.markDeliveryDispatching(query.request_id, selected.package_id);
         const fileReply = await this.transport.replyFile(
-          query.root_message_id,
-          selected.source_path,
+          query.source_root_message_id || query.root_message_id,
+          staged.path,
           idempotencyKey
         );
         const sourceMessageId = safeMessageId(fileReply);
@@ -584,14 +682,57 @@ class PackagingService {
       this.log(`packaging source send failed request_id=${query.request_id}: ${error.message}`);
       await this.transport.replyText(
         event.message_id,
-        "源文件发送未完成，查询状态已保留。请回复同一候选检查或重试；若发送结果不明，会先要求维护者核对，避免重复交付。",
+        /候选.*(?:变化|撤下)/u.test(error.message)
+          ? "这次候选已变化或已撤下，我没有发送源文件，请重新 @X.bot 查询。"
+          : "源文件发送未完成，查询状态已保留。请回复同一候选检查或重试；若发送结果不明，会先要求维护者核对，避免重复交付。",
         `package-query-${query.request_id}-send-failed`
       );
+    } finally {
+      try { staged?.cleanup(); }
+      catch (error) { this.log(`packaging staging cleanup failed: ${error.code || "unknown"}`); }
     }
     return true;
   }
 
-  async tryHandleFollowUp(event, query) {
+  async handleSemanticFollowUp(event, query) {
+    await this.refreshCatalog(false);
+    const projectId = query.candidates[0]?.project_id;
+    const packages = this.database.listActivePackages().filter(item => item.project_id === projectId);
+    const decision = await this.judgeFollowUp(event.content, query, packages);
+    this.log(`packaging semantic follow-up message_id=${event.message_id} action=${decision?.action || "unavailable"} confidence=${decision?.confidence || 0}`);
+    if (!decision || decision.action === "clarify") {
+      await this.transport.replyText(event.message_id, decision?.reply || "你想换一种类型、按风格找，还是问某个候选怎么用？说一个条件，我接着找。", `package-followup-${event.message_id}-clarify`);
+      return true;
+    }
+    if (decision.action === "chat") return false;
+    if (decision.action === "explain") {
+      await this.transport.replyText(event.message_id, decision.reply || "确认所需候选后，我会发送工程ZIP。解压后打开AEP，并检查素材链接、字体和插件是否齐全。", `package-followup-${event.message_id}-explain`);
+      return true;
+    }
+    if (decision.action === "more") return await this.tryHandleFollowUp(event, query, { browseMore: true });
+    if (decision.action === "refine") {
+      const allowed = decision.package_ids || [];
+      if (allowed.some(id => !packages.some(item => item.package_id === id)) ||
+          (decision.package_type && !packages.some(item => item.package_type === decision.package_type))) {
+        await this.transport.replyText(event.message_id, "这个条件还没对应到库里的包装，换一个类型或关键词试试。", `package-followup-${event.message_id}-invalid`);
+        return true;
+      }
+      return await this.tryHandleFollowUp(event, query, { packageType: decision.package_type, allowedIds: allowed.length ? allowed : null });
+    }
+    if (decision.action === "version") {
+      const selected = query.candidates.find(item => item.position === decision.candidate_position);
+      if (!selected) return true;
+      const family = versionFamily(packages, selected.package_id);
+      if (family.length <= 1) {
+        await this.transport.replyText(event.message_id, `库里目前只登记了“${selected.package_name}”的 ${selected.version}，没有找到其他关联版本。`, `package-followup-${event.message_id}-version-single`);
+        return true;
+      }
+      return await this.tryHandleFollowUp(event, query, { allowedIds: family.map(item => item.package_id), showHistory: true });
+    }
+    return true;
+  }
+
+  async tryHandleFollowUp(event, query, options = {}) {
     const projectName = query.candidates?.[0]?.project_name;
     if (!projectName) return false;
 
@@ -607,9 +748,34 @@ class PackagingService {
     }
 
     const packages = this.database.listActivePackages();
-    const effectiveContent = `${projectName} ${event.content}`;
-    let result = searchPackages(packages, effectiveContent, 3);
-    if (!result.project || result.candidates.length === 0) return false;
+    const namedProject = findProject(packages, event.content);
+    if (namedProject && namedProject.project_id !== query.candidates[0].project_id) {
+      await this.transport.replyText(event.message_id, "想换项目请重新 @X.bot 加项目名；这条回复只继续当前项目。",
+        `package-query-${event.message_id}-different-project`);
+      return true;
+    }
+    let storedFilters = {};
+    try { storedFilters = JSON.parse(query.followup_filters_json || "{}"); } catch {}
+    const filters = options.browseMore ? storedFilters : { allowedIds: options.allowedIds || null, showHistory: Boolean(options.showHistory) };
+    const filtered = Array.isArray(filters.allowedIds) ? packages.filter(item => filters.allowedIds.includes(item.package_id)) : packages;
+    const effectiveContent = `${projectName} ${event.content} ${filters.showHistory ? "所有版本" : ""}`;
+    const type = options.packageType || (filters.showHistory ? "" : extractPackageType(event.content)) || (options.browseMore ? query.search_type : "");
+    let seen = [];
+    if (options.browseMore) {
+      try { seen = JSON.parse(query.seen_package_ids_json || "[]"); } catch { seen = []; }
+      if (!Array.isArray(seen)) seen = [];
+      seen = [...new Set([...seen, ...query.candidates.map(item => item.package_id)])];
+    }
+    let result = searchPackages(filtered, effectiveContent, 3, { packageType: type, excludePackageIds: seen });
+    if (!result.project || result.candidates.length === 0) {
+      if (!options.browseMore && !options.allowedIds && !options.packageType) return false;
+      await this.transport.replyText(event.message_id,
+        `“${projectName}”${type ? `的${type}` : ""}目前没有更多未展示的包装了。可以回复之前的候选选编号，或指定其他类型继续找。`,
+        `package-query-${event.message_id}-browse-end`);
+      return true;
+    }
+    result.seen_package_ids = seen;
+    result.followup_filters = filters;
 
     const imageOnlyCandidates = result.candidates.filter(isImageOnlyPackage);
     const sourceCandidates = result.candidates.filter((item) => !isImageOnlyPackage(item));

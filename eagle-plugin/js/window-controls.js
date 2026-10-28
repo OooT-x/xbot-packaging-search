@@ -19,8 +19,8 @@
     try {
       const maximized = await nativeWindow.isMaximized();
       maximize.dataset.maximized = String(maximized);
-      maximize.setAttribute("aria-label", maximized ? "还原窗口" : "最大化窗口");
-      maximize.title = maximized ? "还原窗口" : "最大化窗口";
+      maximize.setAttribute("aria-label", maximized ? "还原" : "最大化");
+      maximize.title = maximized ? "还原" : "最大化";
     } catch (error) { report(error); }
   }
   async function toggleMaximized() {

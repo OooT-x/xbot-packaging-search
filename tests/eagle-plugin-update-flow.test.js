@@ -34,7 +34,7 @@ test("production update page preserves offline cache and recovers from query fai
   assert.equal(node('[data-action="download-plugin-update"]').disabled, false);
   c.prodUpdater.checkForUpdate = async () => ({ releaseFound: false, updateAvailable: false });
   await c.prodCheckUpdates(true);
-  assert.equal(node("#updateStatusTitle").textContent, "暂无稳定版发布");
+  assert.equal(node("#updateStatusTitle").textContent, "暂无新版");
   assert.equal(node('[data-action="download-plugin-update"]').disabled, true);
   assert.equal(c.prodUpdateState.error, "");
 });
@@ -42,14 +42,14 @@ test("production update page preserves offline cache and recovers from query fai
 test("production cache rebases after installation and invalid storage falls back to network", async () => {
   const info = { ...available(), version: "1.8.4" };
   const { context: c, node } = harness({ checkForUpdate: async () => { throw new Error("should not query"); } },
-    { getItem: () => JSON.stringify({ info, checkedAt: Date.now() }) });
+    { getItem: () => JSON.stringify({ info, checkedAt: Date.now() - 1000 }) });
   await c.prodCheckUpdates();
-  assert.equal(node("#updateStatusTitle").textContent, "已是最新版本");
+  assert.equal(node("#updateStatusTitle").textContent, "已是最新");
   assert.equal(node('[data-action="download-plugin-update"]').disabled, true);
   c.localStorage = c.window.localStorage = { getItem: () => "{bad", setItem() { throw new Error("quota"); } };
   c.prodUpdater.checkForUpdate = async () => available();
   await c.prodCheckUpdates();
-  assert.equal(node("#updateStatusTitle").textContent, "发现可用更新");
+  assert.equal(node("#updateStatusTitle").textContent, "有新版本");
 });
 
 test("production download prevents duplicate requests, shows progress and retains a package after open failure", async () => {
@@ -91,4 +91,62 @@ test("fresh cache does not skip explicit checks and opening the update page neve
   await c.prodAction(click("check-plugin-updates")); assert.equal(requests, 2);
   c.prodLatestRelease = null;
   await c.prodDownloadUpdate(); assert.equal(requests, 2);
+});
+
+
+test("rate-limit cooldown survives reopening, blocks forced checks, and expires without polling", async () => {
+  const values = {}, retryAt = Date.now() + 3600000;
+  const storage = { getItem: key => values[key] || null, setItem: (key, value) => { values[key] = value; } };
+  let requests = 0;
+  const checkForUpdate = async () => { requests++; throw Object.assign(new Error("查询频率受限"), { rateLimited: true, retryAt }); };
+  const { context: c, node } = harness({ checkForUpdate }, storage);
+  await c.prodCheckUpdates(true);
+  assert.equal(requests, 1);
+  assert.equal(node("#updateStatusTitle").textContent, "检查失败");
+  assert.match(node("#previewUpdateStatus").textContent, /后重试/);
+  assert.equal(node('[data-action="check-plugin-updates"]').disabled, true);
+  await c.prodCheckUpdates(true); assert.equal(requests, 1);
+  const reopened = harness({ checkForUpdate }, storage);
+  await reopened.context.prodCheckUpdates(true); assert.equal(requests, 1);
+  c.Date = class extends Date { static now() { return retryAt + 1; } };
+  c.prodRenderUpdates();
+  assert.equal(node('[data-action="check-plugin-updates"]').disabled, false);
+  assert.equal(requests, 1, "expiry only changes UI, never starts a request");
+  c.prodUpdater.checkForUpdate = async () => { requests++; return { releaseFound: false, updateAvailable: false }; };
+  await c.prodCheckUpdates(true);
+  assert.equal(requests, 2);
+  assert.equal(c.prodUpdateState.error, "");
+});
+
+test("cached older releases are marked historical and cannot trigger a downgrade", async () => {
+  const storage = { getItem: key => key.endsWith('cache.v1') ? JSON.stringify({ checkedAt: Date.now() - 90000000, info: { ...available(), version: "1.8.0" } }) : null, setItem() {} };
+  let downloads = 0;
+  const { context: c, node } = harness({ checkForUpdate: async () => { throw new Error("网络不可用"); }, downloadPluginUpdate: async () => { downloads++; } }, storage);
+  await c.prodCheckUpdates(true);
+  assert.equal(node("#updateStatusTitle").textContent, "检查失败");
+  assert.match(node("#previewUpdateStatus").textContent, /上次查询结果.*尚未重新核实/);
+  assert.equal(node('[data-action="download-plugin-update"]').disabled, true);
+  assert.equal(node('[data-action="download-plugin-update"]').textContent, "暂无可用更新");
+  assert.equal(node(".update-version-row:nth-of-type(3) > span:first-child").textContent, "上次查询版本");
+  c.prodLatestRelease.updateAvailable = true;
+  await c.prodDownloadUpdate();
+  assert.equal(downloads, 0, "download handler also compares versions");
+  assert.equal(node("#updateStatusTitle").textContent, "下载失败");
+});
+
+
+test("Release page discovery displays its source and link but cannot offer an unverified download", async () => {
+  const { context: c, node } = harness({ checkForUpdate: async () => ({
+    ...available(), source: "release-page", asset: null,
+    releaseUrl: "https://github.com/OooT-x/xbot-packaging-search/releases/tag/eagle-plugin-v1.9.0",
+    warning: "清单暂不可用，已改用页面核对版本。",
+  }) });
+  await c.prodCheckUpdates(true);
+  assert.match(node(".update-channel").textContent, /Release 页面/);
+  assert.match(node("#previewUpdateStatus").textContent, /清单/);
+  assert.equal(node("#updateReleaseLink").hidden, false);
+  assert.match(node("#updateReleaseLink").href, /eagle-plugin-v1.9.0$/);
+  assert.equal(node('[data-action="download-plugin-update"]').disabled, true);
+  c.prodLatestRelease.releaseUrl = "https://example.com/untrusted";
+  c.prodRenderUpdates(); assert.equal(node("#updateReleaseLink").hidden, true);
 });

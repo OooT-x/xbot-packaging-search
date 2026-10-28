@@ -127,7 +127,7 @@ test("AEP preview opens an empty viewer before rendering and the image viewer af
   const comp = { name: "视频框", prodPreviewPath: "" };
 
   open(comp);
-  assert.match(calls.modal, /暂无预览图/);
+  assert.match(calls.modal, /暂无图片/);
   assert.equal(typeof generate, "function");
   generate();
   assert.equal(calls.closed, 1);
@@ -146,12 +146,12 @@ test("AEP review explains only matching name and reference heuristics", () => {
   assert.equal(reasons({name:"背景",parent_ids:[1,1]}).length, 0);
   const video = reasons({name:"视频框-01",parent_ids:[1]});
   assert.equal(video.length, 1);
-  assert.match(video[0].detail, /尚未证明工程存在错误/);
-  assert.match(video[0].advice, /生成预览/);
+  assert.match(video[0].detail, /建议核对画面/);
+  assert.match(video[0].advice, /核对预览/);
   const shared = reasons({name:"临时视频框",parent_ids:[1,2]});
   assert.equal(shared.length, 3);
   assert.match(shared[1].detail, /父合成1、父合成2/);
-  assert.match(shared[1].advice, /按 ID 去重/);
+  assert.match(shared[1].advice, /只导出一份/);
 });
 
 test("review drawer offers preview generation and viewing without changing collection", () => {
@@ -161,14 +161,14 @@ test("review drawer offers preview generation and viewing without changing colle
   let html, action, closed = 0;
   const rendered = [], viewed = [];
   const open = vm.runInNewContext(source.slice(start, end) + "\nprodOpenAepReview", {
-    prodAepReviewReasons: () => [{title:"取景",detail:"名称提示",advice:"核对代表帧"}],
+    prodAepReviewReasons: () => [{title:"取景",detail:"名称提示",advice:"核对画面时间"}],
     prodEsc: value => String(value), openDrawer: value => {html=value;},
     closeDrawer: () => {closed++;},
     prodRenderPreview: comp => rendered.push(comp), prodOpenAepPreview: comp => viewed.push(comp),
     document: {querySelectorAll: () => [], querySelector: () => ({addEventListener: (_, listener) => {action=listener;}})}
   });
   const comp = {name:"视频框-01"};
-  open(comp); assert.match(html, /不是工程错误检测结果/); assert.match(html, /生成预览/);
+  open(comp); assert.match(html, /这些是检查建议，不影响导出/); assert.match(html, /生成预览/);
   action(); assert.deepEqual(rendered, [comp]); assert.equal(closed, 1);
   comp.prodPreviewPath = "preview.png"; open(comp); assert.match(html, /查看预览/);
   action(); assert.deepEqual(viewed, [comp]);
@@ -176,7 +176,7 @@ test("review drawer offers preview generation and viewing without changing colle
 
 test("production import keeps Eagle success separate from a failed queue and retries only the event", async () => {
   const source = fs.readFileSync(workbenchPath, "utf8");
-  const start = source.indexOf("function prodSubmitIngest(result) {");
+  const start = source.indexOf("async function prodSubmitIngest(result) {");
   const end = source.indexOf("\nasync function prodRefreshManaged(", start);
   const nodes = new Map(); let queueFails = true, imports = 0;
   const element = () => ({
@@ -194,10 +194,11 @@ test("production import keeps Eagle success separate from a failed queue and ret
     prodProject:"验收",prodScanResult:{},prodOutputNames:{},workflowDraft:{},
     prodRefreshPairState:() => {},prodAdapter:() => ({}),prodEsc:String,
     closeModal:() => {},prodSetScreen:() => {},prodToast:() => {},
+    window: { eagle: {} }, prodTeam: { withTeamWrite: async (_eagle, action) => action() },
     prodEagle:{async importFormalBatch() {
       imports++; return {filed:[{packageId:"p",packageName:"包装",version:"v01",previewName:"p.png",sourceName:"p.zip"}]};
     }},
-    prodIngest:{publishIngestEvent() {
+    prodIngest:{publish() {
       if (queueFails) throw new Error("queue denied");
       return {state:"queued"};
     }},
@@ -206,16 +207,19 @@ test("production import keeps Eagle success separate from a failed queue and ret
   await run();
   const boundary = document.querySelector("#successBoundary");
   assert.equal(imports,1);
-  assert.match(boundary.textContent,/Eagle 已写入正式目录/);
-  assert.match(boundary.textContent,/未入队/);
+  assert.match(boundary.textContent,/包装已保存到 Eagle/);
+  assert.match(boundary.textContent,/同步失败/);
   assert.doesNotMatch(boundary.textContent,/已提交|已入队/);
-  assert.match(boundary.children[1].textContent,/尚未保存/);
-  queueFails = false; boundary.children[0].click();
+  assert.match(boundary.children[0].textContent,/同步记录未保存/);
+  const syncAction = document.querySelector("#successSyncAction");
+  assert.equal(syncAction.textContent,"重试同步");
+  queueFails = false; await syncAction.onclick();
   assert.equal(imports,1,"event retry must not write Eagle again");
-  assert.match(boundary.textContent,/已入队/);
-  assert.match(boundary.textContent,/结果仍待核对/);
-  assert.equal(boundary.children.length,0);
+  assert.match(boundary.textContent,/已提交同步/);
+  assert.match(boundary.textContent,/机器人能否查到待核对/);
+  assert.equal(syncAction.textContent,"检查同步");
+  assert.equal(boundary.children.length,1,"sync action stays outside the status text");
   context.prodRenderIngestBoundary({state:"queued"},{archiveError:"archive denied"});
-  assert.match(boundary.textContent,/已入队/);
-  assert.match(boundary.textContent,/旧版本归档未完成/);
+  assert.match(boundary.textContent,/已提交同步/);
+  assert.match(boundary.textContent,/旧版待处理/);
 });

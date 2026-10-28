@@ -19,7 +19,19 @@ test("type lifecycle persists, refreshes retained containers and preserves histo
   assert.ok(retainedArray.includes("卡片")); assert.ok(!retainedSet.has("卡偏"));
   assert.throws(() => types.updatePackageType("卡片", {name:"背景"}));
   assert.throws(() => types.updatePackageType("卡片", {aliases:["信息条"]}));
-  assert.throws(() => types.updatePackageType("背景", {name:"底图"}));
+  types.updatePackageType("背景", {name:"底图"});
+  assert.equal(types.normalizePackageType("背景"), "底图");
+  assert.equal(types.isBackgroundType("底图"), true);
+  assert.equal(types.PACKAGE_TYPES.includes("背景"), false);
+  types.updatePackageType("底图", {name:"主画面"});
+  assert.equal(types.normalizePackageType("背景"), "主画面");
+  assert.equal(types.normalizePackageType("底图"), "主画面");
+  assert.equal(types.isBackgroundType("主画面"), true);
+  const bgRoot = path.join(root, "background"); fs.mkdirSync(bgRoot); fs.writeFileSync(path.join(bgRoot,"背景.png"),"fixture");
+  const scanned = require("../eagle-plugin/lib/scan").scanDirectory(bgRoot);
+  assert.equal(scanned.packages.length, 1);
+  assert.equal(scanned.packages[0].packageType, "主画面");
+  assert.equal(scanned.packages[0].sourceOptional, true);
   types.updatePackageType("卡片", {enabled:false});
   assert.ok(!retainedArray.includes("卡片")); assert.ok(!retainedSet.has("卡片"));
   assert.equal(types.normalizePackageType("卡偏"), "卡片");
@@ -56,24 +68,25 @@ test("registered custom type satisfies production pair validation; retired type 
   const pair={type:"卡片",name:"BG-02",previewPath:"preview.png",sourcePath:"source.zip",selected:true,_package:{}};
   refresh(pair);assert.equal(pair.state,"review");
   types.registerPackageType("卡片");refresh(pair);assert.equal(pair.state,"ready");assert.equal(pair._package.packageType,"卡片");
-  pair.sourcePath="";refresh(pair);assert.equal(pair.state,"review");assert.match(pair.note,/缺少配对 ZIP/);
+  pair.sourcePath="";refresh(pair);assert.equal(pair.state,"review");assert.match(pair.note,/缺少工程包/);
   pair.sourcePath="source.zip";types.updatePackageType("卡片",{enabled:false});refresh(pair);assert.equal(pair.state,"review");assert.match(pair.note,/已停用/);
   types.updatePackageType("卡片",{enabled:true});refresh(pair);assert.equal(pair.state,"ready");
 });
 
-test("the search-menu shortcut writes the shared registry before refreshing its pair", t => {
+test("the search-menu shortcut writes the shared registry before refreshing its pair", async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(),"xbot-type-shortcut-")), previous = process.env.XBOT_PACKAGE_TYPES_FILE;
   process.env.XBOT_PACKAGE_TYPES_FILE=path.join(root,"types.json");
   const types=require("../eagle-plugin/lib/package-types");
   t.after(()=>{if(previous===undefined)delete process.env.XBOT_PACKAGE_TYPES_FILE;else process.env.XBOT_PACKAGE_TYPES_FILE=previous;types.refreshPackageTypes();fs.rmSync(root,{recursive:true,force:true});});
   const source=fs.readFileSync(path.join(__dirname,"../eagle-plugin/js/workbench.js"),"utf8"), runtime=fs.readFileSync(path.join(__dirname,"../eagle-plugin/js/v5-runtime.js"),"utf8");
   const pair={id:"BG-02",type:""}, calls=[];
-  const begin=source.indexOf("function prodAddTypeFromMenu("),end=source.indexOf("\nfunction prodOpenTypeManager(",begin);
-  const context={prodTypes:types,prodRefreshTypes:()=>types.refreshPackageTypes(),prodPair:id=>id===pair.id?pair:null,prodOutputNames:{},prodRenderPairs:()=>calls.push(types.isPackageTypeActive(pair.type)),closePackageTypePickers:()=>{},prodToast:()=>{},window:{prodWorkbenchReady:true}};
+  const begin=source.indexOf("async function prodAddTypeFromMenu("),end=source.indexOf("\nfunction prodBindTypeRow(",begin);
+  const context={prodTeam:{mutateType:async change=>types.registerPackageType(change.name,change.aliases||[])},prodTypes:types,prodRefreshTypes:()=>types.refreshPackageTypes(),prodPair:id=>id===pair.id?pair:null,prodOutputNames:{},prodRenderPairs:()=>calls.push(types.isPackageTypeActive(pair.type)),closePackageTypePickers:()=>{},prodToast:()=>{},window:{prodWorkbenchReady:true}};
   vm.runInNewContext(source.slice(begin,end)+"\nthis.prodAddTypeFromMenu=prodAddTypeFromMenu",context);
   const start=runtime.indexOf("function addPackageTypeFromMenu("),finish=runtime.indexOf("\n    function enhancePackageTypeMenu(",start);
   const shortcut=vm.runInNewContext(runtime.slice(start,finish)+"\naddPackageTypeFromMenu",context);
   shortcut({_xbotPicker:{querySelector:()=>({dataset:{packageTypeScope:"card",packageTypeTrigger:pair.id}})}},{value:"卡片"},{});
+  await new Promise(resolve=>setImmediate(resolve));
   assert.equal(pair.type,"卡片");assert.deepEqual(calls,[true]);
   assert.ok(JSON.parse(fs.readFileSync(process.env.XBOT_PACKAGE_TYPES_FILE,"utf8")).some(entry=>entry.name==="卡片"));
 });

@@ -12,6 +12,39 @@ function makeDatabase() {
   return { root, database };
 }
 
+test("snapshot migration expires legacy candidates without altering completed or uncertain deliveries", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "xbot-snapshot-migration-"));
+  const migrations = path.join(root, "migrations"), file = path.join(root, "index.sqlite");
+  fs.mkdirSync(migrations);
+  for (const name of fs.readdirSync(path.join(__dirname, "../migrations")).filter(name => name < "009")) {
+    fs.copyFileSync(path.join(__dirname, "../migrations", name), path.join(migrations, name));
+  }
+  let database;
+  try {
+    database = new PackageDatabase(file, { migrationsDir: migrations });
+    database.db.exec(`INSERT INTO projects(project_id, project_name, normalized_name, created_at, updated_at) VALUES ('p','项目','项目',1,1);
+      INSERT INTO packages(package_id, project_id, package_name, package_type, version, preview_eagle_id, source_eagle_id,
+        preview_path, source_path, synced_at) VALUES ('a','p','条','信息条','v01','png','zip','p.png','s.zip',1);
+      INSERT INTO queries(request_id, requester_id, chat_id, root_message_id, status, created_at, expires_at)
+        VALUES ('q','owner','chat','root','pending',1,9999999999999);
+      INSERT INTO query_candidates(request_id, position, package_id) VALUES ('q',1,'a');
+      INSERT INTO deliveries(request_id, package_id, idempotency_key, status, phase, created_at, updated_at)
+        VALUES ('q','a','key','failed','uncertain',1,1);
+      INSERT INTO queries(request_id, requester_id, chat_id, root_message_id, status, created_at, expires_at)
+        VALUES ('done','owner','chat','root-done','completed',1,9999999999999);
+      INSERT INTO deliveries(request_id, package_id, idempotency_key, status, phase, source_message_id, created_at, updated_at)
+        VALUES ('done','a','done-key','completed','delivered','sent-id',1,1);`);
+    const before = database.db.prepare("SELECT * FROM deliveries ORDER BY request_id").all();
+    database.close();
+    database = new PackageDatabase(file);
+    assert.equal(database.getQueryWithCandidates("q").status, "expired");
+    assert.equal(database.getQueryWithCandidates("done").status, "completed");
+    const after = database.db.prepare("SELECT * FROM deliveries ORDER BY request_id").all();
+    assert.deepEqual(after.map(({ snapshot_key, ...row }) => row), before.map(row => ({ ...row })));
+    assert.ok(database.getQueryWithCandidates("q").expires_at <= Date.now());
+  } finally { database?.close(); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test("migrates batches and batch details tables", () => {
   const { root, database } = makeDatabase();
   try {
@@ -26,6 +59,10 @@ test("migrates batches and batch details tables", () => {
       "004_image_only_backgrounds.sql",
       "005_package_revisions.sql",
       "006_interrupted_delivery.sql",
+      "007_query_browsing.sql",
+      "008_followup_filters.sql",
+      "009_candidate_snapshots.sql",
+      "010_card_sessions.sql",
     ]);
     assert.equal(database.db.prepare("SELECT COUNT(*) AS count FROM batches").get().count, 0);
     assert.equal(

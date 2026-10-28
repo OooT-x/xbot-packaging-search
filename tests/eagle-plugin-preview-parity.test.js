@@ -31,17 +31,17 @@ function bodyShape(html) {
   });
 }
 
-test("production plugin keeps the v5 preview styling and interactive DOM structure", () => {
+test("production plugin preserves the useful library preview controls and loads one runtime", () => {
   const preview = read(previewPath);
   const plugin = read(pluginPath);
-  assert.equal(inlineStyle(plugin), inlineStyle(preview), "production CSS must be copied from the latest preview");
-  assert.deepEqual(bodyShape(plugin), bodyShape(preview), "production markup should retain the preview element and interaction structure");
-  assert.match(preview, /id="manageCardSize" type="range"[^>]*aria-label="素材卡片大小"/, "the library should expose an accessible card-size slider");
-  assert.match(preview, /#manageGrid\[data-card-size="small"\]/, "the slider sizes must change the card grid density");
-  assert.match(preview, /\*::-webkit-scrollbar-button\{display:none/, "custom scrollbars must suppress native scrollbar end caps");
-  assert.match(preview, /\.frame-art\.actual-preview-image\{[^}]*background:transparent!important;box-shadow:none/, "real previews must not inherit a decorative backing tile");
-  assert.match(preview, /\.manage-inspector \.preview-frame\{[^}]*min-height:0;[^}]*aspect-ratio:1\.55/, "the managed inspector frame must keep the same shape as the other preview thumbnails");
-  assert.match(preview, /\.frame-art\.actual-preview-image\{[^}]*object-fit:contain/, "real previews must fit inside the fixed frame without cropping");
+  for (const html of [preview, plugin]) {
+    assert.match(html, /id="manageCardSize" type="range"[^>]*aria-label="卡片大小"/, "the library should expose an accessible card-size slider");
+    assert.match(html, /#manageGrid\[data-card-size="small"\]/, "the slider sizes must change the card grid density");
+    assert.match(html, /\*::-webkit-scrollbar-button\{display:none/, "custom scrollbars must suppress native scrollbar end caps");
+    assert.match(html, /\.frame-art\.actual-preview-image\{[^}]*background:transparent!important;box-shadow:none/, "real previews must not inherit a decorative backing tile");
+    assert.match(html, /\.manage-inspector \.preview-frame\{[^}]*min-height:0;[^}]*aspect-ratio:1\.55/, "the managed inspector frame must keep the same shape as the other preview thumbnails");
+    assert.match(html, /\.frame-art\.actual-preview-image\{[^}]*object-fit:contain/, "real previews must fit inside the fixed frame without cropping");
+  }
   assert.match(plugin, /<script src='js\/workbench\.js'><\/script><script src='js\/v5-runtime\.js'><\/script>/);
   assert.doesNotMatch(plugin, /<script>\s*[\s\S]*?<\/script>/, "production must load the runtime only once");
 });

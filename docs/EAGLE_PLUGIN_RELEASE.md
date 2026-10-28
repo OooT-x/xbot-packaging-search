@@ -1,8 +1,12 @@
 # Eagle 插件发布与客户端更新流程
 
+2026-10-23：本机安装1.9.5限流冷却/状态反馈评审包（含前轮下拉菜单），22文件摘要一致，包SHA-256 `01f9b83c46784bff34c2e6c63d0c82df7332026a125c538fe3d3b74100e40874`；worktree_review_only=true，未公开发布。D-073规定限流冷却优先于正常启动/手动查询。详见STATUS UPDATE-12，以下为阶段快照。
+
 更新日期：2026-10-09。产品规则见核心文档 11.5 与 D-056、D-059。
 
 ## 当前落地状态
+
+2026-10-23本机部署补充：1.9.4经Eagle官方入口安装，实际安装目录22文件摘要与 `dist/audit-1.9.4/xbot-eagle-plugin-v1.9.4.json` 一致；包SHA-256 `ecf9f7d9722f00af0114663414cd026de13e6f35c495512ed327518ea500a181`。服务已重启加载，009迁移和49组中央同步状态核验完成。该包来自未提交工作区（worktree_review_only=true），未公开发布；窗口捕获超时，打开中的宿主页面加载与双终端验收仍待确认。完整证据见 STATUS 顶部。下表及旧版本记录保留为历史阶段快照。
 
 | 环节 | 状态 |
 | --- | --- |
@@ -11,6 +15,36 @@
 | GitHub Actions | 现有 CI 仅测试与静态检查；自动发布流水线尚未实现 |
 | 客户端版本查询、下载校验与 Eagle 接管 | 1.8.7 已实现并安装失败静默和宿主请求兼容；真实页面交互待复核 |
 | 真实 Release → 另一端下载 → Eagle 安装 | 待验收；不得把本地测试通过写成线上闭环完成 |
+
+## 1.8.14 本地安装记录（2026-10-13）
+
+- UI-07：素材库排序和首页拖放修复打包安装，保留 1.8.13 NAS 修复、LB5UL2P0Q9FFF 和原 Worker。
+- 本地评审包 dist/local-1.8.14/xbot-eagle-plugin-v1.8.14.eagleplugin：18 文件，25,197,320 字节，SHA-256 006da40c2f93a8a7e24107c7da80b9ba663b6b8c1d7518052bc4341098e69ddc；worktree_review_only=true，基线 d701c4b，包含工作区未提交插件修改。
+- 190 JS、34 Python、静态和 diff 检查通过；Worker 哈希 9fa0d77087e1c0abfb2b1a6e3a9167e6e740e71dd4f21c994ab0521732d12e1b，包 CRC/逐文件校验通过。
+- Eagle 官方入口日志记录安装成功；实时安装清单为 1.8.14，全部 18 文件 SHA-256 与安装包一致。宿主缓存名称仍打印 1.8.13，真实排序与 Explorer 拖放待重开插件验证。
+- 未提交、推送、创建标签或公开发布；此前公开版记录为 1.8.9。本包仅本机使用，公开发行需从已验证 Git ref 重建。
+
+## 1.8.12 本地安装记录（2026-10-09）
+
+- UI-04（P2，修复、测试及安装完成）：从 73bd09c07c6cad06acffee51bc30ddd6bce2f7ca 构建筛选计数修复，保留插件 ID 与原 Worker；Eagle 官方入口完成安装，实时 manifest 为 1.8.12。
+- 安装包：dist/local-1.8.12/xbot-eagle-plugin-v1.8.12.eagleplugin；18 文件，25,196,143 字节；SHA-256 cd41023eb532026ea4cc1bda3efa15d9f2b60474851708c4b4be4b6acc45fb86。Git ref 构建，review_only=false；CRC、安装目录全部 18 文件逐字节及 SHA-256 一致。
+- 验证：179 项 JS、34 项 Python、静态与 diff 检查通过；新增计数回归覆盖项目/类型/搜索/空结果/清空，浏览器生产筛选事件核对通过。类型数量按项目及搜索范围统计；当前版本数量按显示结果统计。
+- 偏差/债务/下一步：浏览器空结果沿用生产入口已有保护；预览独立页面的空检查器问题不扩展到本轮。重新打开插件核对真实界面，Eagle→bot 验收继续保留；未推送或公开发布，公开版仍为 1.8.9。
+
+## 1.8.11 本地安装记录（2026-10-09）
+
+- UI-03（P2，打包安装完成）：从 7b7032427154934d2e15edfb4629377ce3ad7523 构建紧凑项目菜单版本，保留 ID LB5UL2P0Q9FFF 和原 Worker；通过 Eagle 官方入口安装，实时 manifest 为 1.8.11。
+- 安装包：dist/local-1.8.11/xbot-eagle-plugin-v1.8.11.eagleplugin；18 文件，25,195,995 字节；SHA-256 2649c5744250f5226e68d5263364ef71866492b2d892a536fbcc85c078e0f142。Git ref 构建，review_only=false；CRC、逐文件字节和安装目录 18 文件 SHA-256 全部通过。
+- 验证：178 项 JS、34 项 Python、静态及 diff 检查通过；UI-02 浏览器覆盖搜索、选中、键盘、外部关闭、选项刷新、深浅主题和窄窗口。Worker 摘要仍为 9fa0d77087e1c0abfb2b1a6e3a9167e6e740e71dd4f21c994ab0521732d12e1b。
+- 偏差/债务/下一步：安装结果已核对，实际宿主页面交互和 Eagle→bot 现场验收仍单独保留；请重开插件加载新版。仅本机安装，未推送或公开发布；公开版仍为 1.8.9。
+
+## 1.8.10 本地安装记录（2026-10-09）
+
+- COPY-02（P2，打包与安装完成）：文案更新安装包由源码提交 d6c5ca0 构建，保留 ID LB5UL2P0Q9FFF；Eagle 官方安装入口已完成安装，实时 manifest 为 1.8.10，显示名“包装助手”。
+- 安装包：dist/local-1.8.10/xbot-eagle-plugin-v1.8.10.eagleplugin；17 文件，25,193,730 字节，SHA-256 e738779af30482a65bae31aa8b58c59e3efb24a3f18ba99894cb386ee15c945d。Git ref 构建，worktree_review_only=false，CRC、逐文件内容和安装目录全部 17 文件 SHA-256 一致。
+- 验证：178 项 JavaScript、34 项 Python 和静态检查通过；Worker 未变更，摘要 9fa0d77087e1c0abfb2b1a6e3a9167e6e740e71dd4f21c994ab0521732d12e1b，与包和安装目录一致。
+- 本轮仅本机安装，未推送、创建标签或公开 Release；公开版仍为 1.8.9。请重新打开插件加载新界面，真实 Eagle 文案/窗口与 Eagle→bot 现场流程继续单独验收。
+- 偏差与下一步：本次实时确认安装前已为 1.8.9，修正旧“已安装 1.8.8”快照；本轮完成本机 1.8.10，保留预览类型管理已有问题和真实宿主验收债务。
 
 ## 1.8.9 正式发行记录（2026-10-09）
 
@@ -126,3 +160,38 @@ python scripts/package-eagle-plugin.py --ref <已验证提交或标签> --worker
 - [GitHub Release 创建命令](https://cli.github.com/manual/gh_release_create)
 - [Release 资产字段与 SHA-256](https://docs.github.com/en/rest/releases/assets)
 - [GitHub Actions 内置令牌与权限](https://docs.github.com/en/actions/tutorials/authenticate-with-github_token)
+
+## 1.9.0 团队候选（2026-10-16）
+
+本轮把中央连接、配对核实回执、写入锁、统一类型、首次配置及诊断纳入1.9.0。完整使用及真实验收见[团队分发](TEAM_DISTRIBUTION.md)。源码、固定提交包、已安装和公开发布分开记录，TEAM-07现场验收前不公开稳定版。必须包含team-client/team-sync/environment-check模块和原Worker；连接密钥独立保管，不进入插件包。实时读取的此前本机安装manifest已为1.8.15，修正旧未复核记录。
+
+
+### 1.9.0 固定提交包与本机安装（2026-10-16 16:06，北京时间）
+
+- 源码提交：`549ade6a07a371934eb0e7d4b3eb3d44daf119b0`，分支`codex/team-distribution`；无关bot互动及原有文档历史修改仍保留在工作区，未混入发行提交，工作区不宣称干净。
+- 包：`dist/team-1.9.0/xbot-eagle-plugin-v1.9.0.eagleplugin`，21文件、25205819字节，Git ref构建、review_only=false；CRC/清单/逐文件摘要通过，两次真实Worker构建字节完全一致。SHA-256：`f80252e096ddee33b61a1772da0625658aaddcac5c1d650afb659b77eccd4e0d`。
+- 安装：经Eagle官方文件关联打开安装；安装目录manifest=1.9.0，全部21文件SHA-256与包一致；本机私密团队配置已保存并从中央同步类型。Eagle当前活动库实时为`E:\Eagle资源库\参考.library`，未对该库写素材；试用前需在Eagle打开配置中的UNC包装库，错误库会被团队闸门阻止。
+- 最终运行：16:05:40启动唯一监听器PID8340；16:05:41同步10项目/49包装/errors=0并启动中央接口；16:05:43事件ready。事件服务running=true/active_consumers=1；中央鉴权health=ready/writeLocked=false。23完成/1uncertain交付、19已完成入库事件保持；最终维护前无进行中交付，backup为`data/pre-team-final-deploy-1792137938448.sqlite`。
+- 主机连接地址`http://192.168.31.69:41596`；私密连接文件为忽略的`data/team-connection.local.json`，未随包分发或替用户发送。防火墙管理员脚本返回configured（仅Private/指定网卡地址/LocalSubnet/Node）；远端连通仍待同事电脑核对。
+- 使用材料：`docs/TEAM_DISTRIBUTION.md`及`dist/team-1.9.0/同事安装说明.md`；核心文档v1.51与飞书外部工作副本哈希核对后另记。
+- 未推送/公开发布1.9.0；两台真实电脑安装/更新/回退、NAS并发/断线、飞书原查询人确认交付和AE实际渲染仍待现场验收；自动发布流水线未实施。
+
+## 静态更新清单（D-074，1.9.6起）
+
+客户端先读 `https://github.com/OooT-x/xbot-packaging-search/releases/latest/download/update.json`，失败再从最新Release页面最终地址核对版本，不默认请求REST API。页面只能发现版本；没有可信大小/摘要时只提供官方版本页入口，不启用插件内下载。网页渠道有独立冷却，旧API冷却不会阻止网页查询。
+
+正式包经固定Git ref构建、核验并与稳定Release对应后，生成清单：
+
+```powershell
+python scripts/create-update-manifest.py --record dist/release/xbot-eagle-plugin-v1.9.7.json --notes dist/release/release-notes.md --published-at 2026-10-23T08:00:00Z --output dist/release/update.json
+```
+
+版本与日期应替换为实际Release事实，不能照抄示例。工具拒绝worktree评审包、摘要/大小/身份/文件清单不一致和覆盖已有清单。生成后核对schemaVersion=1、pluginId=LB5UL2P0Q9FFF、channel=stable、版本/URL/文件名、大小、SHA-256、说明及时间。将update.json随对应稳定Release上传，确保仓库latest指向该插件版本；不上传源代码工作区配置或Token。
+
+```powershell
+gh release upload eagle-plugin-v1.9.7 dist/release/update.json --repo OooT-x/xbot-packaging-search
+```
+
+此命令会修改公开Release，执行前核对目标标签及正式包；首次上线也可以给既有稳定Release补齐清单，不必把本机评审版本公开发布。上传后读取上述latest/download/update.json，核对返回版本、大小/摘要，验证有新版/同版/本机领先和清单缺失的页面兜底。
+
+2026-10-23准备：`dist/static-update-review-1.8.9/update.json`由既有1.8.9正式包生成，原安装包CRC、17文件摘要及包摘要核验通过；尚未上传，GitHub CLI登录失效。当前远端走Release页面兜底已实测成功，公开版仍为1.8.9；不能把准备好的本地清单视为已上线。
