@@ -6,7 +6,7 @@
 | --- | --- |
 | `bot/lark-bot-listener.js` | 飞书事件、`text`/`post` 规范化、@ 门控、transport、AI 兜底与运行初始化 |
 | `bot/lib/package-intent.js` | 项目、类型、动作词、目录询问、候选排序与确认语义 |
-| `bot/lib/packaging-service.js` | 目录刷新、候选富文本、reply-only 确认、查询状态和 ZIP/云盘交付 |
+| `bot/lib/packaging-service.js` | 目录刷新、卡片/历史候选、原查询人确认、查询状态和ZIP/云盘交付 |
 | `bot/lib/package-database.js` | SQLite 项目、包装、查询、候选、批次、修订与交付状态 |
 | `bot/lib/eagle-sync.js` | Eagle 正式素材只读同步与稳定配对 |
 | `bot/lib/ingest-sync.js` | 插件 JSONL 入库事件的幂等消费与索引刷新 |

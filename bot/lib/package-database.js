@@ -609,6 +609,11 @@ class PackageDatabase {
       .run(requestId);
   }
 
+  expirePendingQueries(now = Date.now()) {
+    return this.db.prepare("UPDATE queries SET status = 'expired' WHERE status = 'pending' AND expires_at <= ?")
+      .run(now).changes;
+  }
+
   expireQuery(requestId) {
     this.db
       .prepare("UPDATE queries SET status = 'expired' WHERE request_id = ? AND status = 'pending'")

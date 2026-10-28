@@ -209,3 +209,23 @@ test("updates existing batch details without creating a second batch", () => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+
+test("pending expiration sweeps idle queries at the boundary without changing delivery states", () => {
+  const { root, database } = makeDatabase();
+  try {
+    const insert = database.db.prepare(`INSERT INTO queries(request_id, requester_id, chat_id,
+      root_message_id, status, created_at, expires_at) VALUES (?, 'owner', 'chat', ?, ?, 1, ?)`);
+    for (const [id, status, expiry] of [
+      ['past', 'pending', 99], ['boundary', 'pending', 100], ['future', 'pending', 101],
+      ['sending', 'sending', 99], ['preparing', 'preparing', 99], ['done', 'completed', 99],
+      ['failed', 'failed', 99], ['cancelled', 'cancelled', 99],
+    ]) insert.run(id, id, status, expiry);
+    assert.equal(database.expirePendingQueries(100), 2);
+    assert.equal(database.expirePendingQueries(100), 0);
+    const states = Object.fromEntries(database.db.prepare('SELECT request_id,status FROM queries').all()
+      .map(row => [row.request_id, row.status]));
+    assert.deepEqual(states, { past: 'expired', boundary: 'expired', future: 'pending',
+      sending: 'sending', preparing: 'preparing', done: 'completed', failed: 'failed', cancelled: 'cancelled' });
+  } finally { database.close(); fs.rmSync(root, { recursive: true, force: true }); }
+});

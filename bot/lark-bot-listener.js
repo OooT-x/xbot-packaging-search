@@ -3000,6 +3000,15 @@ async function main() {
       log(`packaging search starts without a live catalog: ${error.message}`);
     }
     startIngestEventWatcher(service);
+    const expireQueries = () => {
+      try {
+        const count = service.database.expirePendingQueries();
+        if (count) log(`packaging pending queries expired count=${count}`);
+      } catch (error) { log(`query expiration update failed: ${error.message}`); }
+    };
+    expireQueries();
+    const queryExpirationTimer = setInterval(expireQueries, 30000);
+    queryExpirationTimer.unref();
     if (service.cardFlow) {
       await service.cardFlow.recover();
       const expirationTimer = setInterval(() => service.cardFlow.expire().catch(error => log(`card expiration update failed: ${error.message}`)), 30000);

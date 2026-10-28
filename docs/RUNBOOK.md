@@ -1,10 +1,10 @@
 # 单机运行、恢复与现场验收
 
-适用：S1 单机稳定性，2026-10-09。现状以 STATUS 顶部为准；D-060/D-061 定义交付与入库恢复规则。
+适用：单机/团队中央服务运行维护，2026-10-28。后文带日期的部署和回滚段落为历史快照，不作为当前版本操作指令。现状以 STATUS 顶部为准；D-060/D-061 定义交付与入库恢复规则。
 
 ## 在线标准
 
-### 1.9.4安全修复升级（D-072，源码候选）
+### 1.9.4安全修复升级（D-072，历史升级背景）
 
 - 部署前核对无进行中交付，按既有SQLite backup流程备份并记录当前版本；不要从新代码临时打开生产数据库试运行，否则会直接触发迁移。
 - 009迁移增加候选快照、修订及资源绑定列；旧pending/preparing候选的状态和有效期失效，用户需重新查询。completed/uncertain交付记录保留，不能清空sending或绕过对账。
@@ -69,7 +69,7 @@ npm run deliveries:review -- --request-id <查询ID> --package-id <包装ID> --v
 
 ## S1 真实现场验收（尚待完成）
 
-1. 通过 Eagle 官方安装入口安装评审包 1.8.8，重新打开插件；核对安装 manifest 和包内 16 文件哈希一致。
+1. 通过Eagle官方安装入口安装正式版1.9.18，重新打开插件；核对安装manifest、正式包记录与全部22文件摘要。评审包与正式包不能混为同一构建。
 2. 用户在 Eagle 包装库选择一个可用于验收的项目交付文件夹，按实际 PNG/ZIP/manifest 配对，确认命名与风险后入库。记录 batch_id/package_id。
 3. 完成页分别显示 Eagle 写入与事件入队；bot 日志出现该批次 synced，数据库事件 completed，查询索引存在新包装。
 4. 原查询人在飞书明确 @X.bot 查询该项目类型，核对候选 PNG；回复候选确认后 ZIP/云盘链接落在最初查询下。
@@ -108,7 +108,7 @@ npm run deliveries:review -- --request-id <查询ID> --package-id <包装ID> --v
 
 ## 团队中央接口（2026-10-16）
 
-本机部署已启用同进程中央接口与专用局域网防火墙。使用、配置/密钥、事件回执、写锁对账和两终端验收统一见[团队分发](TEAM_DISTRIBUTION.md)。`node scripts/team-host.js status`检查鉴权接口；同时仍需唯一监听器、active_consumers=1和fresh ready日志。新增服务不改变D-060的交付确认和不明结果对账规则。旧“中央服务暂缓”段落是此前单机快照，当前以STATUS为准。
+本机部署已启用同进程中央接口与专用局域网防火墙。使用、配置/密钥、事件回执、写锁对账和两终端验收统一见[团队分发](TEAM_DISTRIBUTION.md)。`node scripts/team-host.js status`检查鉴权接口；同时仍需唯一监听器、消息与卡片各1消费者（active_consumers=2）和两个事件键的fresh ready日志。新增服务不改变D-060的交付确认和不明结果对账规则。旧“中央服务暂缓”段落是此前单机快照，当前以STATUS为准。
 
 
 ## 包装交互卡片（D-075）
@@ -124,3 +124,11 @@ npm run deliveries:review -- --request-id <查询ID> --package-id <包装ID> --v
 - 维护前用原生SQLite只读核对preparing/sending并通过backup备份；010由启动迁移追加，不提前用旧版reconcile命令触发迁移。重启后核对schema_migrations、card_sessions、两个ready、索引和health。
 - queries.root_message_id/prompt_message_id在新会话中为内部每页唯一键；实际飞书查询根是source_root_message_id，card_sessions保留真实卡片消息；deliveries:review已兼容真实根，不使用内部键人工查找消息。
 - 现场验收：缺项目/缺类型/明确条件三种入口；前后翻页、切换筛选返回；原查询人领取、重复点击、他人点击、旧页延迟点击；文字补条件；取消/过期；大文件链接；重启后页面恢复与uncertain禁止重发。不要把ready和自动化测试当作现场验收完成。
+
+
+## 过期查询与历史交付维护（2026-10-28）
+
+- 启动后及每30秒将到期的pending查询标记expired；不改变sending/preparing/completed/failed状态，不改候选有效期，也不改delivery或触发消息。领取入口的有效期校验继续作为最终闸门。
+- 历史failed/uncertain必须对照真实原消息核实；没有thread_id、消息不可见或历史分页缺失不能证明未发送。证据不足继续保持隔离，用deliveries:review按确切消息ID逐条对账。
+- 当前实际标准为Card 2.0与中央服务（D-068、D-075至D-084）；外部技能或旧日期段落中的富文本专用、中央暂缓和单消费者描述均已过时。
+- 现场验收需记录两台真实电脑、实际共享库和原查询人操作。单机测试、API ready或模拟点击不能关闭现场项。
