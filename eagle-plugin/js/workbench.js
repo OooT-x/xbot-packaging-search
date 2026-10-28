@@ -484,7 +484,7 @@ async function prodCollectAep(confirmDuplicates = false) {
 function prodOpenRename() {
   pairs.forEach(prodRefreshPairState);
   const selected = pairs.filter(p => p.selected && p.state === "ready");
-  openModal(`<div class="modal-head"><div><h2>检查名称</h2><p>${prodEsc(prodProject)}</p></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="form-grid"><div class="form-group"><label>图片命名</label><input class="input" data-prod-template="preview" value="{项目}_{包装类型}_{包装名称}_{版本}.png"></div><div class="form-group"><label>工程命名</label><input class="input" data-prod-template="source" value="{项目}_{包装名称}_{版本}.zip"></div></div><p class="form-help">可用字段：{项目}、{包装类型}、{包装名称}、{版本}</p><div class="rename-output-list">${selected.map(p => `<div class="rename-output-row"><strong>${prodEsc(p.name)} · ${prodEsc(p.type)} · ${prodEsc(p.version)}</strong><small>${prodEsc(p.previewPath)}<br>${prodEsc(p.sourcePath || "仅有图片")}</small><div class="rename-output-grid"><label>图片名称<input class="input" data-prod-name="preview" data-id="${prodEsc(p.id)}" value="${prodEsc(`${prodProject}_${p.type}_${p.name}_${p.version}.png`)}"></label><label>工程名称<input class="input" data-prod-name="source" data-id="${prodEsc(p.id)}" value="${prodEsc(`${prodProject}_${p.name}_${p.version}.zip`)}" ${p.sourcePath ? "" : "disabled"}></label></div></div>`).join("")}</div><div class="drawer-footer"><button class="ghost-btn" data-close>返回检查</button><button class="primary-btn" data-prod-confirm-import ${selected.length ? "" : "disabled"}>确认保存</button></div></div>`);
+  openModal(`<div class="modal-head"><div><h2>检查名称</h2><p>${prodEsc(prodProject)}</p></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="form-grid"><div class="form-group"><label>图片命名</label><input class="input" data-prod-template="preview" value="{项目}_{包装类型}_{包装名称}_{版本}.png"></div><div class="form-group"><label>工程命名</label><input class="input" data-prod-template="source" value="{项目}_{包装名称}_{版本}.zip"></div></div><p class="form-help">点击字段选择或取消，拖动调整顺序；下方名称实时更新。</p><div class="rename-output-list">${selected.map(p => `<div class="rename-output-row"><strong>${prodEsc(p.name)} · ${prodEsc(p.type)} · ${prodEsc(p.version)}</strong><small>${prodEsc(p.previewPath)}<br>${prodEsc(p.sourcePath || "仅有图片")}</small><div class="rename-output-grid"><label>图片名称<input class="input" data-prod-name="preview" data-id="${prodEsc(p.id)}" value="${prodEsc(`${prodProject}_${p.type}_${p.name}_${p.version}.png`)}"></label><label>工程名称<input class="input" data-prod-name="source" data-id="${prodEsc(p.id)}" value="${prodEsc(`${prodProject}_${p.name}_${p.version}.zip`)}" ${p.sourcePath ? "" : "disabled"}></label></div></div>`).join("")}</div><div class="drawer-footer"><button class="ghost-btn" data-close>返回检查</button><button class="primary-btn" data-prod-confirm-import ${selected.length ? "" : "disabled"}>确认保存</button></div></div>`);
   document.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", closeModal));
   const previewTemplate = document.querySelector('[data-prod-template="preview"]');
   const sourceTemplate = document.querySelector('[data-prod-template="source"]');
@@ -494,9 +494,17 @@ function prodOpenRename() {
     const fill = template => Object.entries(values).reduce((text, [token, value]) => text.replaceAll(token, value), template);
     for (const kind of ["preview", "source"]) { const input = row.querySelector(`[data-prod-name="${kind}"]`); if (input && !input.dataset.manual) input.value = fill(kind === "preview" ? previewTemplate.value : sourceTemplate.value); }
   });
-  [previewTemplate, sourceTemplate].filter(Boolean).forEach(input => input.addEventListener("input", updateGenerated));
+  const validateRules = () => {
+    const valid = Boolean(previewTemplate.value) && (!selected.some(pair => pair.sourcePath) || Boolean(sourceTemplate.value));
+    document.querySelector("[data-prod-confirm-import]").disabled = !selected.length || !valid;
+    return valid;
+  };
+  [previewTemplate, sourceTemplate].filter(Boolean).forEach(input => input.addEventListener("input", () => { updateGenerated(); validateRules(); }));
+  window.XbotNamingRules.mount(document.querySelector("#modalContent"), "[data-prod-template]");
+  validateRules();
   document.querySelectorAll("[data-prod-name]").forEach(input => input.addEventListener("input", () => { input.dataset.manual = "true"; }));
   document.querySelector("[data-prod-confirm-import]")?.addEventListener("click", () => {
+    if (!validateRules()) return;
     prodOutputNames = {};
     document.querySelectorAll("[data-prod-name]").forEach(input => { const pair = prodPair(input.dataset.id); if (pair) prodOutputNames[pair.packageId || pair.id] ||= {}; if (pair) prodOutputNames[pair.packageId || pair.id][input.dataset.prodName] = input.value; });
     prodRunImport("prompt");

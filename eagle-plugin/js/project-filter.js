@@ -143,3 +143,85 @@
    }, { passive: true });
  }
 })();
+
+/* Naming fields share one interaction in the production and preview workbenches. */
+(() => {
+ const fields = ["项目", "包装类型", "包装名称", "版本"];
+ function mount(container, selector) {
+  container.querySelectorAll(selector).forEach(input => {
+   if (input.dataset.namingTiles) return;
+   input.dataset.namingTiles = "true";
+   const suffix = input.value.endsWith(".zip") ? ".zip" : ".png";
+   const selected = new Set(fields.filter(field => input.value.includes(`{${field}}`)));
+   const order = [...input.value.matchAll(/\{([^}]+)\}/g)].map(match => match[1]).filter(field => fields.includes(field));
+   fields.forEach(field => { if (!order.includes(field)) order.push(field); });
+   const group = document.createElement("div"); group.className = "naming-rule";
+   group.setAttribute("role", "group");
+   group.setAttribute("aria-label", suffix === ".png" ? "图片命名字段" : "工程命名字段");
+   const tiles = document.createElement("div"); tiles.className = "naming-tiles";
+   const available = document.createElement("div"); available.className = "naming-tiles naming-available";
+   tiles.setAttribute("aria-label", "已选字段"); available.setAttribute("aria-label", "未选字段");
+   const summary = document.createElement("div"); summary.className = "naming-rule-summary";
+   summary.setAttribute("aria-live", "polite");
+   let dragged = null, lastDrag = 0;
+   const buttons = new Map();
+   const update = (notify = true) => {
+    const enabled = order.filter(field => selected.has(field));
+    input.value = enabled.length ? enabled.map(field => `{${field}}`).join("_") + suffix : "";
+    group.dataset.empty = String(!enabled.length);
+    summary.textContent = enabled.length ? enabled.join(" _ ") + suffix : "至少选择一个字段";
+    order.forEach(field => {
+     const button = buttons.get(field);
+     button.setAttribute("aria-pressed", String(selected.has(field)));
+     button.setAttribute("aria-label", `${field}，${selected.has(field) ? "已选择" : "未选择"}；Alt 加左右方向键调整顺序`);
+     (selected.has(field) ? tiles : available).appendChild(button);
+    });
+    available.hidden = selected.size === fields.length;
+    if (notify) input.dispatchEvent(new Event("input", { bubbles: true }));
+   };
+   const move = (field, target) => {
+    if (!fields.includes(field) || target < 0 || target >= order.length) return;
+    order.splice(order.indexOf(field), 1); order.splice(target, 0, field); update();
+    buttons.get(field).focus();
+   };
+   fields.forEach(field => {
+    const button = document.createElement("button"); button.type = "button";
+    button.className = "naming-tile"; button.draggable = true;
+    button.dataset.namingField = field;
+    button.innerHTML = `<span class="naming-grip" aria-hidden="true">⠿</span><span>${field}</span><span class="naming-check" aria-hidden="true">✓</span>`;
+    button.addEventListener("click", () => {
+     if (Date.now() - lastDrag < 200) return;
+     if (selected.has(field)) selected.delete(field); else selected.add(field);
+     update(); button.focus();
+    });
+    button.addEventListener("keydown", event => {
+     if (!event.altKey || !["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+     event.preventDefault(); move(field, order.indexOf(field) + (event.key === "ArrowLeft" ? -1 : 1));
+    });
+    button.addEventListener("dragstart", event => {
+     dragged = field; button.classList.add("dragging");
+     event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", field);
+    });
+    button.addEventListener("dragover", event => {
+     if (!dragged) return;
+     event.preventDefault(); event.dataTransfer.dropEffect = "move";
+     button.classList.add("drop-target");
+    });
+    button.addEventListener("dragleave", () => button.classList.remove("drop-target"));
+    button.addEventListener("drop", event => {
+     if (!dragged) return;
+     event.preventDefault(); move(dragged, order.indexOf(field));
+     dragged = null; lastDrag = Date.now();
+     buttons.forEach(item => item.classList.remove("dragging", "drop-target"));
+    });
+    button.addEventListener("dragend", () => {
+     dragged = null; lastDrag = Date.now(); buttons.forEach(item => item.classList.remove("dragging", "drop-target"));
+    });
+    buttons.set(field, button);
+   });
+   input.hidden = true; input.insertAdjacentElement("afterend", group);
+   group.append(tiles, available, summary); update(false);
+  });
+ }
+ window.XbotNamingRules = { mount };
+})();

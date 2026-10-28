@@ -55,7 +55,9 @@
     .pair-row{overflow:visible}.row-preview{position:relative;aspect-ratio:1.55;height:auto;min-height:126px}.row-select{top:auto;right:10px;bottom:10px;left:auto;width:24px;height:24px;padding:0;justify-content:center;border:1px solid var(--line-2);border-radius:6px;background:color-mix(in srgb,var(--panel) 92%,transparent);box-shadow:0 2px 6px rgba(32,36,43,.12)}.row-select input{width:14px;height:14px;margin:0}.row-body{padding-top:9px}.pair-row::after{bottom:11px}
     /* Fixed right inspector + centered preview canvas. */
     .pair-workspace{display:block}.row-preview{place-items:center}.row-preview .frame-art{justify-self:center;align-self:center}
-    @media (min-width:861px){body[data-screen="pair"] .pair-workspace{min-height:0;overflow:hidden}body[data-screen="pair"] .pair-list{height:100%;min-height:0;overflow:auto;align-content:start;padding-right:2px}}
+    body[data-screen="pair"] .workspace{padding-bottom:var(--pair-dock-space,92px)}
+    body[data-screen="pair"] .pair-workspace{min-height:0;overflow:visible}
+    body[data-screen="pair"] .pair-list{height:auto;min-height:0;overflow:visible;align-content:start}
     @media (max-width:700px){.row-preview{height:auto;min-height:106px}}@media (max-width:500px){.row-preview{height:auto;min-height:138px}}
     /* v6 workflow pass: keep the approved home, clarify task progression elsewhere. */
     .aep-options{margin:-4px 0 14px;overflow:hidden}.aep-options summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 15px;cursor:pointer;color:var(--ink-2);font-weight:750;list-style:none}.aep-options summary::-webkit-details-marker{display:none}.aep-options summary::after{content:"展开";color:var(--blue-2);font-size:11px}.aep-options[open] summary::after{content:"收起"}.aep-options-body{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 15px 14px;border-top:1px solid var(--line)}.aep-options-body .form-group{margin-top:12px}.aep-options-body small{display:block;margin-top:5px;color:var(--ink-3)}
@@ -540,6 +542,17 @@
     </main>
   </div>
 
+  <style>
+    .naming-tiles{display:flex;flex-wrap:nowrap;gap:5px;margin-top:5px;min-height:30px}
+    .naming-available{margin-top:6px}
+    .naming-tile{position:relative;display:flex;align-items:center;justify-content:center;gap:3px;min-width:0;min-height:30px;padding:4px 6px;border:1px dashed var(--line);border-radius:5px;background:var(--panel,#fff);color:var(--ink-3);font:inherit;font-size:11px;line-height:20px;white-space:nowrap;cursor:grab;user-select:none}
+    .naming-tile[aria-pressed="true"]{border:1px solid #507bff;background:rgba(80,123,255,.09);color:var(--ink)}
+    .naming-grip{font-size:12px;opacity:.5}.naming-check{color:#507bff;font-size:10px}.naming-tile[aria-pressed="false"] .naming-check{display:none}
+    .naming-tile:hover{border-color:#507bff}.naming-tile:focus-visible{outline:2px solid #507bff;outline-offset:3px}
+    .naming-tile.dragging{opacity:.4}.naming-tile.drop-target{outline:2px solid #507bff;outline-offset:2px}
+    .naming-rule-summary{margin-top:8px;color:var(--ink-3);font-size:11px;line-height:1.6;overflow-wrap:anywhere}
+    .naming-rule[data-empty="true"] .naming-rule-summary{color:#bd4c29}
+  </style>
   <div class="modal-wrap" id="modal" hidden><div class="modal" id="modalContent" role="dialog" aria-modal="true"></div></div>
   <aside class="drawer" id="drawer" role="dialog" aria-modal="false" hidden></aside>
   <div class="bottom-sheet-backdrop" id="bottomSheetBackdrop" aria-hidden="true"></div>
