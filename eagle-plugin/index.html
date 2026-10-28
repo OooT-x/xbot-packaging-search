@@ -55,7 +55,9 @@
     .pair-row{overflow:visible}.row-preview{position:relative;aspect-ratio:1.55;height:auto;min-height:126px}.row-select{top:auto;right:10px;bottom:10px;left:auto;width:24px;height:24px;padding:0;justify-content:center;border:1px solid var(--line-2);border-radius:6px;background:color-mix(in srgb,var(--panel) 92%,transparent);box-shadow:0 2px 6px rgba(32,36,43,.12)}.row-select input{width:14px;height:14px;margin:0}.row-body{padding-top:9px}.pair-row::after{bottom:11px}
     /* Fixed right inspector + centered preview canvas. */
     .pair-workspace{display:block}.row-preview{place-items:center}.row-preview .frame-art{justify-self:center;align-self:center}
-    @media (min-width:861px){body[data-screen="pair"] .pair-workspace{min-height:0;overflow:hidden}body[data-screen="pair"] .pair-list{height:100%;min-height:0;overflow:auto;align-content:start;padding-right:2px}}
+    body[data-screen="pair"] .workspace{padding-bottom:var(--pair-dock-space,92px)}
+    body[data-screen="pair"] .pair-workspace{min-height:0;overflow:visible}
+    body[data-screen="pair"] .pair-list{height:auto;min-height:0;overflow:visible;align-content:start}
     @media (max-width:700px){.row-preview{height:auto;min-height:106px}}@media (max-width:500px){.row-preview{height:auto;min-height:138px}}
     /* v6 workflow pass: keep the approved home, clarify task progression elsewhere. */
     .aep-options{margin:-4px 0 14px;overflow:hidden}.aep-options summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 15px;cursor:pointer;color:var(--ink-2);font-weight:750;list-style:none}.aep-options summary::-webkit-details-marker{display:none}.aep-options summary::after{content:"展开";color:var(--blue-2);font-size:11px}.aep-options[open] summary::after{content:"收起"}.aep-options-body{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 15px 14px;border-top:1px solid var(--line)}.aep-options-body .form-group{margin-top:12px}.aep-options-body small{display:block;margin-top:5px;color:var(--ink-3)}
@@ -302,13 +304,13 @@
     .review-reason strong{display:block;margin-top:14px;font-size:11px;color:var(--ink-2)}
     #drawer:has(.file-picker-body){width:min(540px,100vw);padding:24px}
     .file-picker-body .file-candidate-list{gap:12px;margin:24px 0 16px}
-    .file-candidate-list>.candidate{grid-template-columns:80px minmax(0,1fr) 24px;gap:16px;min-height:96px;padding:14px;text-align:left;color:var(--ink)}
+    .file-candidate-list>.candidate{grid-template-columns:80px minmax(0,1fr);gap:16px;min-height:96px;padding:14px;text-align:left;color:var(--ink)}
     .file-candidate-list .candidate-thumb{width:80px;height:64px}
     .file-candidate-list .candidate-copy{min-width:0}
     .file-candidate-list strong{font-size:12px;line-height:1.6;overflow-wrap:anywhere}
     .file-candidate-list small{margin-top:8px;line-height:1.5;overflow-wrap:anywhere}
     #drawer:has(.file-picker-body) .drawer-footer{margin-top:24px;padding-top:20px}
-    @media(max-width:500px){#drawer:has(.file-picker-body){padding:18px}.file-candidate-list>.candidate{grid-template-columns:64px minmax(0,1fr) 22px;gap:12px;padding:12px}.file-candidate-list .candidate-thumb{width:64px;height:56px}}
+    @media(max-width:500px){#drawer:has(.file-picker-body){padding:18px}.file-candidate-list>.candidate{grid-template-columns:64px minmax(0,1fr);gap:12px;padding:12px}.file-candidate-list .candidate-thumb{width:64px;height:56px}}
 
 
     .type-management-list{display:grid;gap:14px;margin-top:18px}
@@ -462,6 +464,16 @@
     .home-manage:hover{border-color:var(--blue);background:var(--panel-2)}
     #screen-home .resume{box-shadow:none}
     @media(max-width:600px){#screen-home{margin-top:12px}#screen-home .hero-card{min-height:260px;padding:24px 16px}.home-manage{padding:18px 20px}#screen-home .resume{flex-wrap:wrap}}
+    .tweaks{width:232px;padding:12px}
+    .tweaks h3{margin:2px 8px 8px;font-size:12px}
+    .settings-group{display:grid;gap:2px}
+    .settings-group+.settings-group{margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
+    .tweaks .settings-update{display:flex;align-items:center;gap:8px;width:100%;min-height:38px;margin:0;padding:8px 10px;border:0;border-radius:6px;background:transparent;text-align:left;color:var(--ink);font-size:12px;font-weight:700}
+    .tweaks .settings-update::after{content:"›";margin-left:auto;color:var(--ink-3);font-size:17px;font-weight:400}
+    .tweaks .settings-update:hover{background:var(--panel-3)}
+    .tweaks .settings-update:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
+    .tweaks .settings-update-copy{min-height:0}
+    .tweaks .settings-motion{margin-top:8px;padding:12px 10px 2px;border-top:1px solid var(--line)}
   </style></head><body data-theme="light" data-screen="home">
   <div class="app">
     <header class="topbar">
@@ -499,7 +511,7 @@
       <section id="screen-pair" class="screen" hidden>
         <div class="panel source-strip"><div class="source-main"><span class="source-mark">PKG</span><div><strong id="pairSourceName">未选文件</strong><small id="pairSourceMeta">选择工程或文件夹</small></div></div><div class="pair-project-edit"><label for="pairProjectName">项目名称</label><input class="input" id="pairProjectName" value="" aria-describedby="pairProjectHint" /><span id="pairProjectHint" hidden>项目名称会用于卡片、命名与正式入库记录</span></div><div class="source-actions"><button class="ghost-btn" id="pairAepBtn" type="button" data-action="start-from-aep">选择工程</button><button class="ghost-btn" id="replaceFolderBtn" type="button" data-action="replace-folder">换文件夹</button></div></div>
         <div class="pair-summary"><div class="metric"><span>可以保存</span><strong class="green-text" id="readyMetric">2</strong></div><div class="metric"><span>待处理</span><strong class="amber-text" id="reviewMetric">1</strong></div><div class="metric"><span>有缺失</span><strong id="riskMetric">0</strong></div><div class="metric"><span>冲突</span><strong class="red-text" id="conflictMetric">0</strong></div></div>
-        <div class="pair-tools"><div class="tabs" id="pairTabs"><button class="tab active" data-pair-filter="all">全部 3</button><button class="tab" data-pair-filter="ready">可以保存 2</button><button class="tab" data-pair-filter="review">待处理 1</button><button class="tab" data-pair-filter="risk">有缺失 0</button><button class="tab" data-pair-filter="conflict">配对冲突 0</button></div><button class="ghost-btn" data-action="open-rename">检查名称</button></div>
+        <div class="pair-tools"><div class="tabs" id="pairTabs"><button class="tab active" data-pair-filter="all">全部 0</button><button class="tab" data-pair-filter="ready">可以保存 0</button><button class="tab" data-pair-filter="review">待处理 0</button><button class="tab" data-pair-filter="risk">有缺失 0</button><button class="tab" data-pair-filter="conflict">配对冲突 0</button></div><button class="ghost-btn" data-action="open-rename">检查名称</button></div>
         <div class="pair-workspace"><div class="pair-list" id="pairList"></div></div>
         <aside class="bottom-sheet" id="pairBottomSheet" data-bottom-sheet="pair" aria-label="保存清单"><div class="bottom-sheet-peek"><button class="bottom-sheet-summary" type="button" data-bottom-sheet-toggle="pair" aria-expanded="false" aria-controls="pairBottomSheetContent" aria-label="展开保存清单"><span class="bottom-sheet-grabber" aria-hidden="true"></span><span class="bottom-sheet-copy"><strong id="pairSelectionText">已选 2 组 · 可以保存</strong><small id="pairBottomHint">文件、类型和名称已检查</small></span></button><div class="bottom-sheet-quick-actions"><button class="ghost-btn" data-action="open-rename">查看名称</button><button class="primary-btn" id="pairImportButton" data-action="import">下一步</button></div></div><div class="bottom-sheet-content" id="pairBottomSheetContent" aria-hidden="true" inert><div class="bottom-sheet-section-head"><div><strong>保存清单</strong><small>预览模式：仅更新本页</small></div></div><div class="bottom-sheet-list" id="pairSelectionList"></div></div></aside>
       </section>
@@ -530,10 +542,21 @@
     </main>
   </div>
 
+  <style>
+    .naming-tiles{display:flex;flex-wrap:nowrap;gap:5px;margin-top:5px;min-height:30px}
+    .naming-available{margin-top:6px}
+    .naming-tile{position:relative;display:flex;align-items:center;justify-content:center;gap:3px;min-width:0;min-height:30px;padding:4px 6px;border:1px dashed var(--line);border-radius:5px;background:var(--panel,#fff);color:var(--ink-3);font:inherit;font-size:11px;line-height:20px;white-space:nowrap;cursor:grab;user-select:none}
+    .naming-tile[aria-pressed="true"]{border:1px solid #507bff;background:rgba(80,123,255,.09);color:var(--ink)}
+    .naming-grip{font-size:12px;opacity:.5}.naming-check{color:#507bff;font-size:10px}.naming-tile[aria-pressed="false"] .naming-check{display:none}
+    .naming-tile:hover{border-color:#507bff}.naming-tile:focus-visible{outline:2px solid #507bff;outline-offset:3px}
+    .naming-tile.dragging{opacity:.4}.naming-tile.drop-target{outline:2px solid #507bff;outline-offset:2px}
+    .naming-rule-summary{margin-top:8px;color:var(--ink-3);font-size:11px;line-height:1.6;overflow-wrap:anywhere}
+    .naming-rule[data-empty="true"] .naming-rule-summary{color:#bd4c29}
+  </style>
   <div class="modal-wrap" id="modal" hidden><div class="modal" id="modalContent" role="dialog" aria-modal="true"></div></div>
   <aside class="drawer" id="drawer" role="dialog" aria-modal="false" hidden></aside>
   <div class="bottom-sheet-backdrop" id="bottomSheetBackdrop" aria-hidden="true"></div>
-  <div class="tweaks" id="tweaks" role="dialog" aria-label="设置"><h3>设置</h3><button class="settings-update" type="button" data-action="open-updates"><span class="settings-update-copy"><strong>插件更新</strong></span><span class="settings-update-badge" hidden></span></button><button class="settings-update" type="button" data-action="manage-types"><span class="settings-update-copy"><strong>类型管理</strong></span></button><div class="tweak-row"><span>减少动画</span><button class="toggle" id="motionToggle" type="button" aria-label="减少动画" aria-pressed="false"></button></div></div>
+  <div class="tweaks" id="tweaks" role="dialog" aria-label="设置"><h3>设置</h3><div class="settings-group settings-workspace" aria-label="团队与类型"><button class="settings-update" type="button" data-action="manage-types"><span class="settings-update-copy"><strong>类型管理</strong></span></button></div><div class="settings-group settings-support" aria-label="更新与诊断"><button class="settings-update" type="button" data-action="open-updates"><span class="settings-update-copy"><strong>插件更新</strong></span><span class="settings-update-badge" hidden></span></button></div><div class="tweak-row settings-motion"><span>减少动画</span><button class="toggle" id="motionToggle" type="button" aria-label="减少动画" aria-pressed="false"></button></div></div>
   <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"><strong id="toastTitle"></strong><span id="toastText"></span></div>
 
 <script src='js/window-controls.js'></script><script src='js/project-filter.js'></script><script src='js/workbench.js'></script><script src='js/v5-runtime.js'></script></body></html>
