@@ -156,13 +156,29 @@ function prodRenderPairs() {
 
 function prodOpenPairFileDrawer(id, kind) {
   const pair = prodPair(id); if (!pair || !prodScanResult) return;
-  const candidates = (prodScanResult.files || []).filter(file => file.kind === (kind === "preview" ? "png" : "zip") && file.status !== "ignore");
-  const rows = candidates.map(file => `<button class="candidate" type="button" data-prod-select-file="${prodEsc(file.path)}" aria-pressed="false"><span class="candidate-thumb ${kind === "preview" ? "has-actual-preview" : ""}">${kind === "preview" ? `<img class="frame-art actual-preview-image" src="${prodImageUrl(file.path)}" alt="">` : "ZIP"}</span><span class="candidate-copy"><strong>${prodEsc(file.name)}</strong>${file.relative && file.relative !== file.name ? `<small>${prodEsc(file.relative)}</small>` : ""}</span><span class="check"></span></button>`).join("") || '<p>没有可选文件，请另选文件</p>';
-  openDrawer(`<div class="drawer-head"><div><h2>更换${kind === "preview" ? "图片" : "工程"}</h2><p>${prodEsc(pair.name)} · 从已找到的文件中选择</p></div><button class="icon-btn" data-drawer-close>×</button></div><div class="drawer-body file-picker-body"><div class="candidate-list file-candidate-list">${rows}</div><button class="quiet" type="button" data-prod-pick-external>另选文件</button></div><div class="drawer-footer"><button class="ghost-btn" data-drawer-close>取消</button><button class="primary-btn" data-prod-apply-file="${prodEsc(pair.id)}" data-kind="${kind}" disabled>确认选择</button></div>`);
-  let selected = "";
-  document.querySelectorAll("[data-prod-select-file]").forEach(button => button.addEventListener("click", () => { selected = button.dataset.prodSelectFile; document.querySelectorAll("[data-prod-select-file]").forEach(row => { row.classList.toggle("selected", row === button); row.setAttribute("aria-pressed", String(row === button)); row.querySelector(".check").textContent = row === button ? "✓" : ""; }); const apply = document.querySelector("[data-prod-apply-file]"); if (apply) apply.disabled = false; }));
-  document.querySelector("[data-prod-pick-external]")?.addEventListener("click", async () => { try { const paths = await prodSelectPaths(`选择${kind === "preview" ? "PNG" : "ZIP"}`, ["openFile"], [{ name: kind === "preview" ? "PNG" : "ZIP", extensions: [kind === "preview" ? "png" : "zip"] }]); if (paths.length) { selected = paths[0]; document.querySelectorAll("[data-prod-select-file]").forEach(row => { row.classList.remove("selected"); row.setAttribute("aria-pressed", "false"); row.querySelector(".check").textContent = ""; }); const apply = document.querySelector("[data-prod-apply-file]"); if (apply) apply.disabled = false; } } catch (error) { prodToast("选择失败", error.message, "error"); } });
-  document.querySelector("[data-prod-apply-file]")?.addEventListener("click", () => { if (kind === "preview") { pair.previewPath = selected; pair.preview = prodPath.basename(selected); } else { pair.sourcePath = selected; pair.source = prodPath.basename(selected); } closeDrawer(); prodRenderPairs(); prodToast("配对更新", `${pair.name} · ${kind === "preview" ? "PNG" : "ZIP"}`, "success"); });
+  const candidates = (prodScanResult.files || []).filter(file => file.kind === (kind === "preview" ? "png" : "zip") && file.status !== "ignore").slice();
+  let selected = kind === "preview" ? pair.previewPath || "" : pair.sourcePath || "";
+  const includeExternal = filePath => {
+    if (!candidates.some(file => file.path === filePath)) candidates.push({ path: filePath, name: prodPath.basename(filePath), relative: filePath });
+  };
+  if (selected) includeExternal(selected);
+  openDrawer(`<div class="drawer-head"><div><h2>更换${kind === "preview" ? "图片" : "工程"}</h2><p>${prodEsc(pair.name)} · 从已找到的文件中选择</p></div><button class="icon-btn" data-drawer-close>×</button></div><div class="drawer-body file-picker-body"><div class="candidate-list file-candidate-list"></div><button class="quiet" type="button" data-prod-pick-external>另选文件</button></div><div class="drawer-footer"><button class="ghost-btn" data-drawer-close>取消</button><button class="primary-btn" data-prod-apply-file="${prodEsc(pair.id)}" data-kind="${kind}" disabled>确认选择</button></div>`);
+  const renderCandidates = () => {
+    const list = document.querySelector(".file-candidate-list");
+    list.innerHTML = candidates.map(file => `<button class="candidate${file.path === selected ? " selected" : ""}" type="button" data-prod-select-file="${prodEsc(file.path)}" aria-pressed="${file.path === selected}"><span class="candidate-thumb ${kind === "preview" ? "has-actual-preview" : ""}">${kind === "preview" ? `<img class="frame-art actual-preview-image" src="${prodImageUrl(file.path)}" alt="">` : "ZIP"}</span><span class="candidate-copy"><strong>${prodEsc(file.name)}</strong>${file.relative && file.relative !== file.name ? `<small>${prodEsc(file.relative)}</small>` : ""}</span><span class="check">${file.path === selected ? "✓" : ""}</span></button>`).join("") || '<p>没有可选文件，请另选文件</p>';
+    list.querySelectorAll("[data-prod-select-file]").forEach(button => button.addEventListener("click", () => { selected = button.dataset.prodSelectFile; renderCandidates(); }));
+    const apply = document.querySelector("[data-prod-apply-file]"); if (apply) apply.disabled = !selected;
+  };
+  renderCandidates();
+  document.querySelector("[data-prod-pick-external]")?.addEventListener("click", async () => {
+    try {
+      const paths = await prodSelectPaths(`选择${kind === "preview" ? "PNG" : "ZIP"}`, ["openFile"], [{ name: kind === "preview" ? "PNG" : "ZIP", extensions: [kind === "preview" ? "png" : "zip"] }]);
+      if (!paths.length) return;
+      selected = paths[0]; includeExternal(selected); renderCandidates();
+      [...document.querySelectorAll("[data-prod-select-file]")].find(row => row.dataset.prodSelectFile === selected)?.scrollIntoView?.({ block: "nearest" });
+    } catch (error) { prodToast("选择失败", error.message, "error"); }
+  });
+  document.querySelector("[data-prod-apply-file]")?.addEventListener("click", () => { if (!selected) return; if (kind === "preview") { pair.previewPath = selected; pair.preview = prodPath.basename(selected); } else { pair.sourcePath = selected; pair.source = prodPath.basename(selected); } closeDrawer(); prodRenderPairs(); prodToast("配对更新", `${pair.name} · ${kind === "preview" ? "PNG" : "ZIP"}`, "success"); });
   document.querySelectorAll("[data-drawer-close]").forEach(button => button.addEventListener("click", closeDrawer));
 }
 
