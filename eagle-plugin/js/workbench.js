@@ -502,16 +502,19 @@ async function prodRetryIngest(sync) {
 
 function prodRenderIngestBoundary(sync, options = {}, selector = "#successBoundary") {
   const boundary = document.querySelector(selector); if (!boundary) return;
+  const action = selector === "#successBoundary" ? document.querySelector("#successSyncAction") : null;
+  if (action) { action.hidden = true; action.onclick = null; }
   const queued = sync.state === "queued";
   const text = sync.state === "completed" ? "机器人已完成索引同步" : queued ? "已提交同步，机器人能否查到待核对"
     : sync.skipped ? "使用已有记录，无需再次同步"
     : "同步失败，请重试，不要重复保存";
   boundary.textContent = `包装已保存到 Eagle。${options.archivedBase ? "旧版已保留。" : ""}${text}${options.archiveError ? "旧版待处理：" + options.archiveError : ""}`;
   if (sync.state !== "completed" && !sync.skipped) {
-    const button = document.createElement("button");
+    const button = action || document.createElement("button");
     button.type = "button"; button.className = "ghost-btn"; button.textContent = queued ? "检查同步" : "重试同步";
-    button.addEventListener("click", async () => { button.disabled = true; prodRenderIngestBoundary(await prodRetryIngest(sync), options, selector); });
-    boundary.appendChild(button);
+    button.hidden = false;
+    button.onclick = async () => { button.disabled = true; prodRenderIngestBoundary(await prodRetryIngest(sync), options, selector); button.disabled = false; };
+    if (!action) boundary.appendChild(button);
     const detail = document.createElement("small");
     detail.textContent = sync.recoveryPath ? `待同步记录：${sync.recoveryPath}。${sync.error || ""}`
       : `同步记录未保存，请保持窗口打开重试${sync.error || ""}`;

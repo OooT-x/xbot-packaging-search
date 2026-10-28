@@ -210,12 +210,15 @@ test("production import keeps Eagle success separate from a failed queue and ret
   assert.match(boundary.textContent,/包装已保存到 Eagle/);
   assert.match(boundary.textContent,/同步失败/);
   assert.doesNotMatch(boundary.textContent,/已提交|已入队/);
-  assert.match(boundary.children[1].textContent,/同步记录未保存/);
-  queueFails = false; await boundary.children[0].click();
+  assert.match(boundary.children[0].textContent,/同步记录未保存/);
+  const syncAction = document.querySelector("#successSyncAction");
+  assert.equal(syncAction.textContent,"重试同步");
+  queueFails = false; await syncAction.onclick();
   assert.equal(imports,1,"event retry must not write Eagle again");
   assert.match(boundary.textContent,/已提交同步/);
   assert.match(boundary.textContent,/机器人能否查到待核对/);
-  assert.equal(boundary.children[0].textContent,"检查同步");
+  assert.equal(syncAction.textContent,"检查同步");
+  assert.equal(boundary.children.length,1,"sync action stays outside the status text");
   context.prodRenderIngestBoundary({state:"queued"},{archiveError:"archive denied"});
   assert.match(boundary.textContent,/已提交同步/);
   assert.match(boundary.textContent,/旧版待处理/);
