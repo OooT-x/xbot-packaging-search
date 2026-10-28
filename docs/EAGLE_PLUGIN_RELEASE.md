@@ -1,5 +1,7 @@
 # Eagle 插件发布与客户端更新流程
 
+2026-10-28：稳定版1.9.18已公开并设为latest，[Release](https://github.com/OooT-x/xbot-packaging-search/releases/tag/eagle-plugin-v1.9.18)。PR #2合并，标签指向通过CI的main提交`d6f474f278565bdc1c8939a038ac4f9a4db36f57`。Git-ref正式包22文件、25,218,827字节，SHA-256 `9167cbe1ba12813fb448703a9eb57ba40fbcac1fc9030883ca6622b007bb18c1`，worktree_review_only=false。四附件远端digest/大小与本地一致，更新清单下载核对通过；本地257 JS/34 Python、PR双检查及主分支CI通过。真实Eagle双终端与飞书交付现场验收独立保留，详见STATUS RELEASE-02。以下为历史记录。
+
 2026-10-28：稳定版 1.9.14 已公开发布，标签与安装包均来自通过 CI 的主分支提交 `1a059cd3c33e5f3651dba5c07880a1de87817ee6`。安装包 25,216,431 字节，SHA-256 `2feb5307a3d72a4bbaf559a5a20f4d22630a067a6138e8896f9c55392bee9c53`；四个附件的远端 digest/大小逐一核对，latest 的 update.json 已回读为 1.9.14。真实 Eagle/双终端验收仍待现场进行；见 STATUS RELEASE-01。
 
 2026-10-23：本机安装1.9.5限流冷却/状态反馈评审包（含前轮下拉菜单），22文件摘要一致，包SHA-256 `01f9b83c46784bff34c2e6c63d0c82df7332026a125c538fe3d3b74100e40874`；worktree_review_only=true，未公开发布。D-073规定限流冷却优先于正常启动/手动查询。详见STATUS UPDATE-12，以下为阶段快照。

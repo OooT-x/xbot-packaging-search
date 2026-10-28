@@ -1,5 +1,11 @@
 # 项目当前状态
 
+## RELEASE-02：Eagle插件1.9.18正式发布（2026-10-28）
+
+- 成果：稳定Release https://github.com/OooT-x/xbot-packaging-search/releases/tag/eagle-plugin-v1.9.18 已公开并设为latest，draft=false/prerelease=false。PR #2已合并，main发行提交与标签均为`d6f474f278565bdc1c8939a038ac4f9a4db36f57`；包含配对反馈/大图、设置菜单、命名字段及列表裁切修复和指南更新。
+- 验证：本地257 JS、34 Python及静态检查通过，PR两项检查与主分支CI成功。正式包从固定Git ref构建，worktree_review_only=false，22文件、25,218,827字节，SHA-256 `9167cbe1ba12813fb448703a9eb57ba40fbcac1fc9030883ca6622b007bb18c1`；Worker摘要保持，--help启动通过；包CRC/逐文件验证通过。远端包、sha256、JSON记录、update.json四附件大小与digest均与本地一致，标签回读准确，下载的更新清单已核对1.9.18及包摘要。
+- 边界：本机此前安装的1.9.18评审包记录仍见PAIR-03，不冒充正式包字节一致；另一终端安装、真实Eagle/NAS/飞书交付现场验收仍待完成。无服务重启、密钥或素材写入。主分支后续文档提交不移动发行标签。
+
 ## PAIR-03：检查文件末行卡片裁切（2026-10-28）
 
 - 目标 / 成果：P1，插件1.9.18移除卡片列表固定高度与内部裁切，改为整页滚动；根据底部操作栏可见区实际高度和底部距离预留页面空间。滚动到底后末张卡片、工程包与勾选框完整可达，无素材/配对规则变化。
